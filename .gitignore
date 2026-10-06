@@ -1,0 +1,9 @@
+bin/
+bin~/
+obj/
+obj~/
+__pycache__/
+*.pdb
+*.user
+.vs/
+dist/

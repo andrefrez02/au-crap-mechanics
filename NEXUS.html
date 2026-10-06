@@ -1,0 +1,48 @@
+<h2>Crap Mechanics <em>- Physics Objects / Cars and more!</em></h2>
+<h3>Description</h3>
+<p>Crap Mechanics adds moving parts to Approximately Up. Pistons push, bearings spin, motors drive them, and wheels, pedals and a steering wheel turn a pile of frames into a car you can actually drive. Everything is made to look like the game's own parts, uses the game's ports and data cables (plus its own Drive Shaft), and lives in its own <strong>Mechanics</strong> tab of the inventory.</p>
+<p>The name is a joke on a certain other building game. The physics are not a joke: every joint is a real Unity Physics joint, with soft starts, brakes and all the care needed so your contraptions don't explode (most of the time).</p>
+<h3>Installation instructions</h3>
+<ol>
+<li>Install <strong>BepInEx 6.0.0-be.788 (IL2CPP, Windows x64)</strong> into the game folder (the folder with ApproximatelyUp.exe) and run the game once, so BepInEx creates its folders.</li>
+<li>Install <strong>BepInEx Interop Patcher (by CohoJET, on Nexus Mods)</strong>.</li>
+<li>Install <strong>Components Framework (by CohoJET, on Nexus Mods)</strong>.</li>
+<li>Extract this archive into <strong>BepInEx/plugins</strong> (you get <strong>BepInEx/plugins/Mecanica/</strong> with Mecanica.dll, Localization.json and the Mecanica asset bundle).</li>
+<li>Start the game. The new parts are in the <strong>Mechanics</strong> tab of the garage inventory.</li>
+</ol>
+<h3>Main features</h3>
+<ul>
+<li><strong>Pistons</strong> (2 / 4 / 8 m): push the block on top, proportional to the signal; status LED shows what they are doing.</li>
+<li><strong>Bearing</strong>: free hinge, motor (a Drive Shaft from a Motor) or servo (a data signal = steering, -45..45 degrees); its 4 ports take either. Small arrows show the direction it turns with a positive signal.</li>
+<li><strong>Electric motors</strong> (small / medium / large) and <strong>fuel motors</strong> fed by the game's pipes and any fuel mix; a motor's force is shared among the bearings it drives (one motor per wheel = a much stronger car); every motor has a brake input that locks the vehicle's wheels.</li>
+<li><strong>Drive Shaft</strong>: the mod's own iron-colored cable that carries a motor's force to the bearings; a <strong>Differential</strong> splits one shaft into 4, a <strong>Shaft Reverser</strong> is a reverse gear and a <strong>Shaft Transmitter</strong> sends it wirelessly (steering knuckles, suspensions).</li>
+<li><strong>Wheels</strong>: Sports and Offroad, 1 / 1.5 / 2 m; they only attach by the inner (flange) side.</li>
+<li><strong>Pedals</strong> and <strong>steering wheel</strong> for driving; <strong>turret seat</strong> that aims with the mouse and turns everything glued to its plates.</li>
+<li><strong>Recoupler</strong>: re-attaches a part that a decoupler released, even in flight. <strong>Beacon</strong>: shows on every radar with its own icon (signal waves, car or ship, picked with its knob), and keeps a loose part simulated beyond 100 km from you (the game normally switches far parts off): a probe with a powered Beacon keeps its physics, camera, transmitter and thrusters working out there.</li>
+<li><strong>Single Cell Battery</strong>, <strong>Mini Solar Panel</strong>, <strong>Mini Electric Thruster</strong> and a <strong>Long Range Transmitter</strong> (no distance limit, channel set by a data input; carries camera video too).</li>
+<li><strong>Small blue / green fuel tanks</strong> (1x2x1, 500 fuel).</li>
+<li><strong>Mirror with V</strong>: every asymmetric part has a mirrored version; a mirrored bearing turns the other way with the same signal, so the left and right wheels of a mirrored car both push forward.</li>
+<li>Works with blueprints, time rewind and the game's seat key bindings. Settings in the game's options menu with Mod Menu.</li>
+</ul>
+<h3>Requirements</h3>
+<ul>
+<li>BepInEx 6.0.0-be.788 (IL2CPP, Windows x64)</li>
+<li>BepInEx Interop Patcher (by CohoJET, on Nexus Mods)</li>
+<li>Components Framework (by CohoJET, on Nexus Mods)</li>
+<li>Mod Menu (optional: rebind this mod's keys and change its settings in the game's options menu)</li>
+</ul>
+<p>Tested on the Steam version of Approximately Up from 30 September 2026 (build 25323586).</p>
+<h3>How this mod was made</h3>
+<p>This mod was made mostly by AI, vibe-coding style: the author (Andre) designed it, tested every build in game and decided what stays; the code, the 3D models, the generators and these texts were written by Claude (Anthropic) under his direction, across many iterations driven by in-game testing and log reading. It is tagged as AI-generated content on Nexus so you can filter it in or out as you prefer.</p>
+<p>Expect the kind of rough edges that come with that: it is tested on one setup (the author's), and bug reports with your BepInEx/LogOutput.log are very welcome.</p>
+<h3>Modding practice and source</h3>
+<p>No game files are redistributed. The archive contains only the mod's own code (and, for Crap Mechanics, its own meshes, icons and the asset bundle built with the official Modkit). Meshes, materials and fonts from the game are linked at run time by name; nothing is copied out of the game.</p>
+<p>Install and uninstall by adding or removing the mod's folder under BepInEx/plugins. Settings live in BepInEx/config and in the folder itself; blueprints and saves are never modified by the mod.</p>
+<p>Source code is on GitHub under the MIT license: https://github.com/andrefrez02/au-crap-mechanics. Please do not re-upload the archive elsewhere; link to the Nexus page instead.</p>
+<p>A few parts (the small fuel tanks, the turret seat, the Shaft Transmitter, the Mini Electric Thruster, the Mini Solar Panel and the Drive Shaft cable) are set up as Modkit copies of the game's own parts with changed sizes and numbers; their prefab definitions are therefore derived from the game and are kept out of the public repository, only the generated bundle ships. Everything else is modelled from scratch.</p>
+<h3>Shout outs</h3>
+<ul>
+<li><strong>CohoJET</strong> for the BepInEx Interop Patcher and the Components Framework, which made modding this game possible.</li>
+<li>The <strong>BepInEx</strong> and <strong>Il2CppInterop</strong> teams.</li>
+<li><strong>Approximately Games</strong> for Approximately Up.</li>
+</ul>

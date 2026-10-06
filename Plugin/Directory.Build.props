@@ -1,0 +1,36 @@
+<Project>
+
+  <!-- Must be set here, not in Plugin.csproj, or a clean build fails NETSDK1004. -->
+  <PropertyGroup>
+    <BaseIntermediateOutputPath>obj~\</BaseIntermediateOutputPath>
+  </PropertyGroup>
+
+  <!-- Generates a PluginInfo class exposing PluginGuid/PluginName/PluginVersion, derived from this
+       project's AssemblyName and Version, so no source file carries copies of them that can drift
+       out of sync with the .csproj. -->
+  <Target Name="ModkitGeneratePluginInfo" BeforeTargets="CoreCompile">
+    <PropertyGroup>
+      <ModDisplayName Condition="'$(ModDisplayName)' == ''">$(AssemblyName)</ModDisplayName>
+      <ModkitPluginInfoSource>
+// &lt;auto-generated/&gt;
+namespace $(RootNamespace)
+{
+    public static class PluginInfo
+    {
+        public const string PluginGuid = "com.approximatelyup.mods.$(AssemblyName.ToLowerInvariant())"%3B
+        public const string PluginName = "$(AssemblyName)"%3B
+        public const string PluginDisplayName = "$(ModDisplayName)"%3B
+        public const string PluginVersion = "$(Version)"%3B
+    }
+}
+      </ModkitPluginInfoSource>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(IntermediateOutputPath)PluginInfo.g.cs"
+                       Lines="$(ModkitPluginInfoSource)" Overwrite="true" WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Compile Include="$(IntermediateOutputPath)PluginInfo.g.cs" />
+      <FileWrites Include="$(IntermediateOutputPath)PluginInfo.g.cs" />
+    </ItemGroup>
+  </Target>
+
+</Project>
