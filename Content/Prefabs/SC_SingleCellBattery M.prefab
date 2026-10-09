@@ -776,7 +776,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _position:
-    x: 0.057
+    x: -0.057
     y: 0
     z: -0.1085
   _rotation:
@@ -784,7 +784,7 @@ MonoBehaviour:
     y: 0
     z: 0
   _scale:
-    x: -1
+    x: 1
     y: 1
     z: 1
   _mesh: {fileID: 4300000, guid: 7abe111a5b9588efb766d9fe77307bf9, type: 2}

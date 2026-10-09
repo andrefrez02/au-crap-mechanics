@@ -16,7 +16,9 @@ namespace Mecanica
         /// <summary>Nomes das versoes " M" do mod (so elas saem do inventario).</summary>
         static readonly HashSet<string> nomesM = new HashSet<string>();
 
-        static readonly string[] SiMesmo = { "SC_Pedal", "SC_Volante", "SC_TurretSeat", "SC_TanqueAzul", "SC_TanqueVerde", "SC_DriveShaft" };   // 0.19.2: beacon ganhou M (knob espelhado igual a camera do jogo)   // 0.17.0: beacon sem M (o knob nao espelha)
+        static readonly string[] SiMesmo = { "SC_Pedal", "SC_Volante", "SC_TurretSeat", "SC_TanqueAzul", "SC_TanqueVerde", "SC_DriveShaft", "SC_SlipRing", "SC_MiniSlipRing", "SC_PistaoFim", "SC_MiniPistaoFim" };   // 0.22.4: placas simetricas   // 0.20.0: Piston End (simetrico); 0.22.0: Slip Ring (portas simetricas em X)
+        /// <summary>0.20.0 (Andre: "remove os tiers do pistao"): os pistoes 2/4/8 continuam registrados (BPs antigos) mas saem do inventario.</summary>
+        static readonly string[] Escondidos = { };   // 0.22.5: os itens antigos (pistoes 2/4/8, Piston End cubo) foram removidos
 
         public static void Ligar(IReadOnlyList<EPC_SpaceshipComponent> regs)
         {
@@ -44,18 +46,20 @@ namespace Mecanica
         [HarmonyPostfix, HarmonyPatch(typeof(UIInventory), nameof(UIInventory.PreAwake))]
         static void TirarDoInventario(UIInventory __instance)
         {
-            if (nomesM.Count == 0 || __instance == null) return;
+            if (__instance == null) return;
             try
             {
-                var l = __instance._allListItems; if (l == null) return; int tirados = 0;
+                var l = __instance._allListItems; if (l == null) return; int tirados = 0, velhos = 0;
                 for (int i = l.Count - 1; i >= 0; i--)
                 {
                     var it = l[i]; var pf = it != null ? it._prefab : null;
-                    if (pf == null || !nomesM.Contains(pf.name)) continue;
+                    if (pf == null) continue;
+                    bool m = nomesM.Contains(pf.name), velho = Array.IndexOf(Escondidos, pf.name) >= 0;
+                    if (!m && !velho) continue;
                     try { it.gameObject.SetActive(false); } catch (Exception) { }
-                    l.RemoveAt(i); tirados++;
+                    l.RemoveAt(i); if (m) tirados++; else velhos++;
                 }
-                Registro.Info("mirror (V): " + tirados + " mirrored version(s) hidden from the inventory");
+                Registro.Info("mirror (V): " + tirados + " mirrored version(s) hidden from the inventory" + (velhos > 0 ? "; " + velhos + " old piston tier(s) hidden (Piston 2/4/8 — old blueprints still work)" : ""));
             }
             catch (Exception ex) { Registro.Aviso("mirror (V): could not hide the mirrored versions from the inventory: " + ex.Message); }
         }

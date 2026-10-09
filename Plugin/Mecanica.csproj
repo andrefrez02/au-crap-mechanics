@@ -8,7 +8,7 @@
     <AssemblyName>Mecanica</AssemblyName>
     <ModDisplayName>Crap Mechanics</ModDisplayName>
     <RootNamespace>Mecanica</RootNamespace>
-    <Version>0.19.13</Version>
+    <Version>0.23.2</Version>
     <Authors>Andre + Claude</Authors>
     <Description>Crap Mechanics: pistons, bearings, motors, wheels, recoupler, beacon, turret seat and more for Approximately Up.</Description>
     <LangVersion>latest</LangVersion>

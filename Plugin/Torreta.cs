@@ -71,6 +71,8 @@ namespace Mecanica
             Registro.Info(nome + " found: block " + e.Index + ":" + e.Version + " (turret seat)");
         }
         public static bool TemTorre(long k) => torres.ContainsKey(k);
+        /// <summary>0.22.0: torres ativas (pra Anel.cs: anel na peca pendurada em cada placa).</summary>
+        internal static IEnumerable<Torre> TorresAtivas() { foreach (var t in torres.Values) if (t.estado == 2 || t.estado == 3) yield return t; }
 
         static bool PrepararSeat(EntityManager em)
         {

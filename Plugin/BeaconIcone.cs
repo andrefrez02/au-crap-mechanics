@@ -95,13 +95,35 @@ namespace Mecanica
         /// <summary>0.19.3: o mesmo achador pros knobs do bearing/pistao (Knobs.cs) — na garagem o knob pode nao estar no buffer Child do
         /// bloco, so no BelongingSC dele.</summary>
         public static Entity AcharKnobDe(EntityManager em, Entity bloco) => Preparar(em) ? AcharKnob(em, bloco) : Entity.Null;
-        static unsafe Entity AcharKnob(EntityManager em, Entity bloco)
+        /// <summary>0.19.15: todos os actionables com BelongingSC (knobs, alavancas, botoes) e o bloco dono de cada um.</summary>
+        public static Entity[] TodosActionables(EntityManager em) => Preparar(em) ? Ecs.Lista(qData).ToArray() : new Entity[0];
+        public static unsafe Entity BlocoDoActionable(EntityManager em, Entity a)
         {
-            foreach (var f in Ecs.Filhos(em, bloco)) if (Ecs.TemC(em, f, tiData)) return f;
+            var bs = (Ecs.TemC(em, a, tiBelong) ? (BelongingSC*)em.GetComponentDataRawRO(a, tiBelong) : null);
+            return bs == null ? Entity.Null : bs->_sc;
+        }
+        /// <summary>0.23.0: o Knobs manda aqui o TypeIndex do ActionableToggle (o switch do bearing) pra nao ser confundido com o knob.</summary>
+        public static TypeIndex PularToggle;
+        static bool Pular(EntityManager em, Entity f) => PularToggle.Value != 0 && Ecs.TemC(em, f, PularToggle);
+        /// <summary>0.23.0: todos os actionables (por BelongingSC) de um bloco — o switch do bearing na garagem nao esta no Child.</summary>
+        public static unsafe System.Collections.Generic.List<Entity> ActionablesDe(EntityManager em, Entity bloco)
+        {
+            var r = new System.Collections.Generic.List<Entity>();
+            if (!Preparar(em)) return r;
             foreach (var f in Ecs.Lista(qData))
             {
                 var bs = (Ecs.TemC(em, f, tiBelong) ? (BelongingSC*)em.GetComponentDataRawRO(f, tiBelong) : null);
-                if (bs != null && bs->_sc.Index == bloco.Index && bs->_sc.Version == bloco.Version) return f;
+                if (bs != null && bs->_sc.Index == bloco.Index && bs->_sc.Version == bloco.Version) r.Add(f);
+            }
+            return r;
+        }
+        static unsafe Entity AcharKnob(EntityManager em, Entity bloco)
+        {
+            foreach (var f in Ecs.Filhos(em, bloco)) if (Ecs.TemC(em, f, tiData) && !Pular(em, f)) return f;
+            foreach (var f in Ecs.Lista(qData))
+            {
+                var bs = (Ecs.TemC(em, f, tiBelong) ? (BelongingSC*)em.GetComponentDataRawRO(f, tiBelong) : null);
+                if (bs != null && bs->_sc.Index == bloco.Index && bs->_sc.Version == bloco.Version && !Pular(em, f)) return f;
             }
             return Entity.Null;
         }

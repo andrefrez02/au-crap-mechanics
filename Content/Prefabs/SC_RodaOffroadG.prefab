@@ -133,7 +133,7 @@ MonoBehaviour:
   _scSecondaryGroup: 0
   _availableAmount: 500
   _inventoryDependency: []
-  _boundsCollider: {fileID: 0}
+  _boundsCollider: {fileID: 4300000, guid: 01f246be32cbe5c3959ce34599d8d11c, type: 2}
   _defaultPaintableColor: 0
   _paintableRenderers:
   - {fileID: 658281477796044692}

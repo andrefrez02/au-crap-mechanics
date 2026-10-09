@@ -1,0 +1,10 @@
+Version 0.23.2
+
+New: angle output on the Bearing, Gyro Bearing, Mini Bearing and Mini Gyro Bearing. The last port gives the angle the top is at right now, and a switch beside the knob picks the unit: degrees, or the same scale as the servo input, so you can feed it straight back into your own logic.
+New: status lines in the inventory panel of every block (max force, max speed, power consumption, stroke, grip and so on), like the game's own parts.
+Changed: pistons use 1 P/s per meter of the stroke they actually make, instead of a flat rate for the whole 8 m. A piston set to 2 m now costs 2 P/s.
+Changed: in-game descriptions follow the game's style and are much shorter, and so are the port tooltips. The full text of every block is on this page.
+Changed: a pass-through port with no cable shows the colour of the cable on the other side of the joint, like the Frame Quarter With Ports.
+Fixed: the bearing's angle output came up as an untyped port and turned into I/O when a cable was plugged in; it is a blue output now.
+Fixed: the pairing between a bearing's pass-through ports and the Slip Ring was off by one.
+Fixed: the switch showed the knob's tooltip and took the knob's saved value.

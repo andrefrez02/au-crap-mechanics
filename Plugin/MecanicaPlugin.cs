@@ -35,7 +35,9 @@ namespace Mecanica
             PistaoImpulso = CfgMigra.De(C, C.Bind("Piston", "max_impulse", 150000f, "Motor force per physics step (0 = infinite)"), "Pistao", "impulso_max");
             if (PistaoImpulso.Value == 20000f) PistaoImpulso.Value = 150000f;   // 0.12.3 (Andre: "deixa bem mais forte os pistoes")
             if (PistaoImpulso.Value == 500f) PistaoImpulso.Value = 20000f;
-            PistaoConsumo = CfgMigra.De(C, C.Bind("Piston", "power_per_meter", 2.5f, "Power (P/s) while moving, per meter of stroke (2 m = 5, 4 m = 10, 8 m = 20)"), "Pistao", "consumo_por_metro");
+            // 0.23.0 (Andre: "diminui o valor mas ainda deixa proporcional pelo tamanho do stroke"): 1 P/s por metro do curso REAL
+            // (ate o Piston End, ou o maximo, x o knob) — 8 m cheio = 8 P/s, 2 m = 2 P/s. Chave nova: o valor velho (2,5) fica pra tras.
+            PistaoConsumo = C.Bind("Piston", "power_per_meter_v2", 1f, "Power (P/s) while moving, per meter of the stroke it actually makes (knob included): 8 m = 8, 2 m = 2");
             string[] niv = { "Motor Pequeno", "Motor Medio", "Motor Grande" };   // secoes antigas (migracao)
             string[] nivEn = { "Small Motor", "Medium Motor", "Large Motor" };
             // 0.5.0: bem mais fortes e rapidos (Andre: 2 motores grandes ainda fracos pro carro). Valor antigo padrao -> novo padrao.
@@ -252,6 +254,7 @@ namespace Mecanica
                 if (mundo != null && mundo.IsCreated) { try { Marca.Passo(mundo.EntityManager); } catch (Exception ex) { if (erros++ < 5) Registro.Erro("mark: " + ex); } }
                 Aba.Passo();
                 float dt = UnityEngine.Time.deltaTime;
+                try { Props.Passo(dt); } catch (Exception ex) { if (erros++ < 3) Registro.Aviso("properties: " + ex.Message); }   // 0.23.2
                 if (mundo == null || !mundo.IsCreated)
                 {
                     tMundo += dt; if (tMundo < 1f) return; tMundo = 0f;

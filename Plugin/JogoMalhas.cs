@@ -43,8 +43,14 @@ namespace Mecanica
             catch (Exception ex) { Registro.Aviso("game meshes: indexing failed: " + ex.Message); }
         }
 
+        /// <summary>0.22.2: malha do jogo pelo nome (null se nao indexou ainda / nao existe) — Anel.cs troca o plugue das portas de passagem.</summary>
+        public static Mesh Malha(string nome) { if (doJogo == null) return null; return doJogo.TryGetValue(nome, out var m) ? m : null; }
+
+        /// <summary>0.23.2: o Core que o Components Framework passa no configure — o Props.cs usa pra achar os componentes depois.</summary>
+        public static Core Nucleo;
         public static void Religar(EPC_SpaceshipComponent epc, Core core)
         {
+            if (core != null) Nucleo = core;
             if (epc == null) return;
             if (doJogo == null) Indexar(core);
             try

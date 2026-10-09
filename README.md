@@ -1,12 +1,16 @@
 # Crap Mechanics — Physics Objects / Cars and more!
 
-> Pistons, bearings, electric and fuel motors, drive shafts, wheels, pedals, a steering wheel, a turret seat, a recoupler, a beacon and small fuel tanks: build working cars, rovers, cranes and turrets in Approximately Up.
+> Pistons, bearings, electric and fuel motors, drive shafts, slip rings, wheels, pedals, a steering wheel, a turret seat, a recoupler, a beacon and small fuel tanks: build working cars, rovers, cranes and turrets in Approximately Up.
+
+**Updating from 0.19.13?** The old **Piston 2**, **Piston 4** and **Piston 8** are no longer in the mod: they were replaced by a single Piston (up to 8 m) and the Piston End block, so blueprints that use the old pistons need them replaced with the new Piston. Motors now glue only by the bottom of their base and the small fuel tanks only by their brackets (like the game's tanks): in old blueprints, anything glued to their other faces needs to be glued again.
 
 ## Description
 
-Crap Mechanics adds moving parts to Approximately Up. Pistons push, bearings spin, motors drive them, and wheels, pedals and a steering wheel turn a pile of frames into a car you can actually drive. Everything is made to look like the game's own parts, uses the game's ports and data cables (plus its own Drive Shaft), and lives in its own **Mechanics** tab of the inventory.
+Crap Mechanics adds moving parts to Approximately Up. Pistons push, bearings spin, motors drive them, and wheels, pedals and a steering wheel turn a pile of frames into a car you can actually drive. Data and power reach the moving side through a **Slip Ring**, so nothing has to be left unpowered. Everything is made to look like the game's own parts, uses the game's ports and data cables (plus its own **Drive Shaft**), and lives in its own **Mechanics** tab of the inventory.
 
 The name is a joke on a certain other building game. The physics are not a joke: every joint is a real Unity Physics joint, with soft starts, brakes and all the care needed so your contraptions don't explode (most of the time).
+
+This mod was vibe-coded, I designed it and tested but didn't write the code.
 
 ## Installation instructions
 
@@ -18,15 +22,18 @@ The name is a joke on a certain other building game. The physics are not a joke:
 
 ## Main features
 
-- **Pistons** (2 / 4 / 8 m): push the block on top, proportional to the signal; status LED shows what they are doing.
-- **Bearing**: free hinge, motor (a Drive Shaft from a Motor) or servo (a data signal = steering, -45..45 degrees); its 4 ports take either. Small arrows show the direction it turns with a positive signal.
-- **Electric motors** (small / medium / large) and **fuel motors** fed by the game's pipes and any fuel mix; a motor's force is shared among the bearings it drives (one motor per wheel = a much stronger car); every motor has a brake input that locks the vehicle's wheels.
+- **Piston (up to 8 m)** and **Mini Piston** (0.25 m block, up to 4 m): push the block on top, proportional to the signal; status LED shows what they are doing. Put a Piston End or Mini Piston End plate on the piston's axis and the stroke becomes exactly that distance: the rod is already drawn extended in the garage, so you can build things that compress when the simulation starts. The knob shows the stroke in % and in meters; with the game's H display on, a translucent guide bar shows each piston's stroke.
+- **Bearing**: free hinge, motor (a Drive Shaft from a Motor) or servo (a data signal holds an angle; the knob sets the range, 10 to 360 degrees). In motor mode a signal of 0 lets it coast; the motor's brake holds it. Small arrows show the direction it turns with a positive signal. A data output gives the angle it is at right now, in degrees or on the same scale as the input, so you can feed it back into your own logic.
+- **Gyro Bearing**: keeps whatever is on top of it level against gravity (two stacked at 90 degrees = a gimbal for a camera, antenna or platform); a data signal adds an offset. **Mini Bearing** and **Mini Gyro Bearing** (0.25 m blocks, a quarter of the force): the same, for small mechanisms.
+- **Slip Ring** and **Mini Slip Ring**: carry data and power across a moving joint, with no cable crossing it. Bearings, pistons, the Recoupler and the Turret Seat have pass-through ports; put a Slip Ring on the moving side and port 1 pairs with port 1, and so on. Each pair carries data either way, or power. The plugs take the colour of the cable plugged in, like the Frame Quarter With Ports.
+- **Electric motors** (small / medium / large) and **fuel motors** fed by the game's pipes and any fuel mix; a motor's force is shared among the bearings it drives (one motor per wheel = a much stronger car); every motor has a brake input that locks the wheels it drives.
 - **Drive Shaft**: the mod's own iron-colored cable that carries a motor's force to the bearings; a **Differential** splits one shaft into 4, a **Shaft Reverser** is a reverse gear and a **Shaft Transmitter** sends it wirelessly (steering knuckles, suspensions).
 - **Wheels**: Sports and Offroad, 1 / 1.5 / 2 m; they only attach by the inner (flange) side.
-- **Pedals** and **steering wheel** for driving; **turret seat** that aims with the mouse and turns everything glued to its plates.
+- **Pedals** and **steering wheel** for driving; **turret seat** that aims with the mouse and turns everything glued to its plates, with pass-through ports on its base for each plate.
 - **Recoupler**: re-attaches a part that a decoupler released, even in flight. **Beacon**: shows on every radar with its own icon (signal waves, car or ship, picked with its knob), and keeps a loose part simulated beyond 100 km from you (the game normally switches far parts off): a probe with a powered Beacon keeps its physics, camera, transmitter and thrusters working out there.
 - **Single Cell Battery**, **Mini Solar Panel**, **Mini Electric Thruster** and a **Long Range Transmitter** (no distance limit, channel set by a data input; carries camera video too).
 - **Small blue / green fuel tanks** (1x2x1, 500 fuel).
+- Wheels, motors, small tanks and the turret seat take only the space of their shape (like the game's curved frames), so other parts and cables fit around them.
 - **Mirror with V**: every asymmetric part has a mirrored version; a mirrored bearing turns the other way with the same signal, so the left and right wheels of a mirrored car both push forward.
 - Works with blueprints, time rewind and the game's seat key bindings. Settings in the game's options menu with Mod Menu.
 
@@ -35,39 +42,45 @@ The name is a joke on a certain other building game. The physics are not a joke:
 - BepInEx 6.0.0-be.788 (IL2CPP, Windows x64)
 - BepInEx Interop Patcher (by CohoJET, on Nexus Mods)
 - Components Framework (by CohoJET, on Nexus Mods)
-- Mod Menu (optional: rebind this mod's keys and change its settings in the game's options menu)
+- Mod Menu (optional: rebind this mod's keys and change its settings in the game's options menu) *Coming soon!
 
-Tested on the Steam version of Approximately Up from 30 September 2026 (build 25323586).
+Tested on the Steam version of Approximately Up from 08 October 2026 (update 1.0.214).
 
-## How this mod was made
-
-This mod was made mostly by AI, vibe-coding style: the author (Andre) designed it, tested every build in game and decided what stays; the code, the 3D models, the generators and these texts were written by Claude (Anthropic) under his direction, across many iterations driven by in-game testing and log reading. It is tagged as AI-generated content on Nexus so you can filter it in or out as you prefer.
-
-Expect the kind of rough edges that come with that: it is tested on one setup (the author's), and bug reports with your BepInEx/LogOutput.log are very welcome.
-
-## Modding practice and source
+## Modding practice
 
 No game files are redistributed. The archive contains only the mod's own code (and, for Crap Mechanics, its own meshes, icons and the asset bundle built with the official Modkit). Meshes, materials and fonts from the game are linked at run time by name; nothing is copied out of the game.
 
 Install and uninstall by adding or removing the mod's folder under BepInEx/plugins. Settings live in BepInEx/config and in the folder itself; blueprints and saves are never modified by the mod.
 
-Source code is on GitHub under the MIT license: https://github.com/andrefrez02/au-crap-mechanics. Please do not re-upload the archive elsewhere; link to the Nexus page instead.
+Please do not re-upload the archive elsewhere; link to the Nexus page instead.
 
-A few parts (the small fuel tanks, the turret seat, the Shaft Transmitter, the Mini Electric Thruster, the Mini Solar Panel and the Drive Shaft cable) are set up as Modkit copies of the game's own parts with changed sizes and numbers; their prefab definitions are therefore derived from the game and are kept out of the public repository, only the generated bundle ships. Everything else is modelled from scratch.
+A few parts (the small fuel tanks, the turret seat, the Shaft Transmitter, the Long Range Transmitter, the Mini Electric Thruster, the Mini Solar Panel and the Drive Shaft cable) are set up as Modkit copies of the game's own parts with changed sizes and numbers; their prefab definitions are therefore derived from the game; only the generated bundle ships. Everything else is modelled from scratch.
 
 ## Shout outs
 
 - **CohoJET** for the BepInEx Interop Patcher and the Components Framework, which made modding this game possible.
 - The **BepInEx** and **Il2CppInterop** teams.
+- **MicroFrames** by CohoJET, which I've been loving to build with: the tiny frames are perfect for fitting mechanisms in tight spots.
 - **Approximately Games** for Approximately Up.
+
+## Other mods I'm working on
+
+- **Replay mod**: Record your adventures and replay it after.
+- **Mod menu**: Adds a menu tab for configuring your mods.
+- **Extended Controller Support**: Adds support for gaming controllers with a bunch of functionalities.
+- **Camera 3P**: Adds a different POV for the player (like minecraft F5).
+- **Quick Start**: Skips the main menu and the planet selection, going straight to the last saved location.
+- **Time Rewind Binds**: Adds configurable keybinds to Pause, Accelerate time and the Time Rewind panel buttons.
 
 <details><summary>Nexus description (HTML, ready to paste)</summary>
 
 ```html
 <h2>Crap Mechanics <em>- Physics Objects / Cars and more!</em></h2>
+<p><strong>Updating from 0.19.13?</strong> The old <strong>Piston 2</strong>, <strong>Piston 4</strong> and <strong>Piston 8</strong> are no longer in the mod: they were replaced by a single Piston (up to 8 m) and the Piston End block, so blueprints that use the old pistons need them replaced with the new Piston. Motors now glue only by the bottom of their base and the small fuel tanks only by their brackets (like the game&#x27;s tanks): in old blueprints, anything glued to their other faces needs to be glued again.</p>
 <h3>Description</h3>
-<p>Crap Mechanics adds moving parts to Approximately Up. Pistons push, bearings spin, motors drive them, and wheels, pedals and a steering wheel turn a pile of frames into a car you can actually drive. Everything is made to look like the game's own parts, uses the game's ports and data cables (plus its own Drive Shaft), and lives in its own <strong>Mechanics</strong> tab of the inventory.</p>
-<p>The name is a joke on a certain other building game. The physics are not a joke: every joint is a real Unity Physics joint, with soft starts, brakes and all the care needed so your contraptions don't explode (most of the time).</p>
+<p>Crap Mechanics adds moving parts to Approximately Up. Pistons push, bearings spin, motors drive them, and wheels, pedals and a steering wheel turn a pile of frames into a car you can actually drive. Data and power reach the moving side through a <strong>Slip Ring</strong>, so nothing has to be left unpowered. Everything is made to look like the game&#x27;s own parts, uses the game&#x27;s ports and data cables (plus its own <strong>Drive Shaft</strong>), and lives in its own <strong>Mechanics</strong> tab of the inventory.</p>
+<p>The name is a joke on a certain other building game. The physics are not a joke: every joint is a real Unity Physics joint, with soft starts, brakes and all the care needed so your contraptions don&#x27;t explode (most of the time).</p>
+<p>This mod was vibe-coded, I designed it and tested but didn&#x27;t write the code.</p>
 <h3>Installation instructions</h3>
 <ol>
 <li>Install <strong>BepInEx 6.0.0-be.788 (IL2CPP, Windows x64)</strong> into the game folder (the folder with ApproximatelyUp.exe) and run the game once, so BepInEx creates its folders.</li>
@@ -78,39 +91,49 @@ A few parts (the small fuel tanks, the turret seat, the Shaft Transmitter, the M
 </ol>
 <h3>Main features</h3>
 <ul>
-<li><strong>Pistons</strong> (2 / 4 / 8 m): push the block on top, proportional to the signal; status LED shows what they are doing.</li>
-<li><strong>Bearing</strong>: free hinge, motor (a Drive Shaft from a Motor) or servo (a data signal = steering, -45..45 degrees); its 4 ports take either. Small arrows show the direction it turns with a positive signal.</li>
-<li><strong>Electric motors</strong> (small / medium / large) and <strong>fuel motors</strong> fed by the game's pipes and any fuel mix; a motor's force is shared among the bearings it drives (one motor per wheel = a much stronger car); every motor has a brake input that locks the vehicle's wheels.</li>
-<li><strong>Drive Shaft</strong>: the mod's own iron-colored cable that carries a motor's force to the bearings; a <strong>Differential</strong> splits one shaft into 4, a <strong>Shaft Reverser</strong> is a reverse gear and a <strong>Shaft Transmitter</strong> sends it wirelessly (steering knuckles, suspensions).</li>
+<li><strong>Piston (up to 8 m)</strong> and <strong>Mini Piston</strong> (0.25 m block, up to 4 m): push the block on top, proportional to the signal; status LED shows what they are doing. Put a Piston End or Mini Piston End plate on the piston&#x27;s axis and the stroke becomes exactly that distance: the rod is already drawn extended in the garage, so you can build things that compress when the simulation starts. The knob shows the stroke in % and in meters; with the game&#x27;s H display on, a translucent guide bar shows each piston&#x27;s stroke.</li>
+<li><strong>Bearing</strong>: free hinge, motor (a Drive Shaft from a Motor) or servo (a data signal holds an angle; the knob sets the range, 10 to 360 degrees). In motor mode a signal of 0 lets it coast; the motor&#x27;s brake holds it. Small arrows show the direction it turns with a positive signal. A data output gives the angle it is at right now, in degrees or on the same scale as the input, so you can feed it back into your own logic.</li>
+<li><strong>Gyro Bearing</strong>: keeps whatever is on top of it level against gravity (two stacked at 90 degrees = a gimbal for a camera, antenna or platform); a data signal adds an offset. <strong>Mini Bearing</strong> and <strong>Mini Gyro Bearing</strong> (0.25 m blocks, a quarter of the force): the same, for small mechanisms.</li>
+<li><strong>Slip Ring</strong> and <strong>Mini Slip Ring</strong>: carry data and power across a moving joint, with no cable crossing it. Bearings, pistons, the Recoupler and the Turret Seat have pass-through ports; put a Slip Ring on the moving side and port 1 pairs with port 1, and so on. Each pair carries data either way, or power. The plugs take the colour of the cable plugged in, like the Frame Quarter With Ports.</li>
+<li><strong>Electric motors</strong> (small / medium / large) and <strong>fuel motors</strong> fed by the game&#x27;s pipes and any fuel mix; a motor&#x27;s force is shared among the bearings it drives (one motor per wheel = a much stronger car); every motor has a brake input that locks the wheels it drives.</li>
+<li><strong>Drive Shaft</strong>: the mod&#x27;s own iron-colored cable that carries a motor&#x27;s force to the bearings; a <strong>Differential</strong> splits one shaft into 4, a <strong>Shaft Reverser</strong> is a reverse gear and a <strong>Shaft Transmitter</strong> sends it wirelessly (steering knuckles, suspensions).</li>
 <li><strong>Wheels</strong>: Sports and Offroad, 1 / 1.5 / 2 m; they only attach by the inner (flange) side.</li>
-<li><strong>Pedals</strong> and <strong>steering wheel</strong> for driving; <strong>turret seat</strong> that aims with the mouse and turns everything glued to its plates.</li>
+<li><strong>Pedals</strong> and <strong>steering wheel</strong> for driving; <strong>turret seat</strong> that aims with the mouse and turns everything glued to its plates, with pass-through ports on its base for each plate.</li>
 <li><strong>Recoupler</strong>: re-attaches a part that a decoupler released, even in flight. <strong>Beacon</strong>: shows on every radar with its own icon (signal waves, car or ship, picked with its knob), and keeps a loose part simulated beyond 100 km from you (the game normally switches far parts off): a probe with a powered Beacon keeps its physics, camera, transmitter and thrusters working out there.</li>
 <li><strong>Single Cell Battery</strong>, <strong>Mini Solar Panel</strong>, <strong>Mini Electric Thruster</strong> and a <strong>Long Range Transmitter</strong> (no distance limit, channel set by a data input; carries camera video too).</li>
 <li><strong>Small blue / green fuel tanks</strong> (1x2x1, 500 fuel).</li>
+<li>Wheels, motors, small tanks and the turret seat take only the space of their shape (like the game&#x27;s curved frames), so other parts and cables fit around them.</li>
 <li><strong>Mirror with V</strong>: every asymmetric part has a mirrored version; a mirrored bearing turns the other way with the same signal, so the left and right wheels of a mirrored car both push forward.</li>
-<li>Works with blueprints, time rewind and the game's seat key bindings. Settings in the game's options menu with Mod Menu.</li>
+<li>Works with blueprints, time rewind and the game&#x27;s seat key bindings. Settings in the game&#x27;s options menu with Mod Menu.</li>
 </ul>
 <h3>Requirements</h3>
 <ul>
 <li>BepInEx 6.0.0-be.788 (IL2CPP, Windows x64)</li>
 <li>BepInEx Interop Patcher (by CohoJET, on Nexus Mods)</li>
 <li>Components Framework (by CohoJET, on Nexus Mods)</li>
-<li>Mod Menu (optional: rebind this mod's keys and change its settings in the game's options menu)</li>
+<li>Mod Menu (optional: rebind this mod&#x27;s keys and change its settings in the game&#x27;s options menu) *Coming soon!</li>
 </ul>
-<p>Tested on the Steam version of Approximately Up from 30 September 2026 (build 25323586).</p>
-<h3>How this mod was made</h3>
-<p>This mod was made mostly by AI, vibe-coding style: the author (Andre) designed it, tested every build in game and decided what stays; the code, the 3D models, the generators and these texts were written by Claude (Anthropic) under his direction, across many iterations driven by in-game testing and log reading. It is tagged as AI-generated content on Nexus so you can filter it in or out as you prefer.</p>
-<p>Expect the kind of rough edges that come with that: it is tested on one setup (the author's), and bug reports with your BepInEx/LogOutput.log are very welcome.</p>
-<h3>Modding practice and source</h3>
-<p>No game files are redistributed. The archive contains only the mod's own code (and, for Crap Mechanics, its own meshes, icons and the asset bundle built with the official Modkit). Meshes, materials and fonts from the game are linked at run time by name; nothing is copied out of the game.</p>
-<p>Install and uninstall by adding or removing the mod's folder under BepInEx/plugins. Settings live in BepInEx/config and in the folder itself; blueprints and saves are never modified by the mod.</p>
-<p>Source code is on GitHub under the MIT license: https://github.com/andrefrez02/au-crap-mechanics. Please do not re-upload the archive elsewhere; link to the Nexus page instead.</p>
-<p>A few parts (the small fuel tanks, the turret seat, the Shaft Transmitter, the Mini Electric Thruster, the Mini Solar Panel and the Drive Shaft cable) are set up as Modkit copies of the game's own parts with changed sizes and numbers; their prefab definitions are therefore derived from the game and are kept out of the public repository, only the generated bundle ships. Everything else is modelled from scratch.</p>
+<p>Tested on the Steam version of Approximately Up from 08 October 2026 (update 1.0.214).</p>
+<h3>Modding practice</h3>
+<p>No game files are redistributed. The archive contains only the mod&#x27;s own code (and, for Crap Mechanics, its own meshes, icons and the asset bundle built with the official Modkit). Meshes, materials and fonts from the game are linked at run time by name; nothing is copied out of the game.</p>
+<p>Install and uninstall by adding or removing the mod&#x27;s folder under BepInEx/plugins. Settings live in BepInEx/config and in the folder itself; blueprints and saves are never modified by the mod.</p>
+<p>Please do not re-upload the archive elsewhere; link to the Nexus page instead.</p>
+<p>A few parts (the small fuel tanks, the turret seat, the Shaft Transmitter, the Long Range Transmitter, the Mini Electric Thruster, the Mini Solar Panel and the Drive Shaft cable) are set up as Modkit copies of the game&#x27;s own parts with changed sizes and numbers; their prefab definitions are therefore derived from the game; only the generated bundle ships. Everything else is modelled from scratch.</p>
 <h3>Shout outs</h3>
 <ul>
 <li><strong>CohoJET</strong> for the BepInEx Interop Patcher and the Components Framework, which made modding this game possible.</li>
 <li>The <strong>BepInEx</strong> and <strong>Il2CppInterop</strong> teams.</li>
+<li><strong>MicroFrames</strong> by CohoJET, which I&#x27;ve been loving to build with: the tiny frames are perfect for fitting mechanisms in tight spots.</li>
 <li><strong>Approximately Games</strong> for Approximately Up.</li>
+</ul>
+<h3>Other mods I'm working on</h3>
+<ul>
+<li><strong>Replay mod</strong>: Record your adventures and replay it after.</li>
+<li><strong>Mod menu</strong>: Adds a menu tab for configuring your mods.</li>
+<li><strong>Extended Controller Support</strong>: Adds support for gaming controllers with a bunch of functionalities.</li>
+<li><strong>Camera 3P</strong>: Adds a different POV for the player (like minecraft F5).</li>
+<li><strong>Quick Start</strong>: Skips the main menu and the planet selection, going straight to the last saved location.</li>
+<li><strong>Time Rewind Binds</strong>: Adds configurable keybinds to Pause, Accelerate time and the Time Rewind panel buttons.</li>
 </ul>
 ```
 
@@ -119,7 +142,7 @@ A few parts (the small fuel tanks, the turret seat, the Shaft Transmitter, the M
 # Details
 A mod for **Approximately Up** (BepInEx 6 IL2CPP) that adds pistons, bearings, electric and fuel motors, wheels, pedals, a steering
 wheel, a turret seat, a recoupler, a beacon and fuel tanks: everything you need to build working cars, rovers, cranes and turrets.
-All blocks live in the **Mechanics** tab of the inventory and are always unlocked. Version **0.13.0**, by Andre + Claude.
+All blocks live in the **Mechanics** tab of the inventory and are always unlocked. Version **0.23.2**, by Andre + Claude.
 
 
 
@@ -127,7 +150,9 @@ All blocks live in the **Mechanics** tab of the inventory and are always unlocke
 
 | Block | What it does |
 |---|---|
-| **Piston 2 / 4 / 8** | Pushes the block on its top face up to 2 / 4 / 8 m, proportional to the signal (0..1). Power: 2.5 P/s per meter of stroke while moving; without power it holds its position. Status LED: green = pushing, yellow = guided (closes a ring of joints), red = welded. |
+| **Piston** / **Mini Piston** | Pushes the block on its top face up to 8 m (Mini: 0.25 m block, up to 4 m, a quarter of the force), proportional to the signal (0..1); with a **Piston End** on its axis the stroke is the distance to it and the rod is born extended. The old Piston 2 / 4 / 8 still work in old blueprints (hidden from the inventory). Power: 2.5 P/s per meter of stroke while moving; without power it holds its position. Status LED: green = pushing, yellow = guided (closes a ring of joints), red = welded. |
+| **Piston End** | 0.25 m block that marks where a Piston ends. Glues on all 6 faces; place it on the piston's axis (any distance up to the piston's maximum, on the garage grid), attached to what the piston will push. The piece attached to it is separate in the garage (the garage bot flags it; that is expected). |
+| **Mini Bearing** / **Mini Gyro Bearing** | 0.25 m versions with a single untyped input in the middle of the bottom face and a quarter of the force. |
 | **Bearing** | The top face spins around the axis. Its 4 ports have no type (like the Frame Quarter with Ports): a **Drive Shaft** from a Motor = **motor** (speed and direction from the motor's signal, 0 brakes); a **data** cable (knob, lever, steering wheel) = **servo** (−1..1 → −45°..45°, car steering). Both wired: the shaft drives while it turns, and the servo takes over when the shaft is at 0. Nothing wired = spins freely. |
 | **Small / Medium / Large Motor** (electric) | Input −1..1, **shaft output**: a Drive Shaft to a Bearing, or to a Differential for several. Uses up to 7 / 28 / 70 P/s. Without power the bearings spin freely. The 4th (yellow) port is a mechanical brake that locks all wheels of the vehicle. |
 | **Fuel Motor Small / Medium / Large** | Like the electric one, 50% stronger. Takes fuel through the pipe connection (same face as the ports, bottom corner), burns up to 0.85/s at signal 1 and accepts any mix (the force follows the mix efficiency). Uses 5 P/s of power while turning. Without fuel it brakes. |
@@ -210,6 +235,17 @@ Changes made in the options menu ("Mod settings", with Mod Menu) apply immediate
 - Nothing from the Modkit workspace (derived from the game) is published.
 
 ## Changelog
+- 0.23.2: in-game descriptions follow the game's style (short; the long version is in `DESCRICOES_COMPLETAS.txt`), port tooltips trimmed, and every block shows **status lines** in the inventory panel (max force, power consumption, stroke, grip…) — the plugin fills `_customProperties` at run time from the Localization file, so it works in both languages.
+- 0.23.1: the angle output kept its blue output plug (the pass-through painter was grabbing it, which also shifted the ring pairing by one); the switch has its own tooltip and its own saved value instead of the knob's; a pass-through port with no cable now shows the colour of the cable on the **other** side of the joint, like the Frame Quarter With Ports.
+- 0.23.0: **angle output** on the Bearing, Gyro Bearing and the minis — the last port gives the angle the top is at, in degrees or on the same scale as the servo input, picked by a switch beside the knob. Pistons use 1 P/s per meter of the stroke they actually make (was a flat rate for the full 8 m).
+- 0.22.7: cables can reach the pass-through ports on the sides of the turret seat's base (its collision volume no longer covers them).
+- 0.22.0–0.22.6: **Slip Ring** and **Mini Slip Ring** — data and power cross a moving joint with no cable over it. Pass-through ports on the Bearing, Gyro Bearing, Piston, Recoupler (4), the minis (1) and the Turret Seat (4 per plate); their plugs take the colour of the cable plugged in. **Piston End** and **Mini Piston End** as plates; Piston 2 / 4 / 8 and the old cube Piston End removed. Motors glue only by the bottom of their base and the small fuel tanks only by their brackets; wheels, motors, small tanks and the turret seat take only the space of their shape. A bearing driven by a motor coasts at signal 0, and a motor's brake locks only the wheels it drives. New look for the Long Range Transmitter, the Shaft Transmitter and the Mini Solar Panel; the piston knob shows % and meters with no Piston End.
+- 0.21.x: first try at carrying signals across a joint with the cable itself — replaced by the Slip Ring in 0.22.0.
+- 0.20.1–0.20.5: Mini Bearings accept a Drive Shaft; a piston with a Piston End starts right on launch and survives a quick load.
+- 0.20.0: single **Piston** (up to 8 m) instead of the 2 / 4 / 8 tiers (old ones hidden, still work) + **Piston End** block: placed on the piston's axis, the stroke becomes the distance to it and the rod is drawn extended already in the garage; with the game's H display on, a translucent guide bar shows the stroke, red on the piston nearest to a misaligned Piston End. **Mini Piston** (up to 4 m), **Mini Bearing** and **Mini Gyro Bearing** (0.25 m, one input, a quarter of the force). Knobs in the garage update every 0.1 s (was 0.5 s); the piston knob tooltip shows the stroke in meters when a Piston End is set.
+- 0.19.15: knob values are kept per block (the game does not save them in the blueprint) and the knob tooltips also work in the garage.
+- 0.19.14: **Gyro Bearing**; the mirrored (V) piston shows its rod again; the mirrored small battery's charge bar stays inside the block.
+- 0.19.13: parts farther than 100 km from you stay simulated while they carry a powered Beacon (the game normally switches them off), and nothing is switched off during Replay playback.
 - 0.19.12: diagnostic only — a transition log: whenever the game runs Core.CleanupWorldToDefaultState or Core.ClearGame (it happens on every atmosphere entry/exit), the state of every Long Range Transmitter, Wireless Transmitter, camera and monitor (ports, links, sources, power, slices, signals) is written before, right after, and 1 / 3 / 6 s later.
 - 0.19.11: the Long Range Transmitter keeps passing its signal during Replay Mod playback (monitors fed through it showed static while a recording was playing).
 - 0.19.10: port sources are followed through the cable itself (cell by cell) when the game's cached link points at a cable cell —

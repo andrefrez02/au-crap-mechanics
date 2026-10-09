@@ -19,6 +19,7 @@ M_CANO = "eee58eee2f7506543b6195f2da5f1869"   # malha do SC_PipeQuarter (cano de
 # 0,21 x 0,086 em z -0,042 olhando pra +Z) + RendererText3D (texto que o jogador digita clicando nela; material do texto do jogo)
 M_ETIQUETA = "80dc220d70857b34f84abe01cacde181"
 MAT_TEXTO = "490dba756006ead4da58f156d65c8274"
+MAT_VIDRO = "b7c8a2235f0e12b49a2fb45329a188a4"   # 0.20.0: material do vidro do jogo (SC_GlassA: Glass, layer 15) — barra-guia do pistao
 S_ETIQUETA, S_TEXTO3D, S_FILTRO = 2117130703, 1760814809, 833806775
 # direcao da porta -> rotacao (graus) do marcador (mesh olha pra +Z)
 ROT_DIR = {0: (0, 90, 0), 1: (0, -90, 0), 2: (-90, 0, 0), 3: (90, 0, 0), 4: (0, 0, 0), 5: (0, 180, 0)}
@@ -101,6 +102,7 @@ def prefab(nome, bounds, massa, areas, portas, colisor=True, escala_corpo=None, 
     jogo (EPC_Actionable_Lever eixo vertical, volta pro meio, + capsula de clique relativa a ela). O plugin le o valor.
     colisor_caixa (0.11.1): (offset, escala) da caixa de colisao, quando nao e' o bloco inteiro."""
     PORTAS_ICONE[nome] = list(portas) + ([(cano_icone, 0, 9)] if cano_icone else [])
+    AREAS_COLA[nome] = [vs for _, vs in areas]   # 0.22.5: entram na casca do _boundsCollider (a face de cola fica na borda)
     proprio = REF.get(nome)
     raiz_go, raiz_tr, raiz_mb = fid(nome, "go"), fid(nome, "tr"), fid(nome, "mb")
     filhos = []   # (go, tr, mb, nome, layer, texto_mb, pos, rot_euler, escala)
@@ -123,7 +125,9 @@ def prefab(nome, bounds, massa, areas, portas, colisor=True, escala_corpo=None, 
                 "  _specular:\n    _strength: 0\n    _smoothness: 0\n  _hasHeat: 1\n  _spaceshipColor: 0\n")
 
     for i, (pos, d, t) in enumerate(portas):
-        filho("porta%d" % i, NOME_PORTA[t] + ("" if i == 0 else " %d" % i), 0, S_REND, rend(pos, ROT_DIR[d], (1, 1, 1), malha_porta(t)), pos, ROT_DIR[d])
+        r_p = rend(pos, ROT_DIR[d], (1, 1, 1), malha_porta(t))
+        # 0.22.2: porta de passagem (tipo 5) = plugue Port Unset do jogo; o plugin troca a malha pela do cabo ligado (Anel.cs), como o Frame With Ports
+        filho("porta%d" % i, NOME_PORTA[t] + ("" if i == 0 else " %d" % i), 0, S_REND, r_p, pos, ROT_DIR[d])
     alavancas = alavancas or {}; alavs = []   # (go, tr, rend, lev, caps, filt, nome, pos, rot, malha, tipo, rot_min, rot_max, capsula)
     for i, ex in enumerate(list(enfeites) + (list(proprio[3]) if proprio and len(proprio) > 3 else [])):   # malhas extras (0.11.0: haste/cabeca do pistao)
         pos, rot, escala, malha = ex[:4]; suf = ex[4] if len(ex) > 4 else None
@@ -133,6 +137,9 @@ def prefab(nome, bounds, massa, areas, portas, colisor=True, escala_corpo=None, 
                           "Actionable Lever" + ("" if len(alavs) == 0 else " %d" % len(alavs)), pos, rot, malha, tipo, rmin, rmax, caps))
             continue
         r_ex = rend(pos, rot, escala, malha)
+        if suf == "Guia":   # 0.20.0: barra-guia do pistao = material de VIDRO do jogo (translucido), layer do vidro, cor alpha 1 (tingivel pelo plugin)
+            r_ex = r_ex.replace("_material: {fileID: 2100000, guid: %s, type: 2}\n  _layer: 0\n  _color: {r: 0, g: 0, b: 0, a: 0}\n" % MAT,
+                                "_material: {fileID: 2100000, guid: %s, type: 2}\n  _layer: 15\n  _color: {r: 0.3, g: 0.9, b: 0.4, a: 1}\n" % MAT_VIDRO, 1)
         if suf == "led":
             r_ex = r_ex.replace("  _specular:\n    _strength: 0\n", "  _specular:\n    _strength: %s\n" % LED_MARCA, 1)   # 0.19.2: marca do LED (o plugin acha pelo specular)
             # 0.19.8: igual o indicador do transmitter do jogo — alpha 1 (com alpha 0 o renderer nasce SEM CRPRendererMemory_Color e o plugin
@@ -141,8 +148,8 @@ def prefab(nome, bounds, massa, areas, portas, colisor=True, escala_corpo=None, 
         mb_ex = filho("enfeite%d" % i, "Renderer Extra" + ("" if i == 0 else " %d" % i), 0, S_REND, r_ex, pos, rot, escala)
         if suf in pintar_extras: pintaveis_extra = list(pintaveis_extra) + [mb_ex]   # 0.12.1: extra pintavel (placas do turret)
     if malhas_jogo:   # 0.18.0: corpo/pintavel = malhas do jogo (marcadores religados em runtime) — o modelo proprio fica so no icone
-        um = (1, 1, 1)
-        filho("corpo", "Renderer", 0, S_REND, rend((0, 0, 0), (0, 0, 0), um, malhas_jogo[0]), escala=um)
+        um = (1, 1, 1)   # 0.22.2: corpo None = malha propria (LRT: antena + globo) com a base pintavel do jogo
+        filho("corpo", "Renderer", 0, S_REND, rend((0, 0, 0), (0, 0, 0), um, malhas_jogo[0] or (proprio[0] if proprio else M_CORPO)), escala=um)
         pint = filho("pintavel", "Paintable", 0, S_REND, rend((0, 0, 0), (0, 0, 0), um, malhas_jogo[1]), escala=um)
     elif proprio:
         um = (1, 1, 1)
@@ -153,6 +160,7 @@ def prefab(nome, bounds, massa, areas, portas, colisor=True, escala_corpo=None, 
             filho("corpo", "Renderer", 0, S_REND, rend((0, 0, 0), (0, 0, 0), esc, M_CORPO), escala=esc)
         pint = filho("pintavel", "Paintable", 0, S_REND, rend((0, 0, 0), (0, 0, 0), esc, M_PINTAVEL), escala=esc)
     for i, tx in enumerate(textos):   # 0.18.2: texto 3D do jogo so de mostrar (o plugin escreve) — numero do canal do Long Range Transmitter
+        if tx.get("pintavel"): pintaveis_extra = list(pintaveis_extra) + [fid(nome, "texto%d" % i, "mb")]   # 0.22.2: igual o numero do canal do transmitter do jogo
         filho("texto%d" % i, tx.get("nome", "RendererText3D"), 7, S_TEXTO3D,
               "  _position:\n    x: %s\n    y: %s\n    z: %s\n" % tuple(fmt(a) for a in tx["pos"]) +
               "  _rotation:\n    x: %s\n    y: %s\n    z: %s\n" % tuple(fmt(a) for a in tx.get("rot", (0, 0, 0))) +
@@ -209,6 +217,7 @@ def prefab(nome, bounds, massa, areas, portas, colisor=True, escala_corpo=None, 
         ets.append(dict(e=e, go=fid(nome, tag, "go"), tr=fid(nome, tag, "tr"), act=fid(nome, tag, "act"), rend=fid(nome, tag, "rend"),
                         col=fid(nome, tag, "col"), filt=fid(nome, tag, "filt"), tgo=fid(nome, tag, "tgo"), ttr=fid(nome, tag, "ttr"), txt=fid(nome, tag, "txt"),
                         nomego="Actionable Label" + ("" if k == 0 else " %d" % k)))
+    for et in ets: pintaveis_extra = list(pintaveis_extra) + [et["act"], et["txt"]]   # 0.22.1: igual ao transmitter do jogo (o label pinta a chapa, o texto e' pintavel)
     go(raiz_go, [raiz_tr, raiz_mb], 7, nome)
     for f in filhos: go(f[0], [f[1], f[2]], f[4], f[3])
     for a in alavs: go(a[0], [a[1], a[2], a[3], a[4], a[5]], 0, a[6])
@@ -241,6 +250,19 @@ def prefab(nome, bounds, massa, areas, portas, colisor=True, escala_corpo=None, 
             pp = tuple(fmt(x) for x in pos)
             mb(a_lev, a[0], S_BOTAO, "  _lookAt: 0\n  _buttonTransformOnPos:\n    x: %s\n    y: %s\n    z: %s\n" % pp + "  _buttonTransformOnRot:\n    x: %s\n    y: %s\n    z: %s\n" % tuple(fmt(x) for x in rmax) +
                "  _buttonTransformOffPos:\n    x: %s\n    y: %s\n    z: %s\n" % pp + "  _buttonTransformOffRot:\n    x: %s\n    y: %s\n    z: %s\n" % tuple(fmt(x) for x in rmin))
+            c_off, c_rot, c_esc = caps
+            mb(a_caps, a[0], S_COL, "  _offset:\n    x: %s\n    y: %s\n    z: %s\n  _rotation:\n    x: %s\n    y: %s\n    z: %s\n  _scale:\n    x: %s\n    y: %s\n    z: %s\n  _bevelRadius: 0\n" % (tuple(fmt(x) for x in c_off) + tuple(fmt(x) for x in c_rot) + tuple(fmt(x) for x in c_esc)))
+            mb(a_filt, a[0], S_FILTRO, "  _collisionFilterType: 0\n  _materialType: 0\n")
+            continue
+        if tipo == "switch":
+            # 0.23.0: ActionableToggle do jogo (mesmo script do Input Switch do Datameter): duas poses da haste; o valor (0/1) sai
+            # no ActionableData da entity, lido pelo plugin (Juntas.SwitchAngulo). caps = (offset, rotacao, escala) da caixa de clique
+            pp = tuple(fmt(x) for x in pos)
+            mb(a_lev, a[0], S_TOGGLE, "  _drawUIValue: 2\n  _buttonTransformOnPos:\n    x: %s\n    y: %s\n    z: %s\n" % pp +
+               "  _buttonTransformOnRot:\n    x: %s\n    y: %s\n    z: %s\n  _meshOn: {fileID: 0}\n" % tuple(fmt(x) for x in rmax) +
+               "  _buttonTransformOffPos:\n    x: %s\n    y: %s\n    z: %s\n" % pp +
+               "  _buttonTransformOffRot:\n    x: %s\n    y: %s\n    z: %s\n  _meshOff: {fileID: 0}\n" % tuple(fmt(x) for x in rmin) +
+               "  _defaultValue: 1\n  _canGoOn: 1\n  _canGoOff: 1\n")
             c_off, c_rot, c_esc = caps
             mb(a_caps, a[0], S_COL, "  _offset:\n    x: %s\n    y: %s\n    z: %s\n  _rotation:\n    x: %s\n    y: %s\n    z: %s\n  _scale:\n    x: %s\n    y: %s\n    z: %s\n  _bevelRadius: 0\n" % (tuple(fmt(x) for x in c_off) + tuple(fmt(x) for x in c_rot) + tuple(fmt(x) for x in c_esc)))
             mb(a_filt, a[0], S_FILTRO, "  _collisionFilterType: 0\n  _materialType: 0\n")
@@ -296,6 +318,14 @@ def prefab(nome, bounds, massa, areas, portas, colisor=True, escala_corpo=None, 
 MOTORES = [("P", (0.5, 0.5, 0.5), (0.5, 1, 0.5), 160, 200), ("M", (1, 1, 1), (1, 1, 1), 730, 730), ("G", (1.5, 1.5, 1.5), (1.5, 1.5, 1.5), 1450, 1450)]
 REF = {}            # nome -> (guid malha fixa, guid malha pintavel, guid icone), preenchido pelo gen_meshes
 PORTAS_ICONE = {}   # nome -> portas (+ boca de cano) pro icone
+AREAS_COLA = {}     # 0.22.5: nome -> poligonos das areas de cola (JointsArea)
+# 0.22.5 (Andre: "ve como o jogo faz ... frame curveds tem essas 'orelhas' no volume"): EPC_SpaceshipComponent._boundsCollider = malha;
+# o jogo (EPC_SpaceshipComponent.CreateBaseColliderBAR) faz a CASCA CONVEXA dela (Core.getOrCreateConvexCollider) e usa como volume
+# ocupado na garagem (GarageGrabber.CanMountComponentToGaragePos testa contra esses colisores); sem malha = a caixa inteira do _bounds.
+# Aqui: casca convexa do modelo (corpo + pintavel) + as areas de cola, pras pecas redondas/irregulares liberarem os cantos.
+# (motores ficam de fora por enquanto: a cola deles e' as 6 faces inteiras, entao a casca vira a propria caixa — precisa decidir onde a cola encolhe)
+BOUNDS_BLOCOS = ["SC_MotorP", "SC_MotorM", "SC_MotorG", "SC_MotorCombP", "SC_MotorCombM", "SC_MotorCombG", "SC_TurretSeat", "SC_TanqueVerde", "SC_TanqueAzul",
+                 "SC_RodaSportsP", "SC_RodaSportsM", "SC_RodaSportsG", "SC_RodaOffroadP", "SC_RodaOffroadM", "SC_RodaOffroadG"]   # 0.22.6: + motores (cola so embaixo) e turret + ["SC_RodaSportsP", "SC_RodaSportsM", "SC_RodaSportsG", "SC_RodaOffroadP", "SC_RodaOffroadM", "SC_RodaOffroadG"]
 
 # rodas (Andre, form3 + 25/09): sports = leve, atrito 1,5; offroad = um pouco mais pesada, atrito 2,2 (420 kg derrubava o bearing); P/M/G = 1 / 1,5 / 2 m de diametro, 0,5 m de largura
 RODAS = [("SC_RodaSportsP", 1.0, 40), ("SC_RodaSportsM", 1.5, 80), ("SC_RodaSportsG", 2.0, 140),
@@ -305,25 +335,70 @@ RODAS = [("SC_RodaSportsP", 1.0, 40), ("SC_RodaSportsM", 1.5, 80), ("SC_RodaSpor
 def blocos():
     r = {}
     # pistoes: quarto de bloco, face de baixo cola (Normal), face de cima solta (Decoupler); entrada + energia na face +X
-    for curso in (2, 4, 8):
-        fs = dict(faces((0.5, 0.5, 0.5)))
-        r["SC_Pistao%d" % curso] = prefab("SC_Pistao%d" % curso, (0.5, 0.5, 0.5), 80, [(0, fs["-Y"]), (3, fs["+Y"])],
-                                           [((0.1875, -0.1875, 0.1875), 0, 0), ((0.1875, -0.1875, -0.1875), 0, 2)],
-                                           alavancas={"Knob": ("knob", (0, 0, -150), (0, 0, 150), (0.028, 0, 1.0, (0, 0, 0.007)))})   # 0.19.2: knob do curso (continuo, padrao 100 %); 0.19.3: gira em Z (painel +Z)
+    # 0.22.5 (Andre: "pode remover todos itens antigos que sairam do inventario"): os pistoes 2/4/8 e o Piston End cubo sairam
+    fs = dict(faces((0.5, 0.5, 0.5)))
+    # 0.20.0 (Andre: "remove os tiers do pistao, deixa so um pistao com nivel 'infinito'"): pistao unico (ate 8 m; com o Piston End
+    # na frente o curso e' a distancia ate ele) + Mini Piston (0,25 m, ate 4 m). Os 2/4/8 continuam registrados (BPs antigos), escondidos
+    # do inventario (Espelhos.cs). Renderer extra "Guia" (vidro do jogo): o plugin estica com o H da garagem.
+    # 0.22.0 (Andre: anel coletor): portas de PASSAGEM sem tipo (tipo 10) na face -Z (oposta ao knob) — 4 no bloco de 0,5 (fileira de
+    # baixo), 1 no mini (celula +X/-Y) — sempre as ULTIMAS da lista (o plugin: indice >= total - Anel.NLaterais). O anel (SC_SlipRing /
+    # SC_MiniSlipRing) na peca que se move tem as mesmas portas; o plugin liga porta i <-> porta i (Anel.cs).
+    PASSAGEM_4 = [((x, -0.1875, -0.1875), 5, 5) for x in (-0.1875, -0.0625, 0.0625, 0.1875)]   # 6,25 cm pra dentro da face (centro da celula), como todas as portas. 0.22.1 (Andre): tipo 5 = plugue do Frame Quarter With Ports (cinza sem cabo, cor do cabo quando conecta)
+    PASSAGEM_1 = [((0.0625, -0.0625, -0.0625), 5, 5)]
+    # 0.22.1 (Andre: portas em L na mesma celula nao conectam): as de passagem do pistao vao pra face -X (oposta a entrada/energia)
+    PASSAGEM_4X = [((-0.1875, -0.1875, z), 1, 5) for z in (-0.1875, -0.0625, 0.0625, 0.1875)]
+    PASSAGEM_1X = [((-0.0625, -0.0625, 0.0625), 1, 5)]
+    # 0.23.0 (Andre: "ele quer saber a rotacao atual do bearing pra fazer um calculo ... adiciona uma saida de dados"): saida do
+    # angulo, SEMPRE a ULTIMA da lista (as de passagem continuam no mesmo indice dos BPs antigos; Anel.NSaidas desconta esta).
+    # Bearing: celula +X da fileira de baixo da face do knob (+Z). Mini: as duas celulas livres sao do lado -X, entao vai na face -Z,
+    # ao lado da de passagem.
+    SAIDA_ANG = [((0.1875, -0.1875, 0.1875), 4, 1)]
+    SAIDA_ANG_M = [((-0.0625, -0.0625, -0.0625), 5, 1)]
+    SW_BEARING = {"switch": ("switch", (20, 0, 0), (-20, 0, 0), ((0, 0, 0.012), (0, 0, 0), (0.05, 0.05, 0.03)))}
+    SW_MINI = {"switch": ("switch", (20, 0, 0), (-20, 0, 0), ((0, 0, 0.010), (0, 0, 0), (0.043, 0.043, 0.026)))}
+    r["SC_Pistao"] = prefab("SC_Pistao", (0.5, 0.5, 0.5), 80, [(0, fs["-Y"]), (3, fs["+Y"])],
+                            [((0.1875, -0.1875, 0.1875), 0, 0), ((0.1875, -0.1875, -0.1875), 0, 2)] + PASSAGEM_4X,
+                            alavancas={"Knob": ("knob", (0, 0, -150), (0, 0, 150), (0.028, 0, 1.0, (0, 0, 0.007)))})
+    fm = dict(faces((0.25, 0.25, 0.25)))
+    r["SC_MiniPistao"] = prefab("SC_MiniPistao", (0.25, 0.25, 0.25), 20, [(0, fm["-Y"]), (3, fm["+Y"])],
+                                [((0.0625, -0.0625, 0.0625), 0, 0), ((0.0625, -0.0625, -0.0625), 0, 2)] + PASSAGEM_1X,
+                                alavancas={"Knob": ("knob", (0, 0, -150), (0, 0, 150), (0.028, 0, 1.0, (0, 0, 0.007)))})
+    # 0.22.4 (Andre: "faz igual os blocos de logica que e' um 2x1x2"): Slip Ring = placa 0,5 x 0,125 x 0,5 (igual o mini painel solar),
+    # Mini Slip Ring = placa 0,25 x 0,125 x 0,25; colam nas 6 faces; 4 portas de passagem, 2 em cada lateral oposta (1-2 na -X, 3-4 na +X).
+    # Qualquer anel funciona em qualquer junta. Piston End em placa nos mesmos 2 tamanhos (o SC_PistaoPonta cubo continua pros BPs antigos,
+    # escondido do inventario).
+    for nome, w, massa in (("SC_SlipRing", 0.5, 4), ("SC_MiniSlipRing", 0.25, 1.5)):
+        bb = (w, 0.125, w); cx = w / 2 - 0.0625
+        r[nome] = prefab(nome, bb, massa, [(0, v) for _, v in faces(bb)],
+                         [((-cx, 0, z), 1, 5) for z in (-0.0625, 0.0625)] + [((cx, 0, z), 0, 5) for z in (-0.0625, 0.0625)])
+    for nome, w, massa in (("SC_PistaoFim", 0.5, 5), ("SC_MiniPistaoFim", 0.25, 2)):
+        bb = (w, 0.125, w)
+        r[nome] = prefab(nome, bb, massa, [(0, v) for _, v in faces(bb)], [])
+    # 0.20.0: Mini Bearing / Mini Gyro Bearing (0,25 m): uma entrada so, na face de baixo. 0.20.1 (Andre: "entrada do mini bearing ta no
+    # lugar errado ... joga pra uma das pontas"): o centro do bloco cai na LINHA da grade de portas, nao numa celula — a entrada fica na
+    # celula +X/+Z (a versao M espelha pra -X)
+    r["SC_MiniBearing"] = prefab("SC_MiniBearing", (0.25, 0.25, 0.25), 10, [(0, fm["-Y"]), (3, fm["+Y"])], [((0.0625, -0.0625, 0.0625), 3, 10)] + PASSAGEM_1 + SAIDA_ANG_M,
+                                 alavancas=dict({"Knob": ("knob", (0, 0, -150), (0, 0, 150), (0.028, 0, 0.1, (0, 0, 0.007)))}, **{"Switch": SW_MINI["switch"]}))
+    r["SC_MiniGyroBearing"] = prefab("SC_MiniGyroBearing", (0.25, 0.25, 0.25), 10, [(0, fm["-Y"]), (3, fm["+Y"])], [((0.0625, -0.0625, 0.0625), 3, 10)] + PASSAGEM_1 + SAIDA_ANG_M,
+                                     alavancas=dict({"Knob": ("knob", (0, 0, -150), (0, 0, 150), (0.028, 0, 0.1, (0, 0, 0.007)))}, **{"Switch": SW_MINI["switch"]}))
     # bearing: quarter 0,5 m (a grade dos frames anda de 0,5 em 0,5). Face de baixo cola (Normal), face de cima solta
     # (Decoupler) e gira em torno do +Y. 4 entradas nos 4 quadradinhos do centro da face de baixo, olhando pra baixo
     # (casam com as portas do Frame Quarter With Ports).
     fs = dict(faces((0.5, 0.5, 0.5)))
     r["SC_Bearing"] = prefab("SC_Bearing", (0.5, 0.5, 0.5), 40, [(0, fs["-Y"]), (3, fs["+Y"])],
-                             [((x, -0.1875, z), 3, 10) for x, z in ((-0.0625, -0.0625), (0.0625, -0.0625), (0.0625, 0.0625), (-0.0625, 0.0625))],
-                             alavancas={"Knob": ("knob", (0, 0, -150), (0, 0, 150), (0.028, 0, 0.1, (0, 0, 0.007)))})   # 0.19.2: knob do angulo do servo (continuo, padrao 0,1 = 45 graus); 0.19.3: gira em Z (painel +Z)   # 0.15.0: portas SEM TIPO (shaft = motor, dados = servo); 0.17.1: plugue meio laranja meio roxo (10)
+                             [((x, -0.1875, z), 3, 10) for x, z in ((-0.0625, -0.0625), (0.0625, -0.0625), (0.0625, 0.0625), (-0.0625, 0.0625))] + PASSAGEM_4 + SAIDA_ANG,
+                             alavancas=dict({"Knob": ("knob", (0, 0, -150), (0, 0, 150), (0.028, 0, 0.1, (0, 0, 0.007)))}, **{"Switch": SW_BEARING["switch"]}))   # 0.19.2: knob do angulo do servo (continuo, padrao 0,1 = 45 graus); 0.19.3: gira em Z (painel +Z)   # 0.15.0: portas SEM TIPO (shaft = motor, dados = servo); 0.17.1: plugue meio laranja meio roxo (10)
+    # 0.19.14: Gyro Bearing — mesmo bloco, o servo mira sozinho pra manter o lado de cima nivelado (Giro.cs); sinal = deslocamento
+    r["SC_GyroBearing"] = prefab("SC_GyroBearing", (0.5, 0.5, 0.5), 40, [(0, fs["-Y"]), (3, fs["+Y"])],
+                                 [((x, -0.1875, z), 3, 10) for x, z in ((-0.0625, -0.0625), (0.0625, -0.0625), (0.0625, 0.0625), (-0.0625, 0.0625))] + PASSAGEM_4 + SAIDA_ANG,
+                                 alavancas=dict({"Knob": ("knob", (0, 0, -150), (0, 0, 150), (0.028, 0, 0.1, (0, 0, 0.007)))}, **{"Switch": SW_BEARING["switch"]}))
     # motores: tamanho das Rechargeable Batteries do mesmo nivel (Andre, 25/09: os do thruster ficaram exagerados);
     # massa, consumo e forca continuam os dos Electric Thrusters. Cola nas 6 faces. Face +X, fileira de baixo:
     # entrada e energia no canto -Z (lado a lado, igual o thruster), saida no canto +Z.
     # 0.10.1 (form8): 4a porta = FREIO (entrada amarela, por ultimo na lista pra nao mexer nos indices das outras), ao lado da energia.
     for suf, b, _, m, _ in MOTORES:
         x, y, z0 = b[0] / 2 - 0.0625, -b[1] / 2 + 0.0625, -b[2] / 2 + 0.0625
-        r["SC_Motor" + suf] = prefab("SC_Motor" + suf, b, m, [(0, v) for _, v in faces(b)],
+        r["SC_Motor" + suf] = prefab("SC_Motor" + suf, b, m, [(0, dict(faces(b))["-Y"])],   # 0.22.6 (Andre: "a cola do motor e' so na parte debaixo da base")
                                      [((x, y, z0), 0, 0), ((x, y, z0 + 0.125), 0, 2), ((x, y, -z0), 0, 7), ((x, y, z0 + 0.25), 0, 0)])   # 0.15.0: saida = Drive Shaft (plasma)
     # motores a combustivel (0.8.0, form5; 0.8.1 pedido do Andre: tudo na face +X). Fileira de baixo da face +X:
     # [cano 0,25 x 0,25 no canto -Z] ... [entrada amarela][saida azul][energia vermelha no canto +Z]. No pequeno (4 casas)
@@ -347,7 +422,7 @@ def blocos():
         else:
             y1, y2, ze, zd = -hy + 0.1875, -hy + 0.0625, hz - 0.0625, hz - 0.1875   # ze = coluna longe do cano (+Z), zd = ao lado do cano
             portas = [((xp, y1, ze), 0, 0), ((xp, y2, ze), 0, 2), ((xp, y2, zd), 0, 7), ((xp, y1, zd), 0, 0)]
-        areas = [(0, fs[f]) for f in ("-Y", "+Y", "-X", "-Z", "+Z")] + [(0, resto1), (0, resto2), (1, cano)]
+        areas = [(0, fs["-Y"]), (1, cano)]   # 0.22.6: cola so embaixo (+ a boca do cano, que e' a area de cano)
         # (0.9.1: o soquete octogonal do cano faz parte da malha propria; a "boca" do Pipe Quarter nao e' mais posta)
         r["SC_MotorComb" + suf] = prefab("SC_MotorComb" + suf, b, m, areas, portas, script=S_PIPE,
                                          extra_raiz="  _fuelCapacity: 0.25\n  _fuelStabilityThreshold: 0\n  _fuelStabilitySpeed: 0.25\n")
@@ -355,13 +430,14 @@ def blocos():
     # que ja disparou. Entrada na face +X, canto de baixo (igual o pistao).
     fs = faces((0.5, 0.5, 0.5))
     # 0.10.2 (Andre): a entrada subiu pra faixa de cima (y 0,1875) — a boca redonda ficou limpa igual a do decoupler
-    r["SC_Recoupler"] = prefab("SC_Recoupler", (0.5, 0.5, 0.5), 60, [(0, v) for _, v in fs], [((0.1875, 0.1875, 0.1875), 0, 0)])
+    # 0.22.0: + 4 portas de passagem (anel coletor) na faixa de cima da face -X (oposta a entrada); o anel vai colado no decoupler onde ele engata
+    r["SC_Recoupler"] = prefab("SC_Recoupler", (0.5, 0.5, 0.5), 60, [(0, v) for _, v in fs], [((0.1875, 0.1875, 0.1875), 0, 0)] + [((-0.1875, 0.1875, z), 1, 5) for z in (-0.1875, -0.0625, 0.0625, 0.1875)])
     # beacon: 0.11.2 = bloco de 0,25 igual o Wireless Transmitter (console em cunha, antena passando por cima do bloco), sem
     # etiqueta (Andre: "remove o action label de tudo"); cola nas 6 faces; porta de energia na face -X (o plugin cobra 5 P/s e so
     # mostra no radar com energia)
     import modelos_v2 as mv
     # 0.17.0: knob do icone (3 posicoes: ondas / carro / nave) — o plugin le o valor e mostra o icone no display e no radar
-    r["SC_Beacon"] = prefab("SC_Beacon", (0.25, 0.25, 0.25), 6, [(0, v) for _, v in faces((0.25, 0.25, 0.25))], [BEACON_PORTA],
+    r["SC_Beacon"] = prefab("SC_Beacon", (0.25, 0.25, 0.25), 6, [(0, v) for _, v in faces((0.25, 0.25, 0.25))], BEACON_PORTAS,
                             alavancas={"Knob": ("knob", (0, -60, 0), (0, 60, 0), 0.03)},
                             colisor_caixa=[((0, -0.1, 0), (0.25, 0.05, 0.25)),                       # placa da base
                                            ((-0.11, -0.0375, 0), (0.03, 0.075, 0.25)),                # parede de tras (porta)
@@ -400,17 +476,21 @@ def blocos():
                                                   "  _indicatorTransformMinScale:\n    x: 0\n    y: 1\n    z: 1\n  _indicator3DTextRenderer: {fileID: 0}\n",
                                        colisor_caixa=[((0, 0, 0), (0.24, 0.5, 0.24))])
     bt = (0.25, 0.25, 0.25)
+    # 0.22.1: corpo/pintavel proprios (modelos_v2.radio: cunha + console + 1 antena + globo) — as malhas do jogo ficam so na tela, etiqueta e LED
+    # 0.22.2 (Andre: "arruma as cores do display e do label - label nao ta funcionando"): base pintavel do jogo de novo (malhas_jogo), so as
+    # antenas sao malha propria (antena da direita + globo); tela, etiqueta (componente + texto) e numero do canal na lista de pintaveis,
+    # igual o SC_WirelessTransmitter do jogo (fora dela a tela e a etiqueta ficavam brancas e o texto da etiqueta sumia)
     r["SC_LongRangeTransmitter"] = prefab("SC_LongRangeTransmitter", bt, 6, [(0, v) for nm, v in faces(bt) if nm != "+Y"], RADIO_PORTAS,
-                                          malhas_jogo=("6ae3c4a33e20464449e77878864deb30", "342554b462ef80d4ba88174d2bce0060"),
+                                          malhas_jogo=(None, "342554b462ef80d4ba88174d2bce0060"), pintar_extras=("tela",),
                                           enfeites=[((0, 0, 0), (0, 0, 0), (1, 1, 1), "7911e74b4b59f284db6e6cb279dce854", "led"),    # indicador (LED, 0.19.2)
-                                                    ((0, 0, 0), (0, 0, 0), (1, 1, 1), "ce137a3da99fda244ac2396b5fcd1c7c")],   # 0.18.1: tela (lisa, sem alavanca)
+                                                    ((0, 0, 0), (0, 0, 0), (1, 1, 1), "ce137a3da99fda244ac2396b5fcd1c7c", "tela")],   # 0.18.1: tela (lisa, sem alavanca)
                                           # 0.18.1 (Andre: "deixa ele liso e reto, pode deixar o label"): a chapa da frente e' a etiqueta do jogo
                                           etiqueta=dict(pos_quad=(0, 0, 0), rot_quad=(0, 0, 0), malha="a51a79546a18cfb429fe0a216ff80cb6",
                                                         col_off=(0, -0.04, -0.095), col_rot=(305.15, 0, 0), col_esc=(0.23, 0.01, 0.082),
                                                         pos_texto=(0, -0.042780206, -0.0918596), rot_texto=(305.15, 0, 0), max_len=10),
                                           # 0.18.2 (Andre: "a placa do display mostra o valor que ele ta recebendo pro canal"): o numero do canal,
                                           # igual o do Wireless Transmitter (mesma posicao/tamanho, alinhado a direita); 3 casas (o plugin escreve)
-                                          textos=[dict(nome="RendererText3D Channel", pos=RADIO_TEXTO, texto="  0", alin=2, valin=2, mono=1, escala=0.11)],
+                                          textos=[dict(nome="RendererText3D Channel", pos=RADIO_TEXTO, texto="  0", alin=2, valin=2, mono=1, escala=0.11, pintavel=True)],
                                           cor_padrao=3)   # 0.19.2 (Andre): mesma cor do Shaft Transmitter (DarkGray)
     PORTAS_ICONE["SC_DriveShaft"] = []
     PORTAS_ICONE["SC_MiniElectricThruster"] = []   # (copia do jogo: mini_propulsor())
@@ -558,7 +638,30 @@ def transmissor(nome, yaml, espelho=False):
         gm = hashlib.md5(("mecanica|prefab|" + nome + " M").encode()).hexdigest()
         t = re.sub(r"_mirroredVersion: \{fileID: (\d+), guid: \w+", lambda m: "_mirroredVersion: {fileID: %s, guid: %s" % (m.group(1), gm), t, count=1)
     t = re.sub(r"_iconTexture2D: \{fileID: \d+, guid: \w+", "_iconTexture2D: {fileID: 2800000, guid: %s" % REF[nome][2], t, count=1)
+    # 0.22.2: so o renderer das antenas vira malha propria (antena da direita + engrenagem); base pintavel, tela, etiqueta e LED = os do jogo
+    assert t.count("guid: 6ae3c4a33e20464449e77878864deb30, type: 2}") == 1, "malha do corpo do transmitter"
+    t = t.replace("guid: 6ae3c4a33e20464449e77878864deb30, type: 2}", "guid: %s, type: 2}" % REF[nome][0], 1)
     return t if t.endswith("\n") else t + "\n"
+
+
+def injetar_renderer(t, nome, tag, nomego, malha, pos=(0, 0, 0), espelho=False):
+    """0.22.1: poe um GameObject filho (Transform + EPC_Renderer com a malha) num prefab copiado do jogo, pendurado no Transform raiz
+    (o que tem m_Father 0). espelho: escala x -1 (a malha sai espelhada, igual o espelhar() faz com as nossas)."""
+    import re
+    m = re.search(r"--- !u!4 &(\d+)\nTransform:\n(?:  .*\n)*?  m_Children:((?:\n  - \{fileID: \d+\})*| \[\])\n  m_Father: \{fileID: 0\}", t)
+    assert m, "transform raiz nao achado em " + nome
+    raiz_tr = int(m.group(1))
+    g, tr_, mb_ = fid(nome, tag, "go"), fid(nome, tag, "tr"), fid(nome, tag, "mb")
+    esc = (-1, 1, 1) if espelho else (1, 1, 1)
+    docs = ("--- !u!1 &%d\nGameObject:\n  serializedVersion: 6\n  m_ObjectHideFlags: 0\n  m_CorrespondingSourceObject: {fileID: 0}\n  m_PrefabInstance: {fileID: 0}\n  m_PrefabAsset: {fileID: 0}\n  m_Component:\n  - component: {fileID: %d}\n  - component: {fileID: %d}\n  m_Layer: 0\n  m_Name: %s\n  m_TagString: Untagged\n  m_Icon: {fileID: 0}\n  m_NavMeshLayer: 0\n  m_StaticEditorFlags: 0\n  m_IsActive: 1\n" % (g, tr_, mb_, nomego) +
+            "--- !u!4 &%d\nTransform:\n  serializedVersion: 2\n  m_ObjectHideFlags: 0\n  m_CorrespondingSourceObject: {fileID: 0}\n  m_PrefabInstance: {fileID: 0}\n  m_PrefabAsset: {fileID: 0}\n  m_GameObject: {fileID: %d}\n  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}\n  m_LocalPosition: %s\n  m_LocalScale: %s\n  m_ConstrainProportionsScale: 0\n  m_Children: []\n  m_Father: {fileID: %d}\n  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}\n" % (tr_, g, v3(pos), v3(esc), raiz_tr) +
+            "--- !u!114 &%d\nMonoBehaviour:\n  m_ObjectHideFlags: 0\n  m_CorrespondingSourceObject: {fileID: 0}\n  m_PrefabInstance: {fileID: 0}\n  m_PrefabAsset: {fileID: 0}\n  m_GameObject: {fileID: %d}\n  m_Enabled: 1\n  m_EditorHideFlags: 0\n  m_Script: {fileID: %d, guid: %s, type: 3}\n  m_Name: \n  m_EditorClassIdentifier: \n" % (mb_, g, S_REND, G) +
+            "  _position:\n    x: %s\n    y: %s\n    z: %s\n  _rotation:\n    x: 0\n    y: 0\n    z: 0\n  _scale:\n    x: %s\n    y: %s\n    z: %s\n" % (tuple(fmt(a) for a in pos) + tuple(fmt(a) for a in esc)) +
+            "  _mesh: {fileID: 4300000, guid: %s, type: 2}\n  _submeshID: 0\n  _material: {fileID: 2100000, guid: %s, type: 2}\n  _layer: 0\n  _color: {r: 0, g: 0, b: 0, a: 0}\n  _specular:\n    _strength: 0\n    _smoothness: 0\n  _hasHeat: 1\n  _spaceshipColor: 0\n" % (malha, MAT))
+    filhos = m.group(2)
+    novo_filhos = ("\n  - {fileID: %d}" % tr_) if filhos.strip() == "[]" else filhos + "\n  - {fileID: %d}" % tr_
+    t = t[:m.start(2)] + novo_filhos + t[m.end(2):]
+    return (t if t.endswith("\n") else t + "\n") + docs, mb_
 
 
 # 0.18.0 (Andre: "uma versao pequena de algum foguete, do tamanho de um frame quarter ou um pouco mais alto"; escolheu o propulsor
@@ -727,6 +830,9 @@ def solar_mini(nome, yaml):
             if g == "524c7b0ae261a9244b97246a5799c9b4":   # porta de energia: pra casa do canto
                 p0 = v3("_position").search(d); z0 = float(p0.group(6))
                 d = poe(d, "_position", (-0.1875, 0, 0.1875 if z0 > 0 else -0.1875))
+            elif g in ("fe00b5509a5a3094493c4f4ab77c0e9d", "64708f33bff0c2745bf70df3270e39be"):
+                # 0.22.5: corpo (celulas) e pintavel (bandeja/borda/cantoneiras) = modelo proprio (modelos_v2.solar_mini), sem esticar
+                d = d.replace("guid: %s, type: 2}" % g, "guid: %s, type: 2}" % (REF[nome][0] if g == "fe00b5509a5a3094493c4f4ab77c0e9d" else REF[nome][1]), 1)
             else:
                 d = poe(d, "_scale", (fx, 1, fz))
         elif sc == S_COL:
@@ -734,6 +840,8 @@ def solar_mini(nome, yaml):
         novos.append(d)
     t = "\n--- ".join(novos)
     t = re.sub(r"m_Name: SC_SolarPanel\n", "m_Name: %s\n" % nome, t, count=1)
+    # 0.22.2 (Andre: "o 'ferrinho' ali tem meio que 'cobrir' a porta"): no painel do jogo a porta fica embaixo do suporte do canto; escalado
+    # (x 0,5 / z 0,25) o suporte encolheu e saiu de cima da porta (que fica na casa da grade). Caixa propria pintavel em volta de cada porta.
     return t if t.endswith("\n") else t + "\n"
 
 
@@ -742,8 +850,12 @@ def solar_mini(nome, yaml):
 VOLANTE_PORTAS = [((0.0625, -0.1875, 0.1875), 4, 1)]   # 0.19.3 (Andre): UMA saida, na face de tras (+Z) da caixinha, na celula da ponta
 PEDAL_PORTAS = [((-0.1875, -0.1875, 0.1875), 4, 1)]   # 0.12.1: uma saida so (-1 esquerdo .. +1 direito), parede de tras; 0.19.2 (Andre): na celula do canto
 BEACON_PORTA = ((-0.0625, -0.0625, 0.0625), 1, 2)
+# 0.20.0 tinha uma entrada de dados aqui (liga/desliga o beacon); desfeito na mesma noite (Andre lembrou do Power Blocker do jogo).
+# 0.19.14: o repo ainda estava com a porta a mais — voltou pra so a energia (igual ao bundle que esta no jogo desde a v65).
+BEACON_PORTAS = [BEACON_PORTA]
 S_ALAVANCA, S_CAPSULA, S_DOUBLE = -1362781425, 1452482761, -1393867716   # EPC_Actionable_Lever (joystick), DOTSColliderCapsule, EPC_Actionable_DoubleLever (alavanca comum)
 S_KNOB = 1996836204   # 0.17.0: EPC_Actionable_Knob
+S_TOGGLE = 762861932   # 0.23.0: EPC_Actionable_Toggle (switch de 2 posicoes: Input Switch do Datameter, botao de re do mini propulsor)
 S_SEAT, S_COL_ESFERA, S_BOTAO = 738011195, -581501808, 98624692   # + EPC_Actionable_Button   # EPC_SCSeat (raiz do seat do jogo), DOTSColliderSphere (_center, _radius)
 
 
@@ -872,11 +984,11 @@ def _malha(d, guid):
 # portas x -> -x e direcao +X <-> -X, areas de cola x -> -x. As Transforms ficam (o jogo le os dados dos componentes).
 # O link base -> M e' feito em runtime pelo plugin (Espelhos.cs) com as instancias registradas no Components Framework.
 # Os que ja sao simetricos (ou dependem de pecas do jogo) apontam pra si mesmos: pedal, volante, turret seat, tanques.
-ESPELHAR = ["SC_Pistao2", "SC_Pistao4", "SC_Pistao8", "SC_Bearing", "SC_MotorP", "SC_MotorM", "SC_MotorG",
+ESPELHAR = ["SC_Pistao", "SC_MiniPistao", "SC_MiniBearing", "SC_Bearing", "SC_MotorP", "SC_MotorM", "SC_MotorG",   # 0.20.0: + pistao unico, minis
             "SC_MotorCombP", "SC_MotorCombM", "SC_MotorCombG", "SC_Recoupler", "SC_Differential", "SC_ShaftReverser",
             "SC_SingleCellBattery", "SC_LongRangeTransmitter", "SC_SolarPanelMini", "SC_Beacon"]   # 0.19.0; 0.19.2: beacon + [n for n, _, _ in RODAS]
 S_COL_CONV_ = -1838397108
-NAO_ESPELHAR = ["ce137a3da99fda244ac2396b5fcd1c7c"]   # malhas que a versao M mantem (tela do Wireless Transmitter, igual a M do jogo)
+NAO_ESPELHAR = ["ce137a3da99fda244ac2396b5fcd1c7c", M_IND_BATERIA]   # malhas que a versao M mantem (tela do Wireless Transmitter, igual a M do jogo; 0.19.14: barra de carga da bateria — o jogo escala x de 0 a 1 a partir da posicao, espelhada ia parar fora do bloco, igual a M do jogo nao espelha)
 
 
 def _neg(v):
@@ -945,6 +1057,35 @@ if __name__ == "__main__":
     import hashlib
     for nome in ESPELHAR:
         if nome in todos: todos[nome + " M"] = espelhar(todos[nome], nome)
+    # 0.22.5: _boundsCollider = casca convexa do modelo + areas de cola (normal e espelhada)
+    import numpy as np
+    from scipy.spatial import ConvexHull
+    from geo import Malha
+    mods = gen_meshes.modelos(PORTAS_ICONE)
+    cont = os.path.dirname(os.path.abspath(pasta.rstrip("/\\")))
+    for nome in BOUNDS_BLOCOS:
+        if nome not in todos or nome not in mods: print("bounds: falta", nome); continue
+        import modelos_v2
+        ci = modelos_v2.com_extras(mods[nome]); pts = [v for m in (ci, mods[nome][1]) for t in m.tris for v in t[:3]]
+        if nome.startswith("SC_Tanque"): pts += [v for poly in TANQUE_COLA for v in poly]
+        else: pts += [v for poly in AREAS_COLA.get(nome, []) for v in poly]
+        P = np.array(pts, float)
+        if nome == "SC_TurretSeat":
+            # 0.22.7 (Andre: portas laterais da base inacessiveis): a casca ia da quina de baixo da base (x 0,75) ate a placa (x 1,25) e
+            # cobria 25% da celula do cabo ao lado da base. Na faixa da base a casca comeca em x +-0,625: a celula do cabo fica livre e a
+            # borda da base continua 1/3 dentro (nada monta ali). So o volume muda; modelo, cola e portas ficam iguais.
+            m = P[:, 1] < -1.1; P[m, 0] = np.clip(P[m, 0], -0.625, 0.625)
+        for suf, sx in (("", 1.0), (" M", -1.0)):
+            Q = P * np.array([sx, 1, 1]); hull = ConvexHull(Q); m = Malha(); cen = Q.mean(axis=0)
+            for a, b, c in hull.simplices: m.tri(Q[a], Q[b], Q[c], (128, 128, 128, 0), centro=cen)
+            n = nome.replace(" ", "") + ("_BoundsM" if sx < 0 else "_Bounds")
+            open(os.path.join(cont, "Meshes", n + ".asset"), "w", newline="\n").write(gen_meshes.asset(n, m))
+            open(os.path.join(cont, "Meshes", n + ".asset.meta"), "w", newline="\n").write(gen_meshes.META_MESH % gen_meshes.guid(n))
+            alvo = nome + suf
+            if alvo not in todos: continue
+            assert todos[alvo].count("_boundsCollider: {fileID: 0}") == 1, "boundsCollider em " + alvo
+            todos[alvo] = todos[alvo].replace("_boundsCollider: {fileID: 0}", "_boundsCollider: {fileID: 4300000, guid: %s, type: 2}" % gen_meshes.guid(n), 1)
+        print("  %s: bounds = casca convexa (%d faces)" % (nome, len(ConvexHull(P).simplices)))
     # 0.12.15: malhas do jogo -> marcadores proprios (o plugin religa pela malha do jogo em runtime)
     for nome in list(todos):
         t = todos[nome]

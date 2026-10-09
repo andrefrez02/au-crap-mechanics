@@ -225,8 +225,9 @@ namespace Mecanica
             string nome = NomeBloco(em, dono);
             caminho += via;
             if (temCabo && !soEixo) { AvisoEixo(m.nome + " " + m.bloco.Index + ": a game cable (not a Drive Shaft) is in the way to " + (nome.Length > 0 ? nome : "block " + dono.Index) + " — it does not transmit"); return; }
-            if (nome == "SC_Bearing")
+            if (nome == "SC_Bearing" || nome == "SC_GyroBearing" || nome == "SC_MiniBearing" || nome == "SC_MiniGyroBearing")   // 0.20.4 (Andre: "o mini bearing nao ta aceitando shaft"): so o SC_Bearing era reconhecido
             {
+                if (Anel.EhLateral(em, dono, fim, nome)) { AvisoEixo(m.nome + " " + m.bloco.Index + ": its shaft goes into a PASS-THROUGH port (slip ring) of the " + nome + " " + dono.Index + " — connect it to one of the ports underneath"); return; }   // 0.22.0
                 long kb = Ecs.K(dono);
                 if (!acionados.TryGetValue(kb, out var ac)) { ac = new Acionado { caminho = caminho + " -> bearing" + (sentido < 0 ? " (reversed)" : "") }; acionados[kb] = ac; }
                 for (int i = 0; i < ac.ms.Count; i++) if (ac.ms[i] == m && ac.ss[i] == sentido) return;   // mesmo caminho de novo

@@ -151,7 +151,9 @@ namespace Mecanica
         {
             var m = (Ecs.TemC(em, e, tiPTM) ? (float4x4*)em.GetComponentDataRawRW(e, tiPTM) : null);
             if (m == null) return;
-            *m = float4x4.Scale(new float3 { x = 1f, y = sy, z = 1f });
+            // 0.19.14: mantem a escala X/Z que ja estiver na matriz (a versao M e' escala -1 em X; antes virava +1)
+            float sx = m->c0.x, sz = m->c2.z; if (System.Math.Abs(sx) < 1e-4f) sx = 1f; if (System.Math.Abs(sz) < 1e-4f) sz = 1f;
+            *m = float4x4.Scale(new float3 { x = sx, y = sy, z = sz });
         }
         public static unsafe string Componentes(EntityManager em, Entity e)
         {

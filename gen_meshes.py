@@ -276,8 +276,8 @@ def gerar_marcadores(content):
 # 0.19.2 (Andre: "as colisoes sao todas quadradas; no jogo muitas seguem o modelo e da pra passar cabo por uma quina"): colisores
 # convexos a partir do MODELO. O bloco e' cortado em fatias horizontais onde a secao muda muito (base larga x corpo redondo) e cada
 # fatia vira um casco convexo (scipy). Compostos: a base continua caixa, o corpo redondo deixa as quinas livres pros cabos.
-HULL_BLOCOS = ["SC_Bearing", "SC_MotorP", "SC_MotorM", "SC_MotorG", "SC_MotorCombP", "SC_MotorCombM", "SC_MotorCombG", "SC_Recoupler",
-               "SC_Differential", "SC_ShaftReverser", "SC_Pistao2", "SC_Pistao4", "SC_Pistao8",
+HULL_BLOCOS = ["SC_Bearing", "SC_GyroBearing", "SC_MotorP", "SC_MotorM", "SC_MotorG", "SC_MotorCombP", "SC_MotorCombM", "SC_MotorCombG", "SC_Recoupler",
+               "SC_Differential", "SC_ShaftReverser", "SC_Pistao", "SC_MiniPistao", "SC_MiniBearing", "SC_MiniGyroBearing", "SC_SlipRing", "SC_MiniSlipRing", "SC_PistaoFim", "SC_MiniPistaoFim",   # 0.20.0; 0.22.0/0.22.4: aneis e pontas
                "SC_Pedal", "SC_Volante", "SC_SingleCellBattery"]   # 0.19.3
 def _componentes(T):
     """T (n,3,3) -> lista de arrays de indices de triangulos ligados por vertices em comum (arredondados a 0,01 mm)."""

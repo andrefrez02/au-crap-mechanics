@@ -8,13 +8,17 @@ using Unity.Transforms;
 
 namespace Mecanica
 {
-    internal enum Tipo { Pistao, Bearing, Motor, Recoupler, Beacon, Alavancas, Torreta, Transmissao, Radio }
+    internal enum Tipo { Pistao, Bearing, Motor, Recoupler, Beacon, Alavancas, Torreta, Transmissao, Radio, Ponta }   // 0.20.0: Ponta = Piston End (so marca o fim do curso)
 
     /// <summary>Um pistao ou bearing dentro de uma nave lancada, e o joint de fisica que ele mantem.</summary>
     internal class Junta
     {
         public Entity bloco, vizinho, partA, partB, joint, joint2, joint3;
         public Tipo tipo; public float curso; public string nome;
+        // 0.20.0: esc = escala do bloco (1 = 0,5 m; 0,5 = Mini); meio = metade do lado; cursoMax = curso do prefab (8 / 4 m); com um
+        // Piston End alinhado na frente, curso = distancia ate ele e extBase = extensao da haste quando os frames do joint coincidem
+        // (a haste ja nasce esticada ate a ponta). ponta = o bloco Piston End usado.
+        public float esc = 1f, cursoMax; public float meio => 0.25f * esc; public float extBase; public Entity ponta; public bool comPonta; public float tPonta; public bool pontaEsperaLog;
         public bool espelho;      // 0.12.14: versao espelhada (V): bearing gira ao contrario com o mesmo sinal
         public int estado;        // 0 esperando lancamento, 1 separando, 2 ativo
         public float tEstado;     // segundos no estado atual
@@ -37,7 +41,9 @@ namespace Mecanica
         public BodyFrame puxA0, puxA1; public float tPux = -1f, durPux; public float3[] apA0, apA1, apB;
         public BodyFrame fa, fb;
         public int modo = -1;     // bearing: 0 livre, 1 motor, 2 servo
+        public bool giro; public bool giroRefOk; public float giroRef, giroAlvo; public int giroLog;   // 0.19.14: Gyro Bearing (nivelador) — alvo do servo vem da gravidade
         public Entity knob; public float tKnob = 9f; public int knobDica = int.MinValue; public float grausServo = float.NaN, fracaoCurso = 1f;   // 0.19.2: knob no bloco
+        public Entity swAng; public float tSwAng = 9f; public float ultSaida = float.NaN; public bool swLog;   // 0.23.0: switch + saida do angulo
         public float impulsoModo; public string origemModo;
         public int avisos;
         // joints da nave (SpaceshipSingleton._joints) que a gente forcou a quebrar: indice e _breakForce original, pra devolver depois
@@ -74,14 +80,17 @@ namespace Mecanica
     {
         // prefabs do mod: nome -> (tipo, curso do pistao em m | nivel do motor)
         static readonly (string nome, Tipo tipo, float curso)[] PREFABS = {
-            ("SC_Pistao2", Tipo.Pistao, 2f), ("SC_Pistao4", Tipo.Pistao, 4f), ("SC_Pistao8", Tipo.Pistao, 8f),
-            ("SC_Bearing", Tipo.Bearing, 0f),
+            ("SC_Pistao", Tipo.Pistao, 8f), ("SC_MiniPistao", Tipo.Pistao, 4f),   // 0.20.0: pistao unico (ate 8 m), mini (ate 4 m), Piston End
+            ("SC_Bearing", Tipo.Bearing, 0f), ("SC_GyroBearing", Tipo.Bearing, 1f),   // 0.19.14: curso 1 = giroscopio (nivelador)
+            ("SC_MiniBearing", Tipo.Bearing, 0f), ("SC_MiniGyroBearing", Tipo.Bearing, 1f),   // 0.20.0
             ("SC_MotorP", Tipo.Motor, 0f), ("SC_MotorM", Tipo.Motor, 1f), ("SC_MotorG", Tipo.Motor, 2f),
             ("SC_MotorCombP", Tipo.Motor, 3f), ("SC_MotorCombM", Tipo.Motor, 4f), ("SC_MotorCombG", Tipo.Motor, 5f),
             ("SC_Recoupler", Tipo.Recoupler, 0f), ("SC_Beacon", Tipo.Beacon, 0f), ("SC_Pedal", Tipo.Alavancas, 0f), ("SC_Volante", Tipo.Alavancas, 0f),
             ("SC_TurretSeat", Tipo.Torreta, 0f),
             ("SC_DriveShaft", Tipo.Transmissao, 0f), ("SC_Differential", Tipo.Transmissao, 0f), ("SC_ShaftReverser", Tipo.Transmissao, 0f), ("SC_ShaftTransmitter", Tipo.Transmissao, 0f),
-            ("SC_SingleCellBattery", Tipo.Transmissao, 0f), ("SC_MiniElectricThruster", Tipo.Transmissao, 0f), ("SC_LongRangeTransmitter", Tipo.Radio, 0f), ("SC_SolarPanelMini", Tipo.Transmissao, 0f) };   // 0.19.0: painel solar mini (so o jogo)   // 0.15.0 / 0.16.0 / 0.18.0 (bateria e mini propulsor: so o jogo)
+            ("SC_SingleCellBattery", Tipo.Transmissao, 0f), ("SC_MiniElectricThruster", Tipo.Transmissao, 0f), ("SC_LongRangeTransmitter", Tipo.Radio, 0f), ("SC_SolarPanelMini", Tipo.Transmissao, 0f),
+            ("SC_SlipRing", Tipo.Transmissao, 0f), ("SC_MiniSlipRing", Tipo.Transmissao, 0f),   // 0.22.0: anel coletor (passivo: Anel.cs acha pelo hash); 0.22.4: placas normal/mini
+            ("SC_PistaoFim", Tipo.Ponta, 0f), ("SC_MiniPistaoFim", Tipo.Ponta, 0f) };   // 0.22.4: Piston End em placa (normal/mini, servem nos dois pistoes)   // 0.19.0: painel solar mini (so o jogo)   // 0.15.0 / 0.16.0 / 0.18.0 (bateria e mini propulsor: so o jogo)
         /// <summary>0.12.15: nome (com ou sem " M") e' um bloco deste mod?</summary>
         public static bool EhDoMod(string nome)
         {
@@ -90,6 +99,33 @@ namespace Mecanica
             return nome.StartsWith("SC_Roda") || nome.StartsWith("SC_Tanque");
         }
         static readonly Dictionary<ulong, int> porHash = new Dictionary<ulong, int>();
+        /// <summary>0.19.15: bloco do mod com knob? (bearing, gyro, pistoes) — pelo hash do prefab; vale na garagem.</summary>
+        public static bool BlocoComKnob(ulong hash, out string nome, out bool bearing, out bool giro, out float curso)
+        {
+            nome = null; bearing = false; giro = false; curso = 0f;
+            if (!hashesOk || !porHash.TryGetValue(hash, out var i)) return false;
+            var p = PREFABS[i]; if (p.tipo != Tipo.Bearing && p.tipo != Tipo.Pistao) return false;
+            nome = p.nome + (hashEspelho.Contains(hash) ? " M" : ""); bearing = p.tipo == Tipo.Bearing; giro = bearing && p.curso == 1f; curso = p.curso; return true;
+        }
+        /// <summary>0.20.0: tipo do prefab pelo hash (Ponta/Pistao/...); false se nao e' do mod.</summary>
+        public static bool TipoDoHash(ulong hash, out Tipo tipo, out float curso, out string nome)
+        {
+            tipo = Tipo.Ponta; curso = 0f; nome = null;
+            if (!hashesOk || !porHash.TryGetValue(hash, out var i)) return false;
+            tipo = PREFABS[i].tipo; curso = PREFABS[i].curso; nome = PREFABS[i].nome; return true;
+        }
+        public static float EscalaDoNome(string nome) => nome != null && nome.StartsWith("SC_Mini") ? 0.5f : 1f;
+        public static bool HashesOk => hashesOk;
+        public static bool TemJunta(Entity e) => juntas.ContainsKey(Ecs.K(e));
+        /// <summary>0.21.0: pares de parts ligadas por uma articulacao ativa do mod (+ torres). 0.22.0: a emenda por cabo saiu; fica pra quem precisar.</summary>
+        public static IEnumerable<(Entity, Entity)> PartesLigadas()
+        {
+            foreach (var j in juntas.Values) if (j.estado == 2 && !Ecs.Nulo(j.partA) && !Ecs.Nulo(j.partB)) yield return (j.partA, j.partB);
+            foreach (var (ta, tb) in LigacoesTorres()) yield return (ta, tb);
+        }
+        public static bool JuntaAtiva(Entity e) => juntas.TryGetValue(Ecs.K(e), out var j) && j.estado == 2;   // 0.20.5
+        /// <summary>0.22.0: juntas ativas (pra Anel.cs: bearing / pistao -> anel coletor na peca de cima).</summary>
+        internal static IEnumerable<Junta> JuntasAtivas() { foreach (var j in juntas.Values) if (j.estado == 2) yield return j; }
         static readonly HashSet<ulong> hashEspelho = new HashSet<ulong>();
         static bool hashesOk = false;
         static readonly Dictionary<long, Junta> juntas = new Dictionary<long, Junta>();
@@ -98,7 +134,7 @@ namespace Mecanica
         public static float ForcaReserva = 4f;
         static readonly Dictionary<long, Motor> motorPorSaida = new Dictionary<long, Motor>();   // porta de saida -> motor
         static readonly HashSet<long> ignorados = new HashSet<long>(); static readonly HashSet<ulong> hashesVistos = new HashSet<ulong>();
-        static float tDescobrir = 9f;
+        static float tDescobrir = 9f, tKnobs = 9f;
 
         // config (preenchida pelo plugin)
         public static float PistaoVel = 1f, PistaoImpulso = 20000f, PistaoConsumoPorM = 2.5f;
@@ -137,7 +173,15 @@ namespace Mecanica
                 }
             }
             tDescobrir += dt;
+            // 0.20.1: pistao com Piston End que acabou de ser lancado (a garagem sabia dele): descobre JA, no mesmo frame — a cada 0,5 s a
+            // peca presa na ponta ja tinha caido ate 1 m antes do motor nascer
+            if (tDescobrir < 0.5f) foreach (var pe in Garagem.PistoesComPonta()) if (!juntas.ContainsKey(Ecs.K(pe)) && Ecs.EhPart(em, Ecs.Pai(em, pe))) { tDescobrir = 9f; Registro.Info("piston with a Piston End just launched (block " + pe.Index + ") — discovering now"); break; }
             if (tDescobrir >= 0.5f) { tDescobrir = 0f; T("discover..."); Descobrir(em); T("discover done"); }
+            // 0.20.0 (Andre: "diminui pra .1"): knobs da garagem a cada 0,1 s (era junto com o Descobrir, 0,5 s); + passo da garagem (pistao + Piston End, guia do H)
+            tKnobs += dt;
+            if (tKnobs >= 0.1f) { tKnobs = 0f; try { Knobs.PassoGaragem(em); } catch (Exception ex) { AvisoEixo("knobs (garage): " + ex.Message); } }   // 0.19.15
+            try { Garagem.Passo(em, dt); } catch (Exception ex) { AvisoEixo("garage: " + ex.Message); }
+            Knobs.Gravar(dt);
             try { Pintura.Passo(em, dt); } catch (Exception ex) { AvisoEixo("paint: " + ex.Message); }   // 0.17.1
             T("paint done");
             try { Radio.Passo(em); } catch (Exception ex) { AvisoEixo("long range: " + ex.Message); }   // 0.18.0
@@ -170,6 +214,7 @@ namespace Mecanica
                     // recolhimento; enquanto o pistao esta fora da simulacao, reconfere a cada 0,5 s
                     if (j.tipo == Tipo.Pistao && j.estado == 0) { j.tRecolher += dt; if (j.tRecolher >= 0.5f) { j.tRecolher = 0f; RecolherNaGaragem(em, j); } }
                     if (j.tipo == Tipo.Pistao) LedsPistao(em, j, dt);
+                    if (j.tipo == Tipo.Bearing) { try { SaidaAngulo(em, j, dt); } catch (Exception ex) { if (j.avisos++ < 2) Registro.Aviso(j.nome + " angle output: " + ex.Message); } }   // 0.23.0
                     switch (j.estado)
                     {
                         case 0: EsperandoTopo(em, j); break;
@@ -184,6 +229,7 @@ namespace Mecanica
             T("joints done");
             Fila(em, dt); T("queue");
             Acoplador.Passo(em, dt); T("recoupler/beacon");
+            try { Anel.Passo(em, dt); } catch (Exception ex) { AvisoEixo("slip ring: " + ex.Message); } T("slip ring");   // 0.21.0; 0.22.0: anel coletor
             Alavancas.Passo(em, dt); T("levers");
             PassoTorres(em, dt); T("turrets");
         }
@@ -224,7 +270,7 @@ namespace Mecanica
                 if (!porHash.TryGetValue(h, out var i)) { ignorados.Add(key); continue; }
                 bool esp = hashEspelho.Contains(h); string nomeP = PREFABS[i].nome + (esp ? " M" : "");
                 if (PREFABS[i].tipo != Tipo.Motor && Ecs.EhDecouplerDoJogo(em, e)) { ignorados.Add(key); continue; }
-                if (PREFABS[i].tipo == Tipo.Transmissao) { ignorados.Add(key); continue; }   // 0.15.0: so lidos pelo MapearEixos
+                if (PREFABS[i].tipo == Tipo.Transmissao || PREFABS[i].tipo == Tipo.Ponta) { ignorados.Add(key); continue; }   // 0.15.0: so lidos pelo MapearEixos; 0.20.0: Piston End so e' procurado pelo pistao
                 if (PREFABS[i].tipo == Tipo.Radio) { Radio.Novo(e); continue; }   // 0.18.0
                 if (PREFABS[i].tipo == Tipo.Recoupler) { Acoplador.NovoRecoupler(e); continue; }
                 if (PREFABS[i].tipo == Tipo.Beacon) { Acoplador.NovoBeacon(e); continue; }
@@ -239,7 +285,7 @@ namespace Mecanica
                     Registro.Info(nomeP + " found: block " + e.Index + ":" + e.Version);
                     continue;
                 }
-                var j = new Junta { bloco = e, tipo = PREFABS[i].tipo, curso = PREFABS[i].curso, nome = nomeP, estado = 0, espelho = esp };
+                var j = new Junta { bloco = e, tipo = PREFABS[i].tipo, curso = PREFABS[i].curso, cursoMax = PREFABS[i].curso, nome = nomeP, estado = 0, espelho = esp, giro = PREFABS[i].tipo == Tipo.Bearing && PREFABS[i].curso == 1f, esc = EscalaDoNome(PREFABS[i].nome) };
                 juntas[key] = j;
                 Registro.Info(j.nome + " found: block " + e.Index + ":" + e.Version);
                 if (j.tipo == Tipo.Pistao) RecolherNaGaragem(em, j);   // 0.19.5 (Andre: "pistao estendido fora da simulacao")
@@ -376,17 +422,56 @@ namespace Mecanica
             if (j.tEstado < 0f) return;         // espera depois de uma falha
             Ecs.Eixos(em, j.bloco, out var ex, out var ey, out var ez);
             var pb = Ecs.Posicao(em, j.bloco);
-            j.eixo = ey; j.ancora = Ecs.Add(pb, Ecs.Mul(ey, 0.25f));
+            j.eixo = ey; j.ancora = Ecs.Add(pb, Ecs.Mul(ey, j.meio));
             var joints = Ecs.Joints(em, out int n);
-            if (joints == null) { if (j.avisos++ < 3) Registro.Aviso("SpaceshipSingleton._joints not available"); j.tEstado = -1f; return; }
+            if (joints == null)
+            {
+                // 0.20.2: tenta de novo no proximo frame (era 1 s) e, enquanto isso, segura a peca do Piston End junto da base
+                if (j.avisos++ < 3) Registro.Aviso("SpaceshipSingleton._joints not available" + (j.tipo == Tipo.Pistao ? " — retrying next frame" : ""));
+                if (j.tipo == Tipo.Pistao) SegurarPonta(em, j, pa);
+                j.tEstado = j.tipo == Tipo.Pistao ? -0.001f : -1f; return;
+            }
             int quebrados = 0; Entity viz = Entity.Null; float melhor = 99f;
             j.quebrados.Clear();
             var meus = JointsDeCima(em, j.bloco, joints, n, out viz);
             if (meus.Count == 0 || Ecs.Nulo(viz))
             {
-                if (j.avisos++ < 3) Registro.Aviso(j.nome + " " + j.bloco.Index + ": nothing attached to the top face — nothing to do (retrying in 30 s). Its joints:" + ListarJoints(em, j, joints, n, pb, ey));
+                // 0.20.0: nada colado na face de cima — tem um Piston End alinhado no eixo (pela pose da garagem)? Entao a ponta (e o que
+                // esta colado nela) ja nasceu como OUTRA part (a garagem nao liga os dois): nao ha joint pra quebrar, o motor nasce agora,
+                // na pose da garagem, com a haste esticada ate la (curso = a distancia, extBase).
+                string motivoP = null;
+                if (j.tipo == Tipo.Pistao && Garagem.AcharPonta(em, j.bloco, j.meio, j.cursoMax, out var ponta, out var gap, out motivoP))
+                {
+                    var pp = Ecs.Pai(em, ponta);
+                    if (!Ecs.EhPart(em, pp)) { j.tEstado = -0.001f; return; }   // a ponta ainda nao virou part: tenta no proximo frame (0.20.1: era 0,5 s)
+                    SegurarParte(em, pp, pa);   // 0.20.2: a peca da ponta nasce com a velocidade da base (sem cair) ate o motor existir
+                    if (pp.Index == pa.Index)
+                    {
+                        // 0.20.3 (log do Andre: no 1o lancamento a ponta estava na mesma part — os bearings do carro ainda nao tinham separado):
+                        // espera ate 3 s, por frame, o jogo refazer as parts depois que os outros joints do mod quebram; so entao e' "soldado"
+                        j.tPonta += UnityEngine.Time.deltaTime;
+                        if (j.tPonta < 3f)
+                        {
+                            if (!j.pontaEsperaLog) { j.pontaEsperaLog = true; Registro.Info(j.nome + " " + j.bloco.Index + ": Piston End " + ponta.Index + " found " + gap.ToString("F2") + " m ahead, still in the same part as the base — waiting for the game to split the parts (other joints breaking)"); }
+                            j.tEstado = -0.001f; return;
+                        }
+                        j.soldado = true;
+                        if (!j.avisouPreso) { j.avisouPreso = true; Registro.Aviso(j.nome + " " + j.bloco.Index + ": Piston End " + ponta.Index + " found " + gap.ToString("F2") + " m ahead, but after 3 s it is still in the SAME part as the piston's base (attached to the base through another path) — not separating. Retrying in 30 s."); }
+                        j.tPonta = 0f; j.pontaEsperaLog = false; j.tEstado = -30f; return;
+                    }
+                    j.tPonta = 0f; j.pontaEsperaLog = false;
+                    j.avisouPreso = false; j.soldado = false; j.quebrados.Clear();
+                    j.vizinho = ponta; j.ponta = ponta; j.comPonta = true; j.partA = pa; j.partB = pp; j.extBase = gap; j.curso = gap; j.locViz = -1;
+                    adiado = false;
+                    if (Criar(em, j)) { j.estado = 2; j.tEstado = 0f; Reforcar(em, j); Registro.Info(j.nome + " " + j.bloco.Index + ": Piston End " + ponta.Index + " at " + gap.ToString("F2") + " m — stroke = " + gap.ToString("F2") + " m, rod born extended (part " + pa.Index + " -> part " + pp.Index + ")"); }
+                    else if (adiado) { j.partA = Entity.Null; j.partB = Entity.Null; j.tEstado = 0f; }   // tenta no proximo frame
+                    else { j.tEstado = -5f; }
+                    return;
+                }
+                if (j.avisos++ < 3) Registro.Aviso(j.nome + " " + j.bloco.Index + ": nothing attached to the top face" + (j.tipo == Tipo.Pistao ? " and no Piston End on its axis" + (motivoP != null ? " (" + motivoP + ")" : "") : "") + " — nothing to do (retrying in 30 s). Its joints:" + ListarJoints(em, j, joints, n, pb, ey));
                 j.tEstado = -30f; return;
             }
+            if (j.comPonta) { j.comPonta = false; j.extBase = 0f; j.curso = j.cursoMax; j.ponta = Entity.Null; }
             // 0.11.1: se o bloco de cima continua ligado a base por OUTRO caminho (peca colada dos dois lados, ou a estrutura
             // fecha um anel em volta do pistao), quebrar os joints nao separa nada — a nave nao vira duas parts, e cada
             // tentativa (a cada 5 s) fazia o jogo refazer as parts inteiras, bagunçando os outros pistoes/bearings. Os joints
@@ -418,6 +503,29 @@ namespace Mecanica
             foreach (var k in meus) { Quebrar(j, &joints[k], k); quebrados++; }
             j.vizinho = viz; j.partA = pa; j.estado = 1; j.tEstado = 0f;
             Registro.Info(j.nome + " " + j.bloco.Index + ": separating (" + quebrados + " joint(s), neighbor " + viz.Index + ")");
+        }
+
+        /// <summary>0.20.2: enquanto o motor do pistao com Piston End nao existe, a part da ponta anda junto da base (velocidade copiada,
+        /// giro zerado) — em vez de cair ate o joint nascer.</summary>
+        static void SegurarPonta(EntityManager em, Junta j, Entity pa)
+        {
+            try
+            {
+                if (!Garagem.AcharPonta(em, j.bloco, j.meio, j.cursoMax, out var ponta, out _, out _)) return;
+                var pp = Ecs.Pai(em, ponta); if (!Ecs.EhPart(em, pp) || pp.Index == pa.Index) return;
+                SegurarParte(em, pp, pa);
+            }
+            catch (Exception) { }
+        }
+        static unsafe void SegurarParte(EntityManager em, Entity parte, Entity base_)
+        {
+            try
+            {
+                var va = (Ecs.TemC(em, base_, Ecs.tiVel) ? (PhysicsVelocity*)em.GetComponentDataRawRO(base_, Ecs.tiVel) : null);
+                var vb = (Ecs.TemC(em, parte, Ecs.tiVel) ? (PhysicsVelocity*)em.GetComponentDataRawRW(parte, Ecs.tiVel) : null);
+                if (va != null && vb != null) { vb->Linear = va->Linear; vb->Angular = float3.zero; }
+            }
+            catch (Exception) { }
         }
 
         // ---- 0.12.2: com a nave andando os aneis abrem e fecham (recoupler pega/solta o carro): 1x por segundo refaz quem fica livre.
@@ -460,6 +568,8 @@ namespace Mecanica
         const float BLedX = 0.12f, BLedY = -0.16f, BLedRepZ = 0.224f, BLedSai = 0.023f;
         static unsafe void LedBearing(EntityManager em, Junta j, bool aceso, float dt)
         {
+            // 0.20.0: Mini Bearing — led em (0,065, -0,08), fundo 0,112, sai 0,0115 (modelos_v2 BEARING_LED_S)
+            float BLedX = j.esc < 1f ? 0.065f : Juntas.BLedX, BLedY = j.esc < 1f ? -0.08f : Juntas.BLedY, BLedRepZ = Juntas.BLedRepZ * j.esc, BLedSai = Juntas.BLedSai * j.esc;
             try
             {
                 j.tLeds += dt;
@@ -493,8 +603,10 @@ namespace Mecanica
         // ---- 0.12.1: leds de estado do pistao (renderers extras escondidos no painel +Z; o do estado sai 2,3 cm)
         const float LedY = -0.135f, LedZ = 0.224f, LedSai = 0.023f;
         static readonly float[] LedXs = { -0.09f, 0f, 0.09f };   // verde, amarelo, vermelho
+        static readonly float[] LedXsMini = { -0.01f, 0.035f, 0.08f }, LedXsMiniM = { 0.01f, -0.035f, -0.08f };   // 0.20.0: Mini Piston (modelos_v2 PISTAO_LED_XS[0.5]); 0.20.3: versao M
         static unsafe void LedsPistao(EntityManager em, Junta j, float dt)
         {
+            float[] LedXs = j.esc < 1f ? (j.espelho ? LedXsMiniM : LedXsMini) : Juntas.LedXs; float LedY = Juntas.LedY * j.esc, LedZ = Juntas.LedZ * j.esc, LedSai = Juntas.LedSai * j.esc;   // 0.20.3: M = x espelhado
             try
             {
                 bool naNave = Ecs.EhPart(em, Ecs.Pai(em, j.bloco));
@@ -651,7 +763,9 @@ namespace Mecanica
             if (LogDetalhe && estado != j.energiaEstado) { j.energiaEstado = estado; Registro.Info(j.nome + " " + j.bloco.Index + ": power " + NomeEstado(estado)); }
             float pedido = tem ? System.Math.Max(0f, System.Math.Min(1f, sinal)) * j.curso * j.fracaoCurso : j.alvoAtual;   // sem sinal: fica onde esta (0.19.2: x knob do curso)
             bool quer = System.Math.Abs(pedido - j.alvoAtual) > 1e-4f;
-            Ecs.Consumo(em, j.bloco, quer ? PistaoConsumoPorM * j.curso : ConsumoOcioso);
+            // 0.23.0 (Andre: "agora todos pistoes tem o maximo de curso ... eu tava usando so 1..2 m e ainda consumia 20 P/s"):
+            // o consumo segue o curso que o pistao REALMENTE faz (distancia ate o Piston End, ou o maximo, x a fracao do knob)
+            Ecs.Consumo(em, j.bloco, quer ? PistaoConsumoPorM * j.curso * j.fracaoCurso : ConsumoOcioso);
             if (!quer || !energia) return;   // sem energia: segura onde esta
             float passo = PistaoVel * dt;
             float alvo = pedido > j.alvoAtual + passo ? j.alvoAtual + passo : pedido < j.alvoAtual - passo ? j.alvoAtual - passo : pedido;
@@ -672,25 +786,36 @@ namespace Mecanica
         // viram entities com LocalTransform relativo ao bloco): cabeca em (0, 0,225, 0); haste = cilindro de 1 m em (0, 0,105, 0)
         // com escala y 0,095 (PostTransformMatrix). Aqui: cabeca.y = 0,225 + curso, haste escala y = 0,095 + curso.
         const float CabecaY = 0.225f, HasteY = 0.105f, HasteRepouso = 0.095f;
+        internal static float CabecaYDe(float esc) => CabecaY * esc;
+        /// <summary>0.20.0: acha haste, cabeca e barra-guia (filhos no eixo do bloco): haste em y = 0,105 x esc; guia em y = 0,25 x esc
+        /// (face de cima, escala y minuscula em repouso); cabeca = qualquer outra altura acima do repouso. Vale na garagem e na simulacao.</summary>
+        internal static unsafe void AcharPartesPistao(EntityManager em, Entity bloco, float esc, float cursoMax, out Entity haste, out Entity cabeca, out Entity guia, System.Text.StringBuilder sb = null)
+        {
+            haste = Entity.Null; cabeca = Entity.Null; guia = Entity.Null;
+            foreach (var f in Ecs.Filhos(em, bloco))
+            {
+                var lt = Ecs.LT(em, f); var p = lt.Position;
+                if (sb != null) sb.Append("\n    ").Append(f.Index).Append(" at (").Append(Ecs.F3(p)).Append(") scale ").Append(lt.Scale.ToString("F3")).Append(Ecs.TemPTM(em, f) ? " [PTM]" : "").Append(": ").Append(Ecs.Componentes(em, f));
+                if (System.Math.Abs(p.x) > 1e-3f || System.Math.Abs(p.z) > 1e-3f) continue;
+                // 0.19.5: a cabeca pode estar levantada (ficou esticada de uma simulacao anterior): aceita qualquer altura acima do repouso
+                // 0.19.14 (Andre, elevador: "o pistao nao ta com a haste"): na versao M a cabeca TAMBEM tem PostTransformMatrix
+                // (o espelho e' escala -1 em X em todos os renderers) — o teste "sem PTM" nunca achava a cabeca do pistao M
+                // e o visual (cabeca sobe, haste estica) ficava parado no repouso. Haste = y 0,105; cabeca = qualquer outra no eixo.
+                if (System.Math.Abs(p.y - HasteY * esc) < 1e-3f) haste = f;
+                else if (System.Math.Abs(p.y - 0.25f * esc) < 1e-3f && Ecs.TemPTM(em, f)) guia = f;   // 0.20.0 (so o pistao unico/mini tem)
+                else if (p.y >= CabecaY * esc - 1e-3f && p.y <= CabecaY * esc + cursoMax + 0.6f) cabeca = f;
+            }
+        }
         static unsafe void VisualPistao(EntityManager em, Junta j, float dt)
         {
             if (Ecs.Nulo(j.cabeca) || !Ecs.Vivo(em, j.cabeca) || Ecs.Nulo(j.haste) || !Ecs.Vivo(em, j.haste))
             {
                 j.tVisual += dt;
                 if (j.visualTentativas >= 5 || (j.visualTentativas > 0 && j.tVisual < 2f)) return;
-                j.visualTentativas++; j.tVisual = 0f; j.cabeca = Entity.Null; j.haste = Entity.Null;
-                var sb = new System.Text.StringBuilder();
-                foreach (var f in Ecs.Filhos(em, j.bloco))
-                {
-                    var lt = Ecs.LT(em, f); var p = lt.Position;
-                    if (LogDetalhe) sb.Append("\n    ").Append(f.Index).Append(" at (").Append(Ecs.F3(p)).Append(") scale ").Append(lt.Scale.ToString("F3")).Append(Ecs.TemPTM(em, f) ? " [PTM]" : "").Append(": ").Append(Ecs.Componentes(em, f));
-                    if (System.Math.Abs(p.x) < 1e-3f && System.Math.Abs(p.z) < 1e-3f)
-                    {
-                        // 0.19.5: a cabeca pode estar levantada (ficou esticada de uma simulacao anterior): aceita qualquer altura acima do repouso
-                        if (p.y >= CabecaY - 1e-3f && p.y <= CabecaY + j.curso + 0.6f && !Ecs.TemPTM(em, f)) j.cabeca = f;
-                        else if (System.Math.Abs(p.y - HasteY) < 1e-3f) j.haste = f;
-                    }
-                }
+                j.visualTentativas++; j.tVisual = 0f;
+                var sb = LogDetalhe ? new System.Text.StringBuilder() : null;
+                AcharPartesPistao(em, j.bloco, j.esc, j.cursoMax, out j.haste, out j.cabeca, out _, sb);
+                if (sb == null) sb = new System.Text.StringBuilder();
                 if (Ecs.Nulo(j.cabeca) || Ecs.Nulo(j.haste))
                 {
                     if (j.visualTentativas == 1 || j.visualTentativas == 5) Registro.Aviso(j.nome + " " + j.bloco.Index + ": head/rod renderers not found (attempt " + j.visualTentativas + ") — block children:" + (sb.Length > 0 ? sb.ToString() : " none"));
@@ -704,13 +829,17 @@ namespace Mecanica
                 j.visualExt = -1f;
             }
             Encaixes(em, j, out var pA, out var eA, out _, out var pB, out _, out _);
-            float ext = Ecs.Dot(Ecs.Sub(pB, pA), eA);
-            if (ext < 0f) ext = 0f; if (ext > j.curso + 0.5f) ext = j.curso + 0.5f;
+            float ext = Ecs.Dot(Ecs.Sub(pB, pA), eA) + j.extBase;   // 0.20.0: + extensao de nascenca (Piston End)
+            if (ext < 0f) ext = 0f; if (ext > j.cursoMax + 0.5f) ext = j.cursoMax + 0.5f;
             if (System.Math.Abs(ext - j.visualExt) < 0.002f) return;
             j.visualExt = ext;
-            var ltc = (Ecs.TemC(em, j.cabeca, Ecs.tiLT) ? (LocalTransform*)em.GetComponentDataRawRW(j.cabeca, Ecs.tiLT) : null);
-            if (ltc != null) { ltc->Position = new float3 { x = 0f, y = CabecaY + ext, z = 0f }; }
-            if (Ecs.TemPTM(em, j.haste)) Ecs.EscalaY(em, j.haste, HasteRepouso + ext);
+            PorVisualPistao(em, j.haste, j.cabeca, ext, j.esc);
+        }
+        /// <summary>0.20.0: cabeca em y = (0,225 + ext) x esc... (a cabeca sobe ext; a haste estica ext) — compartilhado com a garagem (Garagem.cs).</summary>
+        internal static unsafe void PorVisualPistao(EntityManager em, Entity haste, Entity cabeca, float ext, float esc)
+        {
+            if (Ecs.Vivo(em, cabeca)) { var ltc = (Ecs.TemC(em, cabeca, Ecs.tiLT) ? (LocalTransform*)em.GetComponentDataRawRW(cabeca, Ecs.tiLT) : null); if (ltc != null) ltc->Position = new float3 { x = 0f, y = CabecaY * esc + ext, z = 0f }; }
+            if (Ecs.Vivo(em, haste) && Ecs.TemPTM(em, haste)) Ecs.EscalaY(em, haste, HasteRepouso * esc + ext);
         }
 
         /// <summary>Se um Recoupler travou algo no topo deste pistao (o decoupler/recoupler do topo esta na partB dele), cria um
@@ -734,9 +863,9 @@ namespace Mecanica
             {
                 Encaixes(em, j, out var pA, out var eA, out var qA, out var pB, out _, out _);
                 var fa = Ecs.Frame(em, j.partA, pA, eA, qA); var fc = Ecs.Frame(em, alvoParte, pA, eA, qA);
-                var pj = PhysicsJoint.CreatePositionMotor(fa, fc, 0f, PistaoImpulso <= 0f ? float.PositiveInfinity : PistaoImpulso);
+                var pj = PhysicsJoint.CreatePositionMotor(fa, fc, 0f, PistaoImpulso <= 0f ? float.PositiveInfinity : PistaoImpulso * j.esc * j.esc);
                 j.idxExtra = AcharMotor(pj, ConstraintType.PositionMotor); if (j.idxExtra < 0) return;
-                j.cursoBaseExtra = Ecs.Dot(Ecs.Sub(pB, pA), eA);
+                j.cursoBaseExtra = Ecs.Dot(Ecs.Sub(pB, pA), eA) + j.extBase;
                 Restricao(&pj, j.idxExtra)->Target.x = -(j.alvoAtual - j.cursoBaseExtra);
                 var par = new PhysicsConstrainedBodyPair(); par.Entities = new EntityPair { EntityA = j.partA, EntityB = alvoParte }; par.EnableCollision = 0;
                 var tipos = new Il2CppStructArray<ComponentType>(3);
@@ -1014,7 +1143,7 @@ namespace Mecanica
                         sb.Append(", off-axis ").Append((lat * 100f).ToString("F1")).Append(" cm");
                         if (j.tipo == Tipo.Bearing) { var perp = Ecs.Comp(Ecs.Sub(d, Ecs.Mul(eA, ax))); sb.Append(" (").Append(TextoEixo(ax, perp)).Append(')'); }
                         sb.Append(", tilted ").Append(ang.ToString("F1")).Append(" degrees");
-                        if (j.tipo == Tipo.Pistao) sb.Append(", actual stroke ").Append(ax.ToString("F2")).Append(" m");
+                        if (j.tipo == Tipo.Pistao) sb.Append(", actual stroke ").Append((ax + j.extBase).ToString("F2")).Append(" m");
                         unsafe
                         {
                             var va = (Ecs.TemC(em, j.partA, Ecs.tiVel) ? (PhysicsVelocity*)em.GetComponentDataRawRO(j.partA, Ecs.tiVel) : null); var vb = (Ecs.TemC(em, j.partB, Ecs.tiVel) ? (PhysicsVelocity*)em.GetComponentDataRawRO(j.partB, Ecs.tiVel) : null);
@@ -1081,7 +1210,7 @@ namespace Mecanica
                 var d = Ecs.Sub(pB, pA); float ax = Ecs.Dot(d, eA); float lat = Ecs.Comp(Ecs.Sub(d, Ecs.Mul(eA, ax)));
                 float cos = System.Math.Max(-1f, System.Math.Min(1f, Ecs.Dot(eA, eB))); float ang = (float)(System.Math.Acos(cos) * 180.0 / System.Math.PI);
                 bool ruim = lat > 0.05f || ang > 3f;
-                string s = "actual stroke " + ax.ToString("F2") + " m (requested " + j.alvoAtual.ToString("F2") + "), off-axis " + (lat * 100f).ToString("F0") + " cm, tilted " + ang.ToString("F1") + " degrees";
+                string s = "actual stroke " + (ax + j.extBase).ToString("F2") + " m (requested " + j.alvoAtual.ToString("F2") + "), off-axis " + (lat * 100f).ToString("F0") + " cm, tilted " + ang.ToString("F1") + " degrees";
                 string chave = ruim ? "bad " + (lat * 10f).ToString("F0") + " " + ((int)(ang / 3f)) : "ok";
                 if (chave != j.alinhaLog) { j.alinhaLog = chave; if (ruim) Registro.Aviso(j.nome + " " + j.bloco.Index + ": MISALIGNED — " + s); else Registro.Info(j.nome + " " + j.bloco.Index + ": aligned — " + s); }
             }
@@ -1106,11 +1235,13 @@ namespace Mecanica
             {
                 if (!Ecs.Porta(em, p, out var t, out _, out _) || (t != Ecs.PortaEntrada && t != PortaSemTipo)) continue;
                 if (PortaNoEixoCache(em, p)) continue;
+                if (Anel.EhLateral(em, j.bloco, p, j.nome)) continue;   // 0.22.0: portas de passagem (anel coletor) nao sao servo
                 if (!Ecs.LerEntrada(em, p, out var v, out _, out var trilha)) continue;
                 if (!servo) { servo = true; valServo = v; origemServo = "direct signal, port " + p.Index + trilha; }
             }
             bool travadoEixo = rede != null && rede.conflito;
             bool eixoGirando = mot != null && (travadoEixo || (rede.alimentado && System.Math.Abs(valMotor) > 0.001f && mot.freio <= 0.02f));
+            if (j.giro && !eixoGirando && !travadoEixo) { origemServo = "gyro: levelling against gravity" + (servo ? " + offset from " + origemServo : ""); servo = true; }   // 0.19.14
             if (servo && !eixoGirando && mot != null) { mot = null; origem = origemServo + " (shaft at 0)"; }
             else if (servo && mot == null) origem = origemServo;
             else if (eixoGirando) servo = false;
@@ -1118,7 +1249,7 @@ namespace Mecanica
             // 0.11.2 (Andre: "aumenta mais a forca dos freios"): freio MECANICO — funciona sem energia/combustivel e trava TODAS as
             // rodas do veiculo (bearings sem sinal direto de servo) quando qualquer motor do mesmo veiculo recebe freio; a forca
             // e' a do motor que freia x Motor.freio_fator (30). Bearing com sinal direto (direcao) nao trava.
-            var freiando = servo ? null : MotorFreiando(em, j, mot);
+            var freiando = servo ? null : MotorFreiando(em, j, mot, rede);
             if (travadoEixo)
             {
                 // 0.17.0 (Andre: "se entrar sinais invertidos trava os bearings e mostra visualmente o bearing travado")
@@ -1143,12 +1274,16 @@ namespace Mecanica
                     modo = 1; impulso = rede.forcaBearing;
                     float pedido = System.Math.Max(-1f, System.Math.Min(1f, valMotor)) * rede.velMax * (j.espelho ? -1f : 1f), passo = MotorRampa <= 0f ? 999f : rede.velMax / MotorRampa * dt;
                     alvo = pedido > j.alvoAtual + passo ? j.alvoAtual + passo : pedido < j.alvoAtual - passo ? j.alvoAtual - passo : pedido;
+                    // 0.21.5 (Andre: "no modo motor o bearing fica estatico com sinal 0, sendo que ja tem porta de freio"): sinal ~0 (zona
+                    // morta 0,02) com a rampa ja em ~0 = ponto morto — roda livre, igual bearing sem nada; parar na ladeira e' com o freio
+                    if (System.Math.Abs(valMotor) < 0.02f && System.Math.Abs(alvo) < 0.05f) { modo = 0; alvo = 0f; impulso = 0f; origem += " at 0: coasting"; }
                 }
                 else { modo = 0; alvo = 0f; impulso = 0f; origem += " no power"; }
             }
             else if (servo)
             {
-                modo = 2; impulso = ServoImpulso; alvo = System.Math.Max(-1f, System.Math.Min(1f, valServo)) * (float.IsNaN(j.grausServo) ? ServoGraus : j.grausServo) * (float)(System.Math.PI / 180.0) * (j.espelho ? -1f : 1f);   // 0.19.2: knob do bloco manda; sem knob = config
+                modo = 2; impulso = ServoImpulso * j.esc * j.esc; alvo = System.Math.Max(-1f, System.Math.Min(1f, valServo)) * (float.IsNaN(j.grausServo) ? ServoGraus : j.grausServo) * (float)(System.Math.PI / 180.0) * (j.espelho ? -1f : 1f);   // 0.19.2: knob do bloco manda; sem knob = config
+                if (j.giro) alvo = GiroAlvo(em, j, alvo, dt);   // 0.19.14: nivelador — o sinal e' so um deslocamento sobre o alvo da gravidade
                 if (LogDetalhe && System.Math.Abs(valServo - j.sinalLogado) >= 0.05f) { j.sinalLogado = valServo; Registro.Info(j.nome + " " + j.bloco.Index + ": servo signal=" + valServo.ToString("F2")); }
             }
             else { modo = 0; alvo = 0f; impulso = 0f; }
@@ -1198,10 +1333,18 @@ namespace Mecanica
             foreach (var (ta, tb) in LigacoesTorres()) Unir(Ecs.K(ta), Ecs.K(tb));
             foreach (var r in Acoplador.Travados()) if (!Ecs.Nulo(r.partA) && !Ecs.Nulo(r.partB)) Unir(Ecs.K(r.partA), Ecs.K(r.partB));
         }
-        /// <summary>Motor com freio acionado que vale pra este bearing: o proprio motor dele, ou qualquer motor no mesmo veiculo.</summary>
-        static Motor MotorFreiando(EntityManager em, Junta j, Motor proprio)
+        /// <summary>Motor com freio acionado que vale pra este bearing. 0.22.0 (Andre: "o brake do motor da direita tava travando meu motor
+        /// na esquerda tambem"): bearing com motor proprio (Drive Shaft chegando) obedece SO aos motores da rede dele (o de maior freio);
+        /// "qualquer motor do mesmo veiculo" (0.11.2) vale so pra bearing sem nada ligado (roda livre).</summary>
+        static Motor MotorFreiando(EntityManager em, Junta j, Motor proprio, Rede rede)
         {
-            if (proprio != null && proprio.freio > 0.02f) return proprio;
+            if (proprio != null)
+            {
+                Motor maior = null;
+                if (rede != null) { foreach (var m in rede.motores) if (m.freio > 0.02f && (maior == null || m.freio > maior.freio)) maior = m; }
+                else if (proprio.freio > 0.02f) maior = proprio;
+                return maior;
+            }
             bool algum = false; foreach (var m in motores.Values) if (m.freio > 0.02f) { algum = true; break; }
             if (!algum) return null;
             AtualizarGrupos(em);
@@ -1216,6 +1359,36 @@ namespace Mecanica
                 if (melhor == null || m.freio > melhor.freio) melhor = m;
             }
             return melhor;
+        }
+
+        /// <summary>0.23.0 (PapaSaffron no Nexus: "some way to read how many degrees a bearing has rotated"): a ULTIMA porta do
+        /// bearing / gyro / minis e' uma SAIDA com o angulo atual do lado de cima. O switch do painel escolhe a unidade: ligado =
+        /// graus (-180..180), desligado = o mesmo numero que a entrada do servo pediria pra ficar nesse angulo (-1..1 pelo knob),
+        /// entao da' pra ligar a saida na conta e devolver o resultado pra entrada. Sem junta ativa (garagem) a saida fica em 0.</summary>
+        static void SaidaAngulo(EntityManager em, Junta j, float dt)
+        {
+            j.tSwAng += dt;
+            if (j.tSwAng >= 3f) { j.tSwAng = 0f; if (!Ecs.Vivo(em, j.swAng)) j.swAng = Knobs.AcharSwitch(em, j.bloco); }
+            var portas = Ecs.Portas(em, j.bloco); if (portas == null || portas.Length == 0) return;
+            var saida = portas[portas.Length - 1];
+            if (!Ecs.Porta(em, saida, out var tipo, out _, out _) || tipo != Ecs.PortaSaida) return;   // prefab antigo (sem a saida)
+            float v = 0f;
+            if (j.estado == 2 && !Ecs.Nulo(j.joint))
+            {
+                float th; try { th = AnguloServo(em, j); } catch (Exception) { return; }
+                bool graus = Knobs.SwitchLigado(em, j.swAng);
+                float alvo = ServoInverter ? th : -th;   // o servo leva o angulo medido ate -alvo: desfaz pra voltar na escala da entrada
+                if (graus) v = alvo * 57.29578f;
+                else
+                {
+                    float g = (float.IsNaN(j.grausServo) ? ServoGraus : j.grausServo) * (float)(System.Math.PI / 180.0) * (j.espelho ? -1f : 1f);
+                    v = System.Math.Abs(g) < 1e-4f ? 0f : alvo / g;
+                    v = System.Math.Max(-1f, System.Math.Min(1f, v));
+                }
+                if (!j.swLog) { j.swLog = true; Registro.Info(j.nome + " " + j.bloco.Index + ": angle output in " + (graus ? "degrees" : "-1..1 (knob range)") + (Ecs.Nulo(j.swAng) ? " (no switch on this block: old prefab)" : "")); }
+            }
+            if (!float.IsNaN(j.ultSaida) && System.Math.Abs(v - j.ultSaida) < 1e-4f) return;
+            j.ultSaida = v; Ecs.EscreverPorta(em, saida, v);
         }
 
         /// <summary>Angulo (rad, -pi..pi) do lado de cima do bearing em volta do eixo, em relacao ao lado de baixo: perpendicular
@@ -1463,7 +1636,7 @@ namespace Mecanica
         {
             // lado A: face de cima do bloco, pela pose fisica (LocalTransform), nao pelo LocalToWorld
             Ecs.Pose(em, j.bloco, out var posA, out var rotA);
-            eA = Ecs.Rot(rotA, Ecs.UY); qA = Ecs.Rot(rotA, Ecs.UX); pA = Ecs.Add(posA, Ecs.Mul(eA, 0.25f));
+            eA = Ecs.Rot(rotA, Ecs.UY); qA = Ecs.Rot(rotA, Ecs.UX); pA = Ecs.Add(posA, Ecs.Mul(eA, j.meio));
             Ecs.Pose(em, j.vizinho, out var posV, out var rotV); var qiV = Ecs.Inv(rotV);
             // 0.7.10: recalcula SEMPRE que der pela garagem (antes guardava por bloco vizinho: se voce mexia na nave/carro na
             // garagem, os blocos continuavam os mesmos entities e o encaixe velho puxava a roda pro lugar antigo)
@@ -1480,7 +1653,7 @@ namespace Mecanica
                         var gb = *(Ecs.TemC(em, j.bloco, tiGT) ? (RigidTransform*)em.GetComponentDataRawRO(j.bloco, tiGT) : null); var gv = *(Ecs.TemC(em, j.vizinho, tiGT) ? (RigidTransform*)em.GetComponentDataRawRO(j.vizinho, tiGT) : null);
                         var qi = Ecs.Inv(gv.rot);
                         var eyG = Ecs.Rot(gb.rot, Ecs.UY);
-                        j.bLocP = Ecs.Rot(qi, Ecs.Sub(Ecs.Add(gb.pos, Ecs.Mul(eyG, 0.25f)), gv.pos));
+                        j.bLocP = Ecs.Rot(qi, Ecs.Sub(Ecs.Add(gb.pos, Ecs.Mul(eyG, j.meio)), gv.pos));
                         j.bLocE = Ecs.Rot(qi, eyG); j.bLocQ = Ecs.Rot(qi, Ecs.Rot(gb.rot, Ecs.UX));
                         ok = true;
                     }
@@ -1537,7 +1710,11 @@ namespace Mecanica
                 // 0.7.13: so ajuste pequeno (ate 10 cm / 10 graus) e so quando nasce — na 0.7.12 puxava 44-71 cm / 50 graus
                 // depois de uma quebra no meio da simulacao e o tranco espalhava a explosao
                 bool podePuxar = j.tipo == Tipo.Bearing && !continuar && PartidaTempo > 0f && lateral <= 0.1f && angE <= 10f;
-                if (lateral > 0.1f)
+                // 0.20.1 (Andre: "o que vai grudar no pistao cai antes do pistao chegar e acopla no lugar errado"): pistao com Piston End
+                // nascendo: a ponta (outra part) ja pode ter caido/derivado — o joint nasce apontando pra pose da GARAGEM (pivo de B no
+                // ponto certo de B, alvo = vao da garagem), e o motor + trilhos puxam a peca de volta pro lugar em vez de aceitar onde caiu
+                bool snapPonta = j.tipo == Tipo.Pistao && j.comPonta && !continuar && Garagem.RecemLancado(j.bloco);   // 0.20.5: so logo depois de sair da garagem (num load a pose salva vale)
+                if (lateral > 0.1f && !snapPonta)
                 {
                     if (j.adiamentos < 5) { j.adiamentos++; if (j.adiamentos == 1 && LogDetalhe) Registro.Info(j.nome + " " + j.bloco.Index + ": fit off by " + (lateral * 100f).ToString("F0") + " cm — waiting for the game to finish rebuilding the parts"); adiado = true; return false; }
                     { coincidir = true; Registro.Aviso(j.nome + " " + j.bloco.Index + ": fit still off by " + (lateral * 100f).ToString("F0") + " cm after 5 frames — creating in the current pose"); }
@@ -1551,21 +1728,28 @@ namespace Mecanica
                 // 0.7.4 recriava o pistao com o pivo de B deslocado (no "zero" do bloco vizinho) e alvo -curso: depois do
                 // decoupler o topo saia voando/fazia curva. Agora o pivo de B nasce EM CIMA do pivo de A (igual a 1a vez, que
                 // funciona) e o alvo e' relativo (cursoBase). Bearing continua com B pelo bloco vizinho (funcionou).
-                j.fb = j.tipo == Tipo.Pistao ? Ecs.Frame(em, j.partB, pA, eB, qB) : Ecs.Frame(em, j.partB, pB, eB, qB);
+                j.fb = j.tipo == Tipo.Pistao && !snapPonta ? Ecs.Frame(em, j.partB, pA, eB, qB) : Ecs.Frame(em, j.partB, pB, eB, qB);
                 PhysicsJoint joint;
                 if (false)   // 0.12.3: pistao do anel = pistao normal (motor + trilhos); so o led fica amarelo
                 {
                     joint = PhysicsJoint.CreatePrismatic(j.fa, j.fb, new Unity.Physics.Math.FloatRange { Min = -1000f, Max = 1000f }); j.idxMotor = -1;
-                    float cursoAgora = Ecs.Dot(Ecs.Sub(pB, pA), eA); j.alvoAtual = cursoAgora; j.alvo = cursoAgora; j.cursoBase = cursoAgora;
+                    float cursoAgora = Ecs.Dot(Ecs.Sub(pB, pA), eA) + j.extBase; j.alvoAtual = cursoAgora; j.alvo = cursoAgora; j.cursoBase = cursoAgora;
                 }
                 else if (j.tipo == Tipo.Pistao)
                 {
-                    joint = PhysicsJoint.CreatePositionMotor(j.fa, j.fb, 0f, PistaoImpulso <= 0f ? float.PositiveInfinity : PistaoImpulso);
+                    joint = PhysicsJoint.CreatePositionMotor(j.fa, j.fb, 0f, PistaoImpulso <= 0f ? float.PositiveInfinity : PistaoImpulso * j.esc * j.esc);   // 0.20.0: mini = 1/4 da forca
                     j.idxMotor = AcharMotor(joint, ConstraintType.PositionMotor);
                     if (j.idxMotor < 0) { Registro.Erro(j.nome + ": the joint came without a motor"); return false; }
                     // curso atual medido na geometria (0 na 1a vez); o motor comeca segurando onde esta, nao volta pro 0
-                    float cursoAgora = Ecs.Dot(Ecs.Sub(pB, pA), eA);
-                    j.alvoAtual = cursoAgora; j.alvo = cursoAgora; j.cursoBase = cursoAgora;   // alvo relativo = 0: segura onde esta
+                    // 0.20.0: com Piston End a haste ja nasce esticada (extBase): o curso medido e' o deslocamento desde a garagem + extBase
+                    float cursoAgora = Ecs.Dot(Ecs.Sub(pB, pA), eA) + j.extBase;
+                    if (snapPonta)
+                    {
+                        j.alvoAtual = j.extBase; j.alvo = j.extBase; j.cursoBase = j.extBase;   // frames coincidem na pose da garagem: alvo 0 = volta pra la
+                        float queda = Ecs.Dot(Ecs.Sub(pA, pB), eA);
+                        if (System.Math.Abs(queda) > 0.005f || lateral > 0.005f) Registro.Info(j.nome + " " + j.bloco.Index + ": the Piston End piece had already moved " + (queda * 100f).ToString("F0") + " cm along the axis and " + (lateral * 100f).ToString("F0") + " cm sideways since the garage — pulling it back into place");
+                    }
+                    else { j.alvoAtual = cursoAgora; j.alvo = cursoAgora; j.cursoBase = cursoAgora; }   // alvo relativo = 0: segura onde esta
                 }
                 else if (puxar)
                 {
@@ -1593,11 +1777,11 @@ namespace Mecanica
                 ApagarGuias(em, j);
                 if (j.tipo == Tipo.Pistao && PistaoGuia > 0f)
                 {
-                    var eZ = Ecs.Norm(Ecs.Cross(eA, qA));
-                    foreach (var off in new[] { Ecs.Mul(qA, PistaoGuia), Ecs.Mul(qA, -PistaoGuia), Ecs.Mul(eZ, PistaoGuia), Ecs.Mul(eZ, -PistaoGuia) })
+                    var eZ = Ecs.Norm(Ecs.Cross(eA, qA)); float g = PistaoGuia * j.esc;   // 0.20.0: mini = trilhos mais perto
+                    foreach (var off in new[] { Ecs.Mul(qA, g), Ecs.Mul(qA, -g), Ecs.Mul(eZ, g), Ecs.Mul(eZ, -g) })
                     {
                         var pg = Ecs.Add(pA, off);
-                        var ga = Ecs.Frame(em, j.partA, pg, eA, qA); var gbf = Ecs.Frame(em, j.partB, pg, eB, qB);
+                        var ga = Ecs.Frame(em, j.partA, pg, eA, qA); var gbf = Ecs.Frame(em, j.partB, snapPonta ? Ecs.Add(pB, off) : pg, eB, qB);   // 0.20.1: trilhos tambem na pose da garagem
                         var pr = PhysicsJoint.CreatePrismatic(ga, gbf, new Unity.Physics.Math.FloatRange { Min = -1000f, Max = 1000f });
                         var eg = em.CreateEntity(tipos);
                         *(Ecs.TemC(em, eg, Ecs.tiPar) ? (PhysicsConstrainedBodyPair*)em.GetComponentDataRawRW(eg, Ecs.tiPar) : null) = par;
@@ -1612,7 +1796,7 @@ namespace Mecanica
                     j.apA0 = new float3[2]; j.apA1 = new float3[2]; j.apB = new float3[2]; int ia = 0;
                     foreach (var sinalD in new[] { 1f, -1f })
                     {
-                        var p2A = Ecs.Add(pA, Ecs.Mul(eA, sinalD * BearingApoio)); var p2B = Ecs.Add(pB, Ecs.Mul(eB, sinalD * BearingApoio));
+                        var p2A = Ecs.Add(pA, Ecs.Mul(eA, sinalD * BearingApoio * j.esc)); var p2B = Ecs.Add(pB, Ecs.Mul(eB, sinalD * BearingApoio * j.esc));
                         var a2 = Ecs.Frame(em, j.partA, p2A, eA, qA).Position; var b2 = Ecs.Frame(em, j.partB, p2B, eB, qB).Position;
                         j.apA1[ia] = a2; j.apA0[ia] = Ecs.Frame(em, j.partA, p2B, eA, qA).Position; j.apB[ia] = b2; ia++;
                         var bs = PhysicsJoint.CreateBallAndSocket(puxar ? j.apA0[ia - 1] : a2, b2);
@@ -1652,6 +1836,7 @@ namespace Mecanica
             j.vigiados.Clear(); j.strainMax = 0f; j.strainMaxBf = 0f; j.strainMaxIdx = -1;
             SoltarCarga(em, j, motivo); ApagarGuias(em, j);
             j.joint = Entity.Null; j.idxMotor = -1; j.partA = Entity.Null; j.partB = Entity.Null; j.sinalLogado = -999f; j.sinalMotivo = null; j.modo = -1; j.energiaEstado = 254;
+            if (j.comPonta) { j.comPonta = false; j.extBase = 0f; j.curso = j.cursoMax; j.ponta = Entity.Null; }   // 0.20.0: o EsperandoTopo acha a ponta de novo
             VisualRepouso(em, j);
         }
 
@@ -1661,20 +1846,20 @@ namespace Mecanica
         {
             try
             {
-                foreach (var f in Ecs.Filhos(em, j.bloco))
-                {
-                    var p = Ecs.LT(em, f).Position;
-                    if (System.Math.Abs(p.x) > 1e-3f || System.Math.Abs(p.z) > 1e-3f) continue;
-                    if (p.y >= CabecaY - 1e-3f && p.y <= CabecaY + j.curso + 0.6f && !Ecs.TemPTM(em, f)) j.cabeca = f;
-                    else if (System.Math.Abs(p.y - HasteY) < 1e-3f) j.haste = f;
-                }
+                AcharPartesPistao(em, j.bloco, j.esc, j.cursoMax, out var h, out var c, out _);
+                if (!Ecs.Nulo(h)) j.haste = h; if (!Ecs.Nulo(c)) j.cabeca = c;
                 // 0.19.10 (Andre: "pistao extendido no fim da simulacao -> continua extendido na garagem"): diagnostico 1x por bloco fora da
                 // simulacao — quantos filhos o mod ve e onde esta a cabeca (se nao acha, o log diz por que nao recolhe)
                 bool naGaragem = !Ecs.EhPart(em, Ecs.Pai(em, j.bloco));
                 if (naGaragem && !j.garagemLog) { j.garagemLog = true; int nf = Ecs.Filhos(em, j.bloco).Count; Registro.Info(j.nome + " " + j.bloco.Index + ": garage check — " + nf + " child(ren) seen, head " + (Ecs.Nulo(j.cabeca) ? "NOT found" : "entity " + j.cabeca.Index + " at y=" + Ecs.LT(em, j.cabeca).Position.y.ToString("F3")) + ", rod " + (Ecs.Nulo(j.haste) ? "NOT found" : "entity " + j.haste.Index)); }
                 if (Ecs.Nulo(j.cabeca)) return;
-                float y = Ecs.LT(em, j.cabeca).Position.y;
-                if (y > CabecaY + 1e-3f) { j.visualExt = y - CabecaY; VisualRepouso(em, j); if (!j.recolhidoLog) { j.recolhidoLog = true; Registro.Info(j.nome + " " + j.bloco.Index + ": rod/head were left extended (" + (y - CabecaY).ToString("F2") + " m) — back to rest" + (naGaragem ? " (in the garage)" : "")); } }
+                // 0.20.0: na garagem quem manda no visual e' o Garagem.cs (haste esticada ate o Piston End alinhado); aqui so recolhe o
+                // que o Garagem nao cuida (bloco ainda numa part depois da simulacao, ou sem Piston End)
+                if (naGaragem && Garagem.Ativa) return;   // 0.20.2: na garagem SO o Garagem.cs mexe na haste (estica ate a ponta / recolhe sem ponta)
+                // 0.20.3: lancado com um Piston End alinhado: a haste fica esticada (o motor nasce nesse comprimento); so recolhe sem ponta
+                if (!naGaragem && Garagem.AcharPonta(em, j.bloco, j.meio, j.cursoMax, out _, out _, out _)) return;
+                float y = Ecs.LT(em, j.cabeca).Position.y, rep = CabecaY * j.esc;
+                if (y > rep + 1e-3f) { j.visualExt = y - rep; VisualRepouso(em, j); if (!j.recolhidoLog) { j.recolhidoLog = true; Registro.Info(j.nome + " " + j.bloco.Index + ": rod/head were left extended (" + (y - rep).ToString("F2") + " m) — back to rest" + (naGaragem ? " (in the garage)" : "")); } }
             }
             catch (Exception) { }
         }
@@ -1684,8 +1869,7 @@ namespace Mecanica
             try
             {
                 if (j.tipo != Tipo.Pistao || j.visualExt <= 0f) return;
-                if (Ecs.Vivo(em, j.cabeca)) { var lt = (Ecs.TemC(em, j.cabeca, Ecs.tiLT) ? (LocalTransform*)em.GetComponentDataRawRW(j.cabeca, Ecs.tiLT) : null); if (lt != null) lt->Position = new float3 { x = 0f, y = CabecaY, z = 0f }; }
-                if (Ecs.Vivo(em, j.haste) && Ecs.TemPTM(em, j.haste)) Ecs.EscalaY(em, j.haste, HasteRepouso);
+                PorVisualPistao(em, j.haste, j.cabeca, 0f, j.esc);
             }
             catch (Exception) { }
             j.visualExt = -1f;
@@ -1699,11 +1883,15 @@ namespace Mecanica
             try { Acoplador.Esquecer(); } catch (Exception) { }
             try { Radio.Esquecer(); } catch (Exception) { }
             try { Alavancas.Esquecer(); } catch (Exception) { }
+            try { Knobs.Esquecer(); } catch (Exception) { }   // 0.19.15
+            try { Garagem.Esquecer(); } catch (Exception) { }   // 0.20.0
+            try { Anel.Esquecer(); } catch (Exception) { }   // 0.22.0
             try { EsquecerTorres(); } catch (Exception) { }
             Registro.Info("after world unload: mod state cleared (joints, motors, beacons, radios, levers, turrets)");
         }
         public static void Limpar(EntityManager em)
         {
+            try { Anel.Encerrar(em); } catch (Exception) { }   // 0.21.4 / 0.22.0: fantasmas dos circuitos
             foreach (var j in juntas.Values) Desfazer(em, j, "cleaning up");
             LimparTorres(em);
             foreach (var c in semCol) { try { if (Ecs.Vivo(em, c.e)) em.DestroyEntity(c.e); } catch (Exception) { } }

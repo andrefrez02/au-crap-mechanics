@@ -17,6 +17,8 @@ LUZ = (230, 40, 30, 54)
 VERDE_LUZ = (40, 230, 70, 54)   # led do recoupler (aceso)
 AMARELO_LUZ = (240, 170, 20, 54)
 PISTAO_LEDS = ((-0.09, "LedVerde"), (0.0, "LedAmarelo"), (0.09, "LedVermelho"))   # x dos 3 leds de estado no painel +Z (0.12.1)
+PISTAO_LED_XS = {1.0: (-0.09, 0.0, 0.09), 0.5: (-0.01, 0.035, 0.08)}   # 0.20.0: no mini os leds andam pra direita (o knob fica no tamanho real); o plugin usa os mesmos numeros
+PISTAO_GUIA_REPOUSO = 0.0005   # 0.20.0: escala y da barra-guia escondida (o plugin estica)
 PISTAO_LED_Y, PISTAO_LED_Z = -0.135, 0.224   # escondidos (topo 1 cm abaixo do painel); o plugin empurra 2,3 cm pra fora o do estado atual
 PNEU = (33, 33, 33, 54)
 
@@ -41,13 +43,15 @@ def moldura_porta(m, eixo, sinal, plano, u, v):
     m.anel(eixo, c, PORTA_RI, PORTA_RE, PORTA_PROF, MEDIO, n=8, rot0=math.pi / 8, chanfro=0.004)
 
 
-def portas_na_face(c, portas, eixo, sinal, plano):
-    """Bolsos (pra por no caixa_chanfrada) + molduras (no corpo) das portas de uma face."""
+def portas_na_face(c, portas, eixo, sinal, plano, moldura=True):
+    """Bolsos (pra por no caixa_chanfrada) + molduras (no corpo) das portas de uma face. moldura=False (0.22.0): so o bolso — pra
+    porta cujo bolso passa da borda da face (o caixa_chanfrada corta o bolso na borda; a moldura ficaria flutuando)."""
     eu, ev = [(1, 2), (0, 2), (0, 1)][eixo]
     reb = []
     for pos, d, t in (portas or []):
         if d // 2 != eixo or (1 if d % 2 == 0 else -1) != sinal: continue
-        reb.append(bolso_porta(pos[eu], pos[ev])); moldura_porta(c, eixo, sinal, plano, pos[eu], pos[ev])
+        reb.append(bolso_porta(pos[eu], pos[ev]))
+        if moldura: moldura_porta(c, eixo, sinal, plano, pos[eu], pos[ev])
     return reb
 
 
@@ -188,53 +192,145 @@ def motor(bounds=(1.0, 1.0, 1.0), comb=False, portas=None):
 PISTAO_CABECA_POS, PISTAO_HASTE_POS, PISTAO_HASTE_REPOUSO = (0, 0.225, 0), (0, 0.105, 0), 0.095   # o plugin (Juntas.cs) usa os mesmos numeros
 
 
-def pistao(bandas, portas=None):
+def pistao(bandas, portas=None, s=1.0, guia=False):
+    """s = escala do bloco (1 = 0,5 m; 0,5 = Mini Piston de 0,25 m, 0.20.0). Os bolsos das portas, o knob e os leds ficam no
+    tamanho real (sao pecas do jogo / clicaveis); o resto escala. guia (0.20.0): renderer extra "Guia" = barra de 1 m ao longo
+    de +Y a partir da face de cima (vidro do jogo, escala y 0 em repouso) — o plugin estica ate o curso quando o H esta ligado."""
     c, p = Malha(), Malha()
-    h = 0.25
+    h = 0.25 * s
     reb_x = portas_na_face(c, portas, 0, 1, h)
-    reb_lado = [rebaixo_centrado(-0.135, 0, 0.13, 0.36, 0.006, PINTA, ESCURO,
-                                 [rebaixo_centrado(-0.135, z, 0.09, 0.02, 0.012, PRETO, ESCURO) for z in (-0.12, -0.06, 0, 0.06, 0.12)])]
-    reb_z = [rebaixo_centrado(0, -0.135, 0.36, 0.11, 0.006, PINTA, ESCURO, [rebaixo_centrado(0, -0.135, 0.3, 0.05, 0.008, MEDIO, ESCURO)])]
-    p.caixa_chanfrada(-h, h, -h, -0.02, -h, h, PINTA, topo=0.02, base=0.006, vert=0.015,
-                      rebaixos={"+x": reb_x, "-x": reb_lado, "+z": reb_z, "-z": reb_z,
-                                "-y": [rebaixo_centrado(0, 0, 0.36, 0.36, 0.01, PINTA, ESCURO)]})
-    # camisa do cilindro: octogono escuro com faixas (1/2/3 = pistao 2/4/8) e flange com 4 parafusos
-    c.torno([(0.18, -0.02), (0.20, 0.0), (0.20, 0.09), (0.185, 0.105)], 1, (0, 0, 0), ESCURO, n=8, rot0=math.pi / 8)
+    reb_lado = [rebaixo_centrado(-0.135 * s, 0, 0.13 * s, 0.36 * s, 0.006 * s, PINTA, ESCURO,
+                                 [rebaixo_centrado(-0.135 * s, z * s, 0.09 * s, 0.02 * s, 0.012 * s, PRETO, ESCURO) for z in (-0.12, -0.06, 0, 0.06, 0.12)])]
+    reb_z = [rebaixo_centrado(0, -0.135 * s, 0.36 * s, 0.11 * s, 0.006 * s, PINTA, ESCURO, [rebaixo_centrado(0, -0.135 * s, 0.3 * s, 0.05 * s, 0.008 * s, MEDIO, ESCURO)])]
+    # 0.22.0: portas de passagem (anel coletor); 0.22.1 (Andre: "as portas que estao paralelas umas as outras (em L) nao conectam direito ...
+    # o ideal e' deixar as portas do lado oposto das outras portas"): na face -X (oposta a entrada/energia), no lugar da grade de ventilacao
+    reb_xn = portas_na_face(c, portas, 0, -1, -h)
+    # 0.20.0: no mini a placa vai ate y = 0 (o bolso da porta, 0,112, nao cabia numa placa de 0,115) e os chanfros sao menores
+    yp = -0.02 * s if s >= 1 else 0.0
+    ct, cb, cv = (0.02 * s, 0.006 * s, 0.015 * s) if s >= 1 else (0.004, 0.003, 0.0075)
+    p.caixa_chanfrada(-h, h, -h, yp, -h, h, PINTA, topo=ct, base=cb, vert=cv,
+                      rebaixos={"+x": reb_x, "-x": reb_xn or reb_lado, "+z": reb_z, "-z": reb_z,
+                                "-y": [rebaixo_centrado(0, 0, 0.36 * s, 0.36 * s, 0.01 * s, PINTA, ESCURO)]})
+    # camisa do cilindro: octogono escuro com faixas (1/2/3 = pistao 2/4/8; 0.20.0: 3 no pistao unico) e flange com 4 parafusos
+    c.torno([(0.18 * s, yp), (0.20 * s, yp + 0.02 * s), (0.20 * s, 0.09 * s), (0.185 * s, 0.105 * s)], 1, (0, 0, 0), ESCURO, n=8, rot0=math.pi / 8)
     for i in range(bandas):
-        c.anel(1, (0, 0.02 + i * 0.03, 0), 0.20, 0.212, 0.014, CLARO, n=8, rot0=math.pi / 8)
+        c.anel(1, (0, (0.02 + i * 0.03) * s, 0), 0.20 * s, 0.212 * s, 0.014 * s, CLARO, n=8, rot0=math.pi / 8)
     for i in range(4):
         a = math.pi / 4 + i * math.pi / 2
-        c.parafuso((0.155 * math.cos(a), 0.105, 0.155 * math.sin(a)), 1, 1, 0.014, 0.01, CLARO)
-    # mangueira hidraulica: sai de um bloco na placa e entra na camisa
-    c.caixa_chanfrada(0.15, 0.23, -0.03, 0.02, -0.04, 0.04, MEDIO, c=0.006)
-    c.tubo([(0.19, 0.0, 0.0), (0.19, 0.06, 0.0), (0.17, 0.06, 0.0)], 0.014, ESCURO, n=8)
+        c.parafuso((0.155 * s * math.cos(a), 0.105 * s, 0.155 * s * math.sin(a)), 1, 1, 0.014 * s, 0.01 * s, CLARO)
+    # (0.22.2, Andre: "esse negocinho estranho, tira": a mangueira hidraulica saiu)
     # 0.11.0: haste e cabeca sao renderers SEPARADOS (o plugin estica a haste e sobe a cabeca junto com o bloco de cima):
     # cabeca = placa centrada na propria origem, posta em (0, 0,225, 0); haste = cilindro de 1 m (y 0..1) posto na boca da
-    # camisa (0, 0,105, 0) com escala y = 0,095 em repouso (PostTransformMatrix no jogo)
+    # camisa (0, 0,105, 0) com escala y = 0,095 em repouso (PostTransformMatrix no jogo). Tudo x s no mini.
     cab = Malha()
-    cab.caixa_chanfrada(-0.2, 0.2, -0.025, 0.025, -0.2, 0.2, MEDIO, c=0.012,
-                        rebaixos={"+y": [rebaixo_centrado(x, z, 0.036, 0.036, 0.006, PRETO, ESCURO) for x in (-0.15, 0.15) for z in (-0.15, 0.15)]
-                                  + [rebaixo_centrado(0, 0, 0.16, 0.16, 0.004, CORPO, ESCURO)]})
+    cab.caixa_chanfrada(-0.2 * s, 0.2 * s, -0.025 * s, 0.025 * s, -0.2 * s, 0.2 * s, MEDIO, c=0.012 * s,
+                        rebaixos={"+y": [rebaixo_centrado(x * s, z * s, 0.036 * s, 0.036 * s, 0.006 * s, PRETO, ESCURO) for x in (-0.15, 0.15) for z in (-0.15, 0.15)]
+                                  + [rebaixo_centrado(0, 0, 0.16 * s, 0.16 * s, 0.004 * s, CORPO, ESCURO)]})
     haste = Malha()
-    haste.cilindro(1, (0, 0.5, 0), 0.06, 1.0, METAL, n=12)
-    extras = [("Cabeca", cab, PISTAO_CABECA_POS, (1, 1, 1)), ("Haste", haste, PISTAO_HASTE_POS, (1, PISTAO_HASTE_REPOUSO, 1))]
-    extras.append(knob_painel(c, (PISTAO_KNOB[0], PISTAO_KNOB[1], h - 0.006), 1))   # 0.19.2: knob do curso
+    haste.cilindro(1, (0, 0.5, 0), 0.06 * s, 1.0, METAL, n=12)
+    extras = [("Cabeca", cab, tuple(v * s for v in PISTAO_CABECA_POS), (1, 1, 1)), ("Haste", haste, tuple(v * s for v in PISTAO_HASTE_POS), (1, PISTAO_HASTE_REPOUSO * s, 1))]
+    kx, ky = PISTAO_KNOB_S[s]
+    extras.append(knob_painel(c, (kx, ky, h - 0.006 * s), 1))   # 0.19.2: knob do curso
     # 0.12.1 (Andre: "mostra um visual nos pistoes"): 3 leds de estado no painel +Z — verde = ativo, amarelo = guia (paralelo a
     # outro pistao), vermelho = soldado (fecharia um anel / preso por outro caminho). Escondidos; o plugin empurra o do estado.
-    zf = 0.25 - 0.014   # fundo do painel rebaixado (+Z)
-    for x, suf in PISTAO_LEDS:
+    zf = h - 0.014 * s   # fundo do painel rebaixado (+Z)
+    ly = PISTAO_LED_Y * s
+    for x, suf in zip(PISTAO_LED_XS[s], ("LedVerde", "LedAmarelo", "LedVermelho")):
         cor = VERDE_LUZ if suf == "LedVerde" else AMARELO_LUZ if suf == "LedAmarelo" else LUZ
-        c.anel(2, (x, PISTAO_LED_Y, zf + 0.002), 0.012, 0.018, 0.004, PRETO, n=10)
-        c.cilindro(2, (x, PISTAO_LED_Y, zf + 0.0005), 0.012, 0.001, PRETO, n=10)
-        led = Malha(); led.cilindro(2, (0, 0, 0), 0.011, 0.016, cor, n=10, chanfro=0.002)
-        extras.append((suf, led, (x, PISTAO_LED_Y, PISTAO_LED_Z), (1, 1, 1)))
+        c.anel(2, (x, ly, zf + 0.002 * s), 0.012 * s, 0.018 * s, 0.004 * s, PRETO, n=10)
+        c.cilindro(2, (x, ly, zf + 0.0005 * s), 0.012 * s, 0.001 * s, PRETO, n=10)
+        led = Malha(); led.cilindro(2, (0, 0, 0), 0.011 * s, 0.016 * s, cor, n=10, chanfro=0.002 * s)
+        extras.append((suf, led, (x, ly, PISTAO_LED_Z * s), (1, 1, 1)))
+    if guia:
+        g = Malha(); lado = 0.03 * s
+        g.caixa(-lado, lado, 0.0, 1.0, -lado, lado, CLARO)
+        extras.append(("Guia", g, (0, h, 0), (1, PISTAO_GUIA_REPOUSO, 1)))
     return c, p, extras
 
 
+def pistao_ponta():
+    """0.20.0: Piston End (0,25 m): bloco que marca ate onde o pistao vai. Cola pelas 6 faces. 0.22.1 (Andre: "muito simples, da uma
+    mexida pra ficar mais original"): embaixo uma placa octogonal grossa (onde a cabeca da haste encosta) com o soquete escuro no meio e
+    4 parafusos; nas 4 laterais um painel rebaixado com 3 nervuras escuras; em cima um alvo em cruz rebaixado com o pino do centro."""
+    c, p = Malha(), Malha()
+    h = 0.125
+    lado = [rebaixo_centrado(0, 0, 0.19, 0.19, 0.004, PINTA, ESCURO, [rebaixo_centrado(u, 0, 0.018, 0.15, 0.006, PRETO, ESCURO) for u in (-0.05, 0.0, 0.05)])]
+    cruz = [rebaixo_centrado(0, 0, 0.19, 0.03, 0.004, ESCURO, ESCURO), rebaixo_centrado(0, 0, 0.03, 0.19, 0.004, ESCURO, ESCURO)]
+    p.caixa_chanfrada(-h, h, -h, h, -h, h, PINTA, c=0.01,
+                      rebaixos={"-y": [rebaixo_centrado(0, 0, 0.23, 0.23, 0.016, ESCURO, ESCURO)], "+y": cruz,
+                                "+x": lado, "-x": lado, "+z": lado, "-z": lado})
+    # placa octogonal dentro do rebaixo de baixo (1,6 cm): nada passa da caixa do bloco; soquete escuro e anel claro no fundo dela
+    c.cilindro(1, (0, -h + 0.010, 0), 0.105, 0.012, MEDIO, n=8, rot0=math.pi / 8, chanfro=0.003)
+    c.anel(1, (0, -h + 0.0015, 0), 0.05, 0.075, 0.003, CLARO, n=8, rot0=math.pi / 8)
+    c.cilindro(1, (0, -h + 0.001, 0), 0.05, 0.002, PRETO, n=8, rot0=math.pi / 8)
+    for i in range(4):
+        a = math.pi / 4 + i * math.pi / 2
+        c.parafuso((0.088 * math.cos(a), -h + 0.004, 0.088 * math.sin(a)), 1, -1, 0.009, 0.0035, CLARO)
+    # pino do centro do alvo (em cima)
+    c.cilindro(1, (0, h - 0.004 + 0.002, 0), 0.012, 0.004, CLARO, n=8, rot0=math.pi / 8)
+    return c, p, []
+
+
+def anel_coletor(portas=None, w=0.5):
+    """0.22.0 Slip Ring; 0.22.4 (Andre: "faz igual os blocos de logica, 2x1x2 ... normal e mini, ambos funcionam pra ambas partes, e' so pra
+    alinhar melhor"): PLACA w x 0,125 x w (normal 0,5 = igual o mini painel solar; mini 0,25 = igual os blocos de logica). Cola nas 6
+    faces, vai na peca que se move. 4 portas de passagem, 2 em cada lateral oposta (portas 1-2 na -X, 3-4 na +X). Em cima e embaixo o disco
+    de contato (tampa escura com 3 pistas claras, igual nos dois lados pra poder virar); nas faces +-Z uma faixa clara."""
+    c, p = Malha(), Malha()
+    hx, hy = w / 2, 0.0625; k = w / 0.5
+    faixa = [rebaixo_centrado(0, 0, 0.36 * k, 0.05, 0.003, PINTA, ESCURO, [rebaixo_centrado(0, 0, 0.3 * k, 0.018, 0.003, CLARO, ESCURO)])]
+    reb = {"-x": portas_na_face(c, portas, 0, -1, -hx), "+x": portas_na_face(c, portas, 0, 1, hx), "+z": faixa, "-z": faixa,
+           "+y": [rebaixo_centrado(0, 0, 0.44 * k, 0.44 * k, 0.002, PINTA, ESCURO)], "-y": [rebaixo_centrado(0, 0, 0.44 * k, 0.44 * k, 0.002, PINTA, ESCURO)]}
+    p.caixa_chanfrada(-hx, hx, -hy, hy, -hx, hx, PINTA, c=0.004, rebaixos=reb)
+    for sy in (1, -1):
+        y = sy * (hy - 0.002)   # fundo do rebaixo da face
+        c.cilindro(1, (0, y + sy * 0.00075, 0), 0.2 * k, 0.0015, ESCURO, n=16, rot0=math.pi / 16)
+        for r0 in (0.065, 0.11, 0.155):
+            c.anel(1, (0, y + sy * 0.00175, 0), r0 * k, (r0 + 0.02) * k, 0.0005, CLARO, n=16, rot0=math.pi / 16)
+        c.cilindro(1, (0, y + sy * 0.00175, 0), 0.025 * k, 0.0005, PRETO, n=8, rot0=math.pi / 8)
+        for i in range(4):
+            a = math.pi / 4 + i * math.pi / 2
+            c.parafuso((0.185 * k * math.cos(a), y + sy * 0.00025, 0.185 * k * math.sin(a)), 1, sy, 0.008 * max(k, 0.75), 0.00175, CLARO)
+    return c, p, []
+
+
+def pistao_fim(w=0.5):
+    """0.22.4 (Andre: "faz o mesmo pro piston end, igualzinho"): Piston End em PLACA w x 0,125 x w (normal 0,5 / mini 0,25), funciona com
+    os dois pistoes. Cola nas 6 faces. Embaixo (-Y, a face que olha pro pistao) o soquete octogonal com 4 parafusos dentro de um rebaixo
+    escuro; em cima o alvo em cruz com o pino do centro; nas laterais um painel com 3 nervuras."""
+    c, p = Malha(), Malha()
+    hx, hy = w / 2, 0.0625; k = w / 0.5
+    lado = [rebaixo_centrado(0, 0, 0.38 * k, 0.07, 0.003, PINTA, ESCURO, [rebaixo_centrado(u * k, 0, 0.03 * k, 0.05, 0.004, PRETO, ESCURO) for u in (-0.1, 0.0, 0.1)])]
+    cruz = [rebaixo_centrado(0, 0, 0.38 * k, 0.04 * k, 0.003, ESCURO, ESCURO), rebaixo_centrado(0, 0, 0.04 * k, 0.38 * k, 0.003, ESCURO, ESCURO)]
+    p.caixa_chanfrada(-hx, hx, -hy, hy, -hx, hx, PINTA, c=0.004,
+                      rebaixos={"-y": [rebaixo_centrado(0, 0, 0.44 * k, 0.44 * k, 0.012, ESCURO, ESCURO)], "+y": cruz,
+                                "+x": lado, "-x": lado, "+z": lado, "-z": lado})
+    c.cilindro(1, (0, -hy + 0.0075, 0), 0.2 * k, 0.009, MEDIO, n=8, rot0=math.pi / 8, chanfro=0.002)   # placa do soquete (dentro do rebaixo)
+    c.anel(1, (0, -hy + 0.0015, 0), 0.1 * k, 0.15 * k, 0.003, CLARO, n=8, rot0=math.pi / 8)
+    c.cilindro(1, (0, -hy + 0.001, 0), 0.1 * k, 0.002, PRETO, n=8, rot0=math.pi / 8)
+    for i in range(4):
+        a = math.pi / 4 + i * math.pi / 2
+        c.parafuso((0.175 * k * math.cos(a), -hy + 0.0035, 0.175 * k * math.sin(a)), 1, -1, 0.012 * k, 0.003, CLARO)
+    c.cilindro(1, (0, hy - 0.003 + 0.0015, 0), 0.02 * k, 0.003, CLARO, n=8, rot0=math.pi / 8)   # pino do alvo
+    return c, p, []
+
+
 # ------------------------------------------------------------------ bearing (quarter 0,5: base cola embaixo, topo solta e gira)
-BEARING_LED = (0.12, -0.16)   # (x, y) do led de trava nos paineis +Z/-Z (0.17.0; o plugin procura por essa posicao)
-BEARING_KNOB = (-0.12, -0.16)   # 0.19.2: knob do angulo do servo (10..360 graus, continuo), painel +Z, do outro lado do LED
+# 0.23.0 (Andre: "adiciona uma saida de dados ... na lateral que tem o knob so que o lado oposto, e joga o LED mais pro lado ...
+# o LED anda mais pro centro, ele fica entre o knob e a nova saida de dados ... um switch ... do lado direito do knob"):
+# o painel +Z do bearing passa a ter, da esquerda pra direita (olhando de fora, +X a esquerda): SAIDA do angulo (porta, celula
+# +X da fileira de baixo), LED de trava, knob do servo e o SWITCH graus / -1..1. No mini nao cabe tudo numa face so: a saida e o
+# LED vao pro painel +Z (com o knob) e o switch vai pra face -Z, no lugar do segundo LED (que saiu).
+BEARING_LED = (0.025, -0.16)   # (x, y) do led de trava no painel +Z (0.17.0; o plugin procura por essa posicao)
+BEARING_KNOB = (-0.12, -0.16)   # 0.19.2: knob do angulo do servo (10..360 graus, continuo), painel +Z
+BEARING_SWITCH = (-0.205, -0.16)   # 0.23.0: switch da saida de angulo (ligado = graus, desligado = -1..1)
 PISTAO_KNOB = (-0.12, -0.135)   # 0.19.2: knob do curso (10..100 %), painel +Z
+PISTAO_KNOB_S = {1.0: PISTAO_KNOB, 0.5: (-0.07, -0.0675)}   # 0.20.0: Mini Piston (knob no tamanho real)
+BEARING_KNOB_S = {1.0: BEARING_KNOB, 0.5: (-0.065, -0.08)}; BEARING_LED_S = {1.0: BEARING_LED, 0.5: (0.065, -0.08)}   # 0.20.0: Mini Bearing
+# 0.23.0: no mini as duas celulas livres ficam do lado -X, entao a saida do angulo vai pra face -Z (ao lado da de passagem) e o
+# painel +Z fica com LED (borda +X), switch (meio) e knob — o switch nao cabe do lado direito do knob num bloco de 0,25.
+BEARING_SWITCH_S = {1.0: BEARING_SWITCH, 0.5: (0.010, -0.08)}
+BEARING_PAINEL_S = {1.0: (-0.0625, 0.345), 0.5: (-0.010, 0.190)}   # (centro x, largura) do painel +Z: abre espaco pro switch e sai de baixo do bolso da saida
 def knob_painel(c, pos, eixo, n_marcas=0, r=0.02, h=0.016):
     """0.19.2: knob deitado num painel vertical (eixo = +1 painel +Z / -1 painel -Z): anel de marcas no painel + o knob (extra "Knob").
     0.19.3 (Andre: "o knob no bearing ta pra dentro do modelo"): o EPC_Actionable_Knob do jogo ESCREVE a rotacao do knob
@@ -248,38 +344,78 @@ def knob_painel(c, pos, eixo, n_marcas=0, r=0.02, h=0.016):
     zt = eixo * (0.007 + h / 2)
     knob.caixa(-0.0022, 0.0022, 0.003, r - 0.0025, min(zt, zt + eixo * 0.001), max(zt, zt + eixo * 0.001), CLARO)   # risco apontando (pra cima no meio do curso)
     return ("Knob", knob, (x, y, z), (1, 1, 1), (0, 0, 0))
-def bearing(portas=None):
+def switch_painel(c, pos, eixo, esc=1.0, suf="Switch"):
+    """0.23.0: switch de duas posicoes num painel vertical (eixo = +1 painel +Z / -1 painel -Z). E' o ActionableToggle do jogo — o
+    mesmo do Input Switch do Datameter e do botao de re do mini propulsor: o jogo escreve a pose da haste (_buttonTransformOn/Off),
+    entao a haste e' modelada ao longo de Z (pra fora do painel) e o prefab inclina em X."""
+    x, y, z = pos
+    lu, lv = 0.055 * esc, 0.034 * esc
+    c.caixa(x - lu / 2, x + lu / 2, y - lv / 2, y + lv / 2, z - eixo * 0.004 * esc, z + eixo * 0.0008, ESCURO)
+    c.caixa(x - lu / 2 + 0.006 * esc, x + lu / 2 - 0.006 * esc, y - lv / 2 + 0.006 * esc, y + lv / 2 - 0.006 * esc,
+            z - eixo * 0.007 * esc, z + eixo * 0.0004, PRETO)
+    sw = Malha()
+    # (a haste nasce DENTRO do pe pra nao deixar faces coladas — checa_malha)
+    sw.caixa(-0.009 * esc, 0.009 * esc, -0.0055 * esc, 0.0055 * esc, *sorted((eixo * 0.004 * esc, eixo * 0.019 * esc)), cor=CLARO)
+    sw.caixa(-0.011 * esc, 0.011 * esc, -0.008 * esc, 0.008 * esc, *sorted((-eixo * 0.002 * esc, eixo * 0.006 * esc)), cor=MEDIO)
+    return (suf, sw, (x, y, z), (1, 1, 1), (0, 0, 0))
+
+
+VERDE_GIRO = (56, 168, 96, 54)   # 0.19.14: anel do Gyro Bearing
+def bearing(portas=None, giro=False, s=1.0):
+    """s = escala (1 = 0,5 m; 0,5 = Mini Bearing / Mini Gyro Bearing de 0,25 m, 0.20.0 — so uma entrada, knob e led no tamanho real)."""
     c, p = Malha(), Malha()
-    h = 0.25
-    reb_y = portas_na_face(c, portas, 1, -1, -h)   # as 4 entradas ficam na face de baixo
-    lado = [rebaixo_centrado(-0.16, 0, 0.09, 0.32, 0.006, PINTA, ESCURO, [rebaixo_centrado(-0.16, z, 0.05, 0.02, 0.012, PRETO, ESCURO) for z in (-0.1, -0.05, 0, 0.05, 0.1)])]
-    p.caixa_chanfrada(-h, h, -h, -0.08, -h, h, PINTA, topo=0.015, base=0.006, vert=0.015,
-                      rebaixos={"-y": reb_y, "+x": lado, "-x": lado, "+z": [rebaixo_centrado(0, -0.16, 0.32, 0.09, 0.006, PINTA, ESCURO)],
-                                "-z": [rebaixo_centrado(0, -0.16, 0.32, 0.09, 0.006, PINTA, ESCURO)]})
-    # pista: anel externo escuro, anel interno, esferas no meio
-    c.anel(1, (0, -0.045, 0), 0.20, 0.245, 0.07, ESCURO, n=16, rot0=math.pi / 16, chanfro=0.008)
-    c.anel(1, (0, -0.045, 0), 0.10, 0.185, 0.07, CORPO, n=16, rot0=math.pi / 16, chanfro=0.006)
+    h = 0.25 * s
+    reb_y = portas_na_face(c, portas, 1, -1, -h)   # as entradas ficam na face de baixo
+    # 0.22.0 (Andre: "adiciona mais portas no bearing ... nas laterais, mantem intacta as 4 portas de baixo que sao so pra movimentacao,
+    # e add mais 4 na lateral oposta do knob"): portas de PASSAGEM (anel coletor) na face -Z da base. No bearing cabem na fileira de
+    # baixo (a base vai so ate y -0,04); o painel e o led de -Z saem (o led de trava fica so no painel +Z). No mini a base tem 8,5 cm
+    # de altura: o bolso (11,2 cm) fica cortado no topo da base — o plugue sobressai um pouco, fora do caminho da pista.
+    reb_zn = portas_na_face(c, portas, 2, -1, -h, moldura=s >= 1)
+    reb_zp = portas_na_face(c, portas, 2, 1, h, moldura=s >= 1)   # 0.23.0: saida do angulo na face do knob
+    lado = [rebaixo_centrado(-0.16 * s, 0, 0.09 * s, 0.32 * s, 0.006 * s, PINTA, ESCURO, [rebaixo_centrado(-0.16 * s, z * s, 0.05 * s, 0.02 * s, 0.012 * s, PRETO, ESCURO) for z in (-0.1, -0.05, 0, 0.05, 0.1)])]
+    # 0.22.0: no mini a base sobe de -0,04 pra -0,025 (o plugue da porta lateral, 7 cm, cabe dentro) e a pista fica com 2 cm
+    # 0.22.2 (Andre: "aumenta um pouquinho so a base do mini bearing"): no mini a base vai ate y 0 (o bolso da porta lateral, ate -0,0065, cabe
+    # inteiro) e o disco comeca 4 mm acima (y0d); a pista fica nesses 4 mm
+    topo_base = -0.08 * s if s >= 1 else 0.0
+    y0d = -0.01 * s if s >= 1 else 0.004
+    p.caixa_chanfrada(-h, h, -h, topo_base, -h, h, PINTA, topo=0.015 * s, base=0.006 * s, vert=0.015 * s,
+                      rebaixos={"-y": reb_y, "+x": lado, "-x": lado,
+                                "+z": reb_zp + [rebaixo_centrado(BEARING_PAINEL_S[s][0], -0.16 * s, BEARING_PAINEL_S[s][1], 0.09 * s, 0.006 * s, PINTA, ESCURO)],
+                                "-z": reb_zn})
+    # pista: anel externo escuro, anel interno, esferas no meio (do topo da base ate o disco: y -0,08..-0,01 no bearing; -0,025..-0,005 no mini)
+    yp0, yp1 = topo_base, y0d; ypc, yph = (yp0 + yp1) / 2, yp1 - yp0
+    c.anel(1, (0, ypc, 0), 0.20 * s, 0.245 * s, yph, ESCURO, n=16, rot0=math.pi / 16, chanfro=min(0.008 * s, yph * 0.2))
+    c.anel(1, (0, ypc, 0), 0.10 * s, 0.185 * s, yph, CORPO, n=16, rot0=math.pi / 16, chanfro=min(0.006 * s, yph * 0.2))
     for i in range(12):
         a = 2 * math.pi * i / 12
-        c.esfera((0.1925 * math.cos(a), -0.02, 0.1925 * math.sin(a)), 0.02, CLARO, n=8, m=4)
+        c.esfera((0.1925 * s * math.cos(a), -0.02 * s if s >= 1 else ypc, 0.1925 * s * math.sin(a)), 0.02 * s if s >= 1 else 0.004, CLARO, n=8, m=4)
     # disco de cima (pintavel) + tampa escura com furos de parafuso e cubo
-    p.torno([(0.19, -0.01), (0.225, 0.02), (0.225, 0.20), (0.205, 0.22)], 1, (0, 0, 0), PINTA, n=16, rot0=math.pi / 16)
-    c.cilindro(1, (0, 0.235, 0), 0.215, 0.03, MEDIO, n=16, rot0=math.pi / 16, chanfro=0.008)
+    p.torno([(0.19 * s, y0d), (0.225 * s, y0d + 0.03 * s), (0.225 * s, 0.20 * s), (0.205 * s, 0.22 * s)], 1, (0, 0, 0), PINTA, n=16, rot0=math.pi / 16)
+    c.cilindro(1, (0, 0.235 * s, 0), 0.215 * s, 0.03 * s, MEDIO, n=16, rot0=math.pi / 16, chanfro=0.008 * s)
     for i in range(6):
         a = math.pi / 6 + i * math.pi / 3
-        furo_parafuso(c, (0.16 * math.cos(a), 0.25, 0.16 * math.sin(a)), 1, 1, 0.016)
-    c.cilindro(1, (0, 0.2503, 0), 0.06, 0.0006, CORPO, n=8, rot0=math.pi / 8)
-    setas_giro(c, 0.2255, 0.11)
+        furo_parafuso(c, (0.16 * s * math.cos(a), 0.25 * s, 0.16 * s * math.sin(a)), 1, 1, 0.016 * s)
+    c.cilindro(1, (0, 0.2503 * s, 0), 0.06 * s, 0.0006, CORPO, n=8, rot0=math.pi / 8)
+    if giro:
+        # 0.19.14: Gyro Bearing — em vez das setas, um anel verde na lateral do disco (linha do horizonte) e um na pista:
+        # o lado de cima mira sozinho pra ficar nivelado, nao tem "sentido" de giro
+        c.anel(1, (0, 0.11 * s, 0), 0.2255 * s, 0.2295 * s, 0.014 * s, VERDE_GIRO, n=16, rot0=math.pi / 16)
+        c.anel(1, (0, (-0.045 + 0.036) * s if s >= 1 else yp1 - 0.001, 0), 0.20 * s, 0.245 * s, 0.006 * s if s >= 1 else 0.0015, VERDE_GIRO, n=16, rot0=math.pi / 16)
+    else: setas_giro(c, 0.2255 * s, 0.11 * s, larg=0.009 * s)
     # 0.17.0 (Andre: "trava os bearings e mostra visualmente o bearing travado"): led vermelho nos paineis +Z/-Z da base (igual o do
     # recoupler): escondido 2 cm pra dentro, o plugin empurra pra fora quando a rede de eixo dele trava (sinais opostos)
+    # 0.23.0: um LED so (no painel +Z, entre a saida de angulo e o knob); no mini o segundo LED saiu pra o switch caber na face -Z
     extras = []
-    for sz, suf in ((1, "LedA"), (-1, "LedB")):
-        zf = sz * (h - 0.006)
-        c.anel(2, (sz * BEARING_LED[0], BEARING_LED[1], zf + sz * 0.002), 0.012, 0.02, 0.004, PRETO, n=8, rot0=math.pi / 8)
-        c.cilindro(2, (sz * BEARING_LED[0], BEARING_LED[1], zf + sz * 0.0005), 0.012, 0.001, PRETO, n=8, rot0=math.pi / 8)
-        led = Malha(); led.cilindro(2, (0, 0, 0), 0.011, 0.016, LUZ, n=8, rot0=math.pi / 8, chanfro=0.003)
-        extras.append((suf, led, (sz * BEARING_LED[0], BEARING_LED[1], zf - sz * 0.02), (1, 1, 1)))
-    extras.append(knob_painel(c, (BEARING_KNOB[0], BEARING_KNOB[1], h - 0.006), 1))   # 0.19.2: knob do angulo do servo
+    lx, ly = BEARING_LED_S[s]
+    zf = h - 0.006 * s
+    c.anel(2, (lx, ly, zf + 0.002 * s), 0.012 * s, 0.02 * s, 0.004 * s, PRETO, n=8, rot0=math.pi / 8)
+    c.cilindro(2, (lx, ly, zf + 0.0005 * s), 0.012 * s, 0.001 * s, PRETO, n=8, rot0=math.pi / 8)
+    led = Malha(); led.cilindro(2, (0, 0, 0), 0.011 * s, 0.016 * s, LUZ, n=8, rot0=math.pi / 8, chanfro=0.003 * s)
+    extras.append(("LedA", led, (lx, ly, zf - 0.02 * s), (1, 1, 1)))
+    kx, ky = BEARING_KNOB_S[s]
+    extras.append(knob_painel(c, (kx, ky, h - 0.006 * s), 1))   # 0.19.2: knob do angulo do servo
+    sx, sy = BEARING_SWITCH_S[s]
+    extras.append(switch_painel(c, (sx, sy, h - 0.006 * s), 1, 1.0 if s >= 1 else 0.85))
     return c, p, extras
 
 
@@ -328,10 +464,11 @@ def recoupler(portas=None):
     p.tronco(-0.125, 0.125, -0.125, 0.125, -0.0075, 0.125, -0.125, PINTA)
     # 0.10.2 (Andre): a porta fica na faixa de cima (y 0,1875), na face +X; chanfros menores nela pro bolso caber
     reb_x = portas_na_face(c, portas, 0, 1, h) + [rebaixo_centrado(0.19, -0.04, 0.06, 0.26, 0.006, MEDIO, ESCURO)]
+    reb_xn = portas_na_face(c, portas, 0, -1, -h)   # 0.22.0: 4 portas de passagem (anel coletor) na faixa de cima da face -X
     p.caixa_chanfrada(-h, h, 0.125, h, -h, h, PINTA, topo=0.006, base=0.0, vert=0.006,
                       rebaixos={"+y": [rebaixo_centrado(0, 0, 0.40, 0.40, 0.010, PINTA, ESCURO)],
                                 "+x": reb_x,
-                                "-x": [rebaixo_centrado(0.19, 0, 0.06, 0.34, 0.006, MEDIO, ESCURO)],
+                                "-x": reb_xn,
                                 "+z": [rebaixo_centrado(0, 0.19, 0.34, 0.06, 0.006, MEDIO, ESCURO)],
                                 "-z": [rebaixo_centrado(0, 0.19, 0.34, 0.06, 0.006, MEDIO, ESCURO)]})
     for sx in (-1, 1):
@@ -713,7 +850,11 @@ TURRET_SEAT = (0.0, TURRET_UPPER[1] + 0.775, TURRET_UPPER[2])   # deslocamento a
 TURRET_GATILHO = (0.36, -0.135, 0.247)   # pivo dos gatilhos (+-X, na ponta dos apoios de braco), giram em X 0..TURRET_GATILHO_CURSO
 TURRET_BRACO = (0.30, 0.42, -0.27, -0.15, -0.23, 0.30)   # apoio de braco direito (x0,x1,y0,y1,z0,z1); esquerdo espelhado
 TURRET_GATILHO_CURSO = 20.0
-TURRET_PORTAS = []   # 0.12.2 (Andre): sem saida, sem gatilhos
+# 0.22.0 (Andre: "turret seat entra tambem, adiciona na base dele as portas, um conjunto em cada lateral correspondendo a placa daquele
+# lado"): 4 conjuntos de 4 portas de passagem sem tipo nas laterais da BASE (y -1,1875, a casa da base), na ordem das placas:
+# 0-3 -X (placa esquerda), 4-7 +X (direita), 8-11 -Z (tras), 12-15 +Z (= placa de cima, que nao tem lateral propria). (0.12.2: sem saida, sem gatilhos)
+TURRET_PORTAS = ([((-0.6875, -1.1875, z), 1, 5) for z in (-0.1875, -0.0625, 0.0625, 0.1875)] + [((0.6875, -1.1875, z), 0, 5) for z in (-0.1875, -0.0625, 0.0625, 0.1875)]
+                 + [((x, -1.1875, -0.6875), 5, 5) for x in (-0.1875, -0.0625, 0.0625, 0.1875)] + [((x, -1.1875, 0.6875), 4, 5) for x in (-0.1875, -0.0625, 0.0625, 0.1875)])   # 0.22.2: tipo 5 (plugue sem cor, igual o Frame Quarter With Ports)   # 6,25 cm pra dentro da face da base (0,75)
 
 
 def _marca():
@@ -759,8 +900,12 @@ def turret(portas=None):
     # ---- base parada (pintavel), 1 casa de espessura, 1,5 x 1,5 no meio do fundo
     # 0.19.2 (Andre: "o turret seat e' feio — mantem as placas, so deixa mais bonito"): base com chanfro grande e um rebaixo em
     # moldura; mesa giratoria em 2 aneis (escuro + claro), coroa de parafusos, cantos com placas de fixacao
-    p.caixa_chanfrada(-hb, hb, yb0, yb1, -hb, hb, PINTA, topo=0.035, base=0.01, vert=0.05,
-                      rebaixos={"+y": [rebaixo_centrado(0, 0, 1.34, 1.34, 0.006, PINTA, ESCURO, [rebaixo_centrado(0, 0, 1.24, 1.24, 0.004, MEDIO, ESCURO)])]})
+    # 0.22.0 (Andre): portas de passagem (anel coletor) nas 4 laterais da BASE, um conjunto por placa (-X esquerda, +X direita, -Z tras,
+    # +Z = placa de cima). A base tem 12,5 cm: pro bolso (11,2 cm) caber, os chanfros de cima/baixo da base ficaram menores (0,035 -> 0,006)
+    p.caixa_chanfrada(-hb, hb, yb0, yb1, -hb, hb, PINTA, topo=0.006, base=0.004, vert=0.05,
+                      rebaixos={"+y": [rebaixo_centrado(0, 0, 1.34, 1.34, 0.006, PINTA, ESCURO, [rebaixo_centrado(0, 0, 1.24, 1.24, 0.004, MEDIO, ESCURO)])],
+                                "-x": portas_na_face(c, portas, 0, -1, -hb), "+x": portas_na_face(c, portas, 0, 1, hb),
+                                "-z": portas_na_face(c, portas, 2, -1, -hb), "+z": portas_na_face(c, portas, 2, 1, hb)})
     c.anel(1, (0, yb1 - 0.010 + 0.014, 0), 0.36, 0.66, 0.028, ESCURO, n=48, chanfro=0.006)   # mesa giratoria (parada): anel escuro
     c.anel(1, (0, yb1 - 0.010 + 0.034, 0), 0.42, 0.58, 0.012, CLARO, n=48, chanfro=0.004)    # faixa clara por cima
     for k in range(16):
@@ -849,25 +994,79 @@ def turret(portas=None):
     return c, p, extras, previa
 
 
+TRANSM_ANTENA = (0.044, 0.081)    # (x, z) da base da antena da direita do jogo; o detalhe vai pro canto de tras/esquerdo de cima
+TRANSM_DETALHE = (-0.088, 0.088)  # (x, z) do detalhe (globo / engrenagem): canto livre do tampo (a tela vai ate x -0,073, z 0,054)
+TRANSM_TOPO = -0.01               # topo da base do transmitter do jogo
+TRANSM_FURO = (0.03, 0.0815, 0.0225)   # 0.22.4: furos sextavados do tampo da base pintavel do jogo (x +-, z, raio do vertice)
+CINZA_T, CLARO_T = (83, 83, 83, 0), (208, 208, 208, 0)   # cores das antenas do transmitter do jogo
+def transmissor_corpo(detalhe):
+    """0.22.1/0.22.2 (Andre: "ambos vao ter so a antena da direita, e no lado oposto ... um unico detalhe"; "tira esse retangulo preto,
+    deixa so a anteninha e a bolinha, e deixa eles afastados"): o RENDERER do transmitter (as antenas do jogo vem coladas numa malha so)
+    vira malha propria: a antena da direita igual a do jogo e, no canto de tras/esquerdo do tampo, o detalhe ("globo" ou "engrenagem").
+    0.22.4 (Andre: "deixou cortado ali e da pra ver o que vem por tras do buraco"): a base pintavel do jogo tem 2 FUROS sextavados no tampo
+    (x +-0,03, z 0,0815, raio 0,0225) onde entram as bases das antenas — as duas bases voltam (a da esquerda fechada, sem antena).
+    A base pintavel, a tela, a etiqueta e o LED continuam sendo os do jogo (prefab)."""
+    c = Malha(); y1 = TRANSM_TOPO
+    for bx in (-TRANSM_FURO[0], TRANSM_FURO[0]):   # bases sextavadas (fecham os furos; vertice pra +-Z igual o furo)
+        c.cilindro(1, (bx, y1 - 0.002 + 0.006, TRANSM_FURO[1]), TRANSM_FURO[2], 0.012, CINZA_T, n=6, rot0=math.pi / 6, chanfro=0.003)
+    c.cilindro(1, (-TRANSM_FURO[0], y1 + 0.0105, TRANSM_FURO[1]), 0.008, 0.002, PRETO, n=6, rot0=math.pi / 6)   # furo cego no lugar da antena que saiu
+    ax, az = TRANSM_FURO[0], TRANSM_FURO[1]
+    p0 = (ax, y1 + 0.01, az); p1 = (ax + 0.022, 0.098, az + 0.01)
+    c.cilindro_entre(p0, p1, 0.0045, CLARO_T, n=8)
+    c.esfera(p1, 0.009, CLARO_T, n=8, m=4)
+    dx, dz = TRANSM_DETALHE
+    c.cilindro(1, (dx, y1 + 0.005, dz), 0.012, 0.01, CINZA_T, n=8, rot0=math.pi / 8, chanfro=0.002)   # base octogonal (igual a da antena)
+    if detalhe == "globo":
+        r = 0.019; cy = y1 + 0.01 + 0.03 + r
+        c.cilindro(1, (dx, y1 + 0.01 + 0.015, dz), 0.0045, 0.03, CLARO_T, n=8)                     # haste
+        c.juntar(globo((dx, cy, dz), r))
+    else:
+        r = 0.026; cy = y1 + 0.01 + 0.006 + r
+        c.cilindro(1, (dx, y1 + 0.01 + 0.003, dz), 0.008, 0.006, CLARO_T, n=8)                     # pino do eixo
+        c.juntar(engrenagem((dx, cy, dz), r))
+    return c
+
+
+def engrenagem(centro, r=0.026, dentes=10, esp=0.01):
+    """0.22.2 (Andre: "esse negocinho tem que virar uma engrenagem bonitinha"): engrenagem de dentes trapezoidais (contorno de verdade),
+    de pe (eixo em Z, de frente pro jogador), com furo e cubo. Faces planas + parede externa + parede do furo."""
+    m = Malha(); x, cy, z = centro
+    rr = r * 0.78; rf = r * 0.28   # raiz dos dentes, furo
+    pts = []
+    for i in range(dentes):
+        a0 = 2 * math.pi * i / dentes; da = 2 * math.pi / dentes
+        for f, rad in ((0.0, rr), (0.18, r), (0.5, r), (0.68, rr)):
+            pts.append((a0 + f * da, rad))
+    def P(a, rad, zz): return (x + rad * math.cos(a), cy + rad * math.sin(a), zz)
+    z0, z1 = z - esp / 2, z + esp / 2
+    n = len(pts)
+    for k in range(n):
+        (a, ra), (b, rb) = pts[k], pts[(k + 1) % n]
+        for zz, sg in ((z1, 1), (z0, -1)):   # faces (anel entre o furo e o contorno)
+            m.quad(P(a, rf, zz), P(a, ra, zz), P(b, rb, zz), P(b, rf, zz), CINZA_T, nrm=(0, 0, sg))
+        m.quad(P(a, ra, z0), P(b, rb, z0), P(b, rb, z1), P(a, ra, z1), CINZA_T, centro=(x, cy, z))      # parede externa
+        m.quad(P(a, rf, z0), P(b, rf, z0), P(b, rf, z1), P(a, rf, z1), CINZA_T, centro=(x, cy, z + 1))  # parede do furo (normal pra dentro)
+    m.anel(2, (x, cy, z), rf * 0.45, rf, esp + 0.004, CLARO_T, n=8)   # cubo claro
+    return m
+
+
+def globo(centro, r=0.02):
+    """0.22.1 (Andre: "um iconezinho de globo de internet pra falar que e' global"): esfera clara com equador e 2 meridianos escuros."""
+    m = Malha(); x, cy, z = centro
+    m.esfera((x, cy, z), r, CLARO_T, n=16, m=8)
+    for eixo in (0, 1, 2):
+        m.anel(eixo, (x, cy, z), r - 0.0015, r + 0.002, 0.003, CINZA_T, n=16)   # equador (Y) e 2 meridianos (X, Z)
+    return m
+
+
+
 def transmissor():
-    """0.16.0: Shaft Transmitter = copia do SC_WirelessTransmitter do jogo (o prefab usa as malhas do jogo, religadas em runtime).
-    Aqui so a previa do icone: malhas do jogo (nao vao pro bundle), a parte pintavel em cor de ferro."""
-    previa = Malha()
-    if MESH_JOGO:
-        try:
-            import exportar_glb
-            for arq, cor in (("Wireless Transmitter Body.asset", None), ("Wireless Transmitter Body Paintable.asset", (70, 72, 78, 0)),
-                             ("Wireless Transmitter Indicator.asset", None), ("Wireless Transmitter Actionable.asset", None),   # 0.19.0: tela clara, igual no jogo
-                             ("Wireless Transmitter Label.asset", (70, 72, 78, 0))):
-                caminho = os.path.join(MESH_JOGO, arq)
-                if not os.path.exists(caminho): print("previa do transmitter: falta", arq); continue
-                vpos, vnrm, vcor, idx = exportar_glb.ler_malha(caminho)
-                for k in range(0, len(idx), 3):
-                    a, b, cc = [np.array(vpos[idx[k + i]], float) for i in range(3)]
-                    previa.tris.append((a, b, cc, cor or (tuple(vcor[idx[k]]) if vcor else (120, 120, 120, 0))))
-        except Exception as ex:
-            print("previa do transmitter:", ex)
-    return Malha(), Malha(), [], numero_tela(previa)
+    """0.16.0: Shaft Transmitter = copia do SC_WirelessTransmitter do jogo. 0.22.2: o renderer das antenas vira malha propria (transmissor_corpo: antena da direita + engrenagem);
+    base pintavel, tela, etiqueta e LED continuam os do jogo (a previa do icone mostra os do jogo)."""
+    return transmissor_corpo("engrenagem"), Malha(), [], numero_tela(previa_jogo(["Wireless Transmitter Body Paintable.asset", "Wireless Transmitter Indicator.asset",
+                                                                       "Wireless Transmitter Actionable.asset", "Wireless Transmitter Label.asset"],
+                                                                      1.0, {"Wireless Transmitter Body Paintable.asset": (70, 72, 78, 0), "Wireless Transmitter Label.asset": (70, 72, 78, 0)}))
+
 
 
 # ------------------------------------------------------------------ 0.18.0: Single Cell Battery (2x4x2 casas = 0,25 x 0,5 x 0,25)
@@ -940,11 +1139,14 @@ def mini_propulsor():
                                              0.5, {"Small Electric Thruster Body Paintable.asset": (150, 145, 135, 0)})
 
 
+
+
 def radio():
-    """0.18.0: Long Range Transmitter = malhas do Wireless Transmitter do jogo (so a previa do icone)."""
-    return Malha(), Malha(), [], numero_tela(previa_jogo(["Wireless Transmitter Body.asset", "Wireless Transmitter Body Paintable.asset", "Wireless Transmitter Indicator.asset",
-                                                          "Wireless Transmitter Actionable.asset", "Wireless Transmitter Label.asset"],   # 0.19.0: + tela e etiqueta
-                                                         1.0, {"Wireless Transmitter Body Paintable.asset": (60, 62, 68, 0), "Wireless Transmitter Label.asset": (60, 62, 68, 0)}))
+    """0.18.0: Long Range Transmitter. 0.22.2: o renderer das antenas vira malha propria (transmissor_corpo: antena da direita + globo);
+    base pintavel, tela, etiqueta e LED continuam os do jogo (a previa do icone mostra os do jogo)."""
+    return transmissor_corpo("globo"), Malha(), [], numero_tela(previa_jogo(["Wireless Transmitter Body Paintable.asset", "Wireless Transmitter Indicator.asset",
+                                                                       "Wireless Transmitter Actionable.asset", "Wireless Transmitter Label.asset"],
+                                                                      1.0, {"Wireless Transmitter Body Paintable.asset": (60, 62, 68, 0), "Wireless Transmitter Label.asset": (60, 62, 68, 0)}))
 
 
 def turret_capsula():
@@ -1040,12 +1242,47 @@ def reversor(portas=None):
     seta(-0.058, False); seta(0.058, True)
     return c, p
 
+SOLAR_PORTA_X = -0.1875   # porta de energia do mini painel solar (gen_prefabs.solar_mini): x -0,1875, z +-0,1875, olhando pra +-Z
+SOLAR_AZUL, SOLAR_GRADE = (25, 21, 70, 220), (32, 32, 32, 54)   # cores das celulas / grade do painel solar do jogo
+def solar_mini(portas=None):
+    """0.22.5 (Andre: "ainda ta feio, ficou um aglomerado de gambiarras no modelo - e ta preto inves de seguir a cor do modelo"): o mini painel
+    solar deixa de ser a malha do jogo esticada (x 0,5 / z 0,25, que deformava o suporte do canto) e vira modelo proprio, desenhado pro
+    tamanho 0,5 x 0,125 x 0,5: bandeja pintavel com borda, 4 cantoneiras de uma casa nos cantos (as duas de -X levam as portas de energia,
+    com bolso + moldura iguais aos outros blocos), e 6 x 6 celulas azuis com grade escura (cores do painel do jogo)."""
+    c, p = Malha(), Malha()
+    h = 0.25; yb, yt = -0.0625, -0.02   # bandeja; as cantoneiras (so onde tem porta) vao ate o topo do bloco
+    # 0.22.6 (Andre: "z-fighting ... e a partezinha nos outros dois cantos que nao tem porta - tira"): so as 2 cantoneiras das portas (-X);
+    # a bandeja fica 2 mm pra dentro das faces do bloco (as cantoneiras e as bordas ficam rentes as faces: nada coplanar com a bandeja)
+    e = 0.002; b = 0.02; cz = 0.03   # recuo da bandeja, largura da borda, fundo da cantoneira
+    p.caixa_chanfrada(-h + e, h - e, yb + 0.001, yt, -h + e, h - e, PINTA, topo=0.0, base=0.004, vert=0.004)   # fundo 1 mm acima do das cantoneiras
+    p.caixa_chanfrada(-h, -h + b, yt, 0.0, -h + cz, h - cz, PINTA, c=0.003)            # borda -X (entre as cantoneiras)
+    p.caixa_chanfrada(h - b, h, yt, 0.0, -h, h, PINTA, c=0.003)                        # borda +X (inteira)
+    for sz in (-1, 1):                                                                 # bordas +-Z (da cantoneira ate a borda +X)
+        p.caixa_chanfrada(-h + 0.125, h - b, yt, 0.0, sz * h - (b if sz > 0 else 0), sz * h + (0 if sz > 0 else b), PINTA, c=0.003)
+    for sz in (-1, 1):   # cantoneiras das portas: uma casa (0,125) em X, 3 cm em Z, do fundo ao topo do bloco
+        z0, z1 = (-h, -h + cz) if sz < 0 else (h - cz, h)
+        face = "+z" if sz > 0 else "-z"
+        reb = portas_na_face(p, [pp for pp in (portas or []) if (pp[0][2] < 0) == (sz < 0)], 2, sz, sz * h)
+        p.caixa_chanfrada(-h, -h + 0.125, yb, 0.0625, z0, z1, PINTA, c=0.003, rebaixos={face: reb} if reb else None)
+    # celulas: 6 x 6 dentro da borda, sobre a bandeja (grade escura por baixo, celulas azuis 1 mm acima)
+    i0, i1 = -h + b + 0.004, h - b - 0.004; z0, z1 = -h + b + 0.004, h - b - 0.004
+    c.caixa(i0, i1, yt, yt + 0.002, z0, z1, SOLAR_GRADE)
+    n = 6; dx, dz = (i1 - i0) / n, (z1 - z0) / n; g = 0.004
+    for a in range(n):
+        for k in range(n):
+            c.caixa(i0 + a * dx + g, i0 + (a + 1) * dx - g, yt + 0.002, yt + 0.003, z0 + k * dz + g, z0 + (k + 1) * dz - g, SOLAR_AZUL)
+    return c, p, []
+
+
 def modelos(portas_por_bloco):
     """portas_por_bloco: nome -> [(pos, direcao, tipo)] (vem do gen_prefabs)."""
     P = lambda n: portas_por_bloco.get(n, [])
     r = {}
-    for curso, bandas in ((2, 1), (4, 2), (8, 3)): r["SC_Pistao%d" % curso] = pistao(bandas, P("SC_Pistao%d" % curso))
-    r["SC_Bearing"] = bearing(P("SC_Bearing"))
+    r["SC_Pistao"] = pistao(3, P("SC_Pistao"), guia=True); r["SC_MiniPistao"] = pistao(2, P("SC_MiniPistao"), s=0.5, guia=True)   # 0.20.0: pistao unico (ate 8 m) + mini (ate 4 m)
+    r["SC_SlipRing"] = anel_coletor(P("SC_SlipRing"), 0.5); r["SC_MiniSlipRing"] = anel_coletor(P("SC_MiniSlipRing"), 0.25)   # 0.22.4: placas 4x1x4 / 2x1x2
+    r["SC_PistaoFim"] = pistao_fim(0.5); r["SC_MiniPistaoFim"] = pistao_fim(0.25)   # 0.22.4: Piston End em placa (o SC_PistaoPonta cubo fica pros BPs antigos)
+    r["SC_Bearing"] = bearing(P("SC_Bearing")); r["SC_GyroBearing"] = bearing(P("SC_GyroBearing"), giro=True)   # 0.19.14
+    r["SC_MiniBearing"] = bearing(P("SC_MiniBearing"), s=0.5); r["SC_MiniGyroBearing"] = bearing(P("SC_MiniGyroBearing"), giro=True, s=0.5)   # 0.20.0
     for suf, (be, bc) in MOTORES.items():
         r["SC_Motor" + suf] = motor(be, False, P("SC_Motor" + suf)); r["SC_MotorComb" + suf] = motor(bc, True, P("SC_MotorComb" + suf))
     r["SC_Recoupler"] = recoupler(P("SC_Recoupler")); r["SC_Beacon"] = beacon(P("SC_Beacon"))
@@ -1055,7 +1292,6 @@ def modelos(portas_por_bloco):
     r["SC_DriveShaft"] = eixo_icone(); r["SC_Differential"] = diferencial(P("SC_Differential")); r["SC_ShaftReverser"] = reversor(P("SC_ShaftReverser"))
     r["SC_ShaftTransmitter"] = transmissor()   # 0.16.0
     r["SC_SingleCellBattery"] = celula(P("SC_SingleCellBattery")); r["SC_MiniElectricThruster"] = mini_propulsor(); r["SC_LongRangeTransmitter"] = radio()   # 0.18.0
-    r["SC_SolarPanelMini"] = (Malha(), Malha(), [], previa_jogo(["Solar Panel Body.asset", "Solar Panel Body Paintable.asset"], (0.5, 1.0, 0.25),
-                                                               {"Solar Panel Body Paintable.asset": (150, 145, 135, 0)}))   # 0.19.0
+    r["SC_SolarPanelMini"] = solar_mini([((SOLAR_PORTA_X, 0.0, -0.1875), 5, 2), ((SOLAR_PORTA_X, 0.0, 0.1875), 4, 2)])   # 0.19.0; 0.22.5: modelo proprio
     for nome, (d, off) in RODAS.items(): r[nome] = roda(d, off)
     return r

@@ -64,6 +64,8 @@ namespace Mecanica
             return sb.ToString();
         }
         public static IEnumerable<Recoupler> Travados() { foreach (var r in recs.Values) if (r.estado == 1 && !r.naAncora && !Ecs.Nulo(r.joint)) yield return r; }
+        /// <summary>0.22.0: recouplers engatados (travados por joint ou ja juntados na part do decoupler) — pra Anel.cs (anel colado no decoupler).</summary>
+        public static IEnumerable<Recoupler> Acoplados() { foreach (var r in recs.Values) if ((r.estado == 1 && !r.naAncora && !Ecs.Nulo(r.joint)) || r.estado == 2) yield return r; }
         public static void NovoRecoupler(Entity e) { recs[Ecs.K(e)] = new Recoupler { bloco = e }; Registro.Info("SC_Recoupler found: block " + e.Index + ":" + e.Version); }
         public static void NovoBeacon(Entity e) { beacons[Ecs.K(e)] = new Beacon { bloco = e }; Registro.Info("SC_Beacon found: block " + e.Index + ":" + e.Version); }
         public static IEnumerable<Beacon> Beacons() => beacons.Values;   // 0.19.13: regra dos 100 km (Ativo)
