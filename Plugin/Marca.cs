@@ -57,8 +57,8 @@ namespace Mecanica
         static void Marcar(EntityManager em, IntPtr jogo)
         {
             int n = ++numero; var agora = DateTime.Now; string hora = agora.ToString("HH:mm:ss.fff");
-            string nomeBase = "marca-" + agora.ToString("yyyyMMdd-HHmmss") + "-" + n;
-            string pasta = Path.Combine(PastaLogs ?? ".", "marcas"); try { Directory.CreateDirectory(pasta); } catch (Exception) { }
+            string nomeBase = "mark-" + agora.ToString("yyyyMMdd-HHmmss") + "-" + n;
+            string pasta = Path.Combine(PastaLogs ?? ".", "marks"); try { Directory.CreateDirectory(pasta); } catch (Exception) { }
             string estado; try { estado = Juntas.Estado(em); } catch (Exception ex) { estado = "  (could not read: " + ex.Message + ")\n"; }
             string acop; try { acop = Acoplador.Estado(em); } catch (Exception ex) { acop = "  (could not read: " + ex.Message + ")\n"; }
             Registro.Aviso("===== ERROR MARK #" + n + " — mark key pressed at " + hora + " =====\njoint state at this moment:\n" + estado + "recouplers/beacons:\n" + acop + "===== (the note follows in a line 'MARK #" + n + " note') =====");
@@ -112,13 +112,13 @@ namespace Mecanica
                     {
                         for (int i = 0; i < 50 && !File.Exists(origem); i++) Thread.Sleep(100);
                         Thread.Sleep(300);
-                        var lixo = Path.Combine(PastaLogs, "_lixeira"); Directory.CreateDirectory(lixo);
+                        var lixo = Path.Combine(PastaLogs, "_old"); Directory.CreateDirectory(lixo);
                         var d = Path.Combine(lixo, Path.GetFileName(origem)); if (!File.Exists(d)) File.Move(origem, d);
                     }
                     catch (Exception) { }
                 }) { IsBackground = true }.Start();
             }
-            string sobrePrint = print == null ? "no screenshot (capture failed)" : ok && comPrint ? "screenshot: marcas/" + Path.GetFileName(print) : "no screenshot (unchecked)";
+            string sobrePrint = print == null ? "no screenshot (capture failed)" : ok && comPrint ? "screenshot: marks/" + Path.GetFileName(print) : "no screenshot (unchecked)";
             string linha = ok ? "MARK #" + n + " note (at " + hora + "): " + (texto.Length == 0 ? "(empty)" : texto) + " — " + sobrePrint
                               : "MARK #" + n + " (at " + hora + "): window cancelled — the mark and the state stay in the log, " + sobrePrint;
             Registro.Aviso(linha);

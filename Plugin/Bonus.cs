@@ -75,6 +75,18 @@ namespace Mecanica
                     standRadar = Ler(sm, Ecs.HashPrefab("SC_Radar"), out _);
                 }
                 else if (avisos.Add("standalone")) Registro.Aviso("bonus: standalone map (+96) doesn't have the expected format — only the maximum was changed");
+                // 0.24.0 (Andre: "+2000 de cada micro frame"): blocos extras da lista do .cfg ([Bonus] extra_blocks). Serve pra
+                // qualquer bloco, inclusive de OUTRO mod — o Aplicar so escreve em chave que JA existe no mapa, nunca insere.
+                var extras = Extras();
+                if (extras.Count > 0)
+                {
+                    var porque = new List<string> { "[Bonus] extra_blocks" };
+                    foreach (var kv in extras)
+                    {
+                        Aplicar(m, 0, kv.Key, kv.Value, porque);
+                        if (sm != null && sm->Keys != null && sm->Ptr != null && sm->SizeOfTValue == 4 && sm->Count > 0) Aplicar(sm, 1, kv.Key, kv.Value, porque);
+                    }
+                }
             }
         }
 
@@ -123,6 +135,25 @@ namespace Mecanica
         }
         static readonly Dictionary<ulong, int> bonusAtual = new Dictionary<ulong, int>();
         static int Bonus_(ulong h) => bonusAtual.TryGetValue(h, out var b) ? b : 0;
+
+        /// <summary>0.24.0: "SC_X=2000, SC_Y=50" do .cfg -> lista. Linha vazia = nenhum extra (o padrao).</summary>
+        public static string ExtrasCfg = "";
+        static string extrasLidas; static Dictionary<string, int> extrasCache = new Dictionary<string, int>();
+        static Dictionary<string, int> Extras()
+        {
+            if (extrasLidas == ExtrasCfg) return extrasCache;
+            extrasLidas = ExtrasCfg; extrasCache = new Dictionary<string, int>();
+            foreach (var pedaco in (ExtrasCfg ?? "").Split(',', ';'))
+            {
+                var s = pedaco.Trim(); if (s.Length == 0) continue;
+                int i = s.IndexOf('='); if (i <= 0) { if (avisos.Add("extra:" + s)) Registro.Aviso("bonus: [Bonus] extra_blocks: '" + s + "' is not in the 'SC_Name=amount' format"); continue; }
+                var nome = s.Substring(0, i).Trim();
+                if (!int.TryParse(s.Substring(i + 1).Trim(), out int n) || n == 0) { if (avisos.Add("extra:" + s)) Registro.Aviso("bonus: [Bonus] extra_blocks: '" + s + "' has no valid amount"); continue; }
+                extrasCache[nome] = n;
+            }
+            if (extrasCache.Count > 0) Registro.Info("bonus: " + extrasCache.Count + " block(s) with extra amount from [Bonus] extra_blocks");
+            return extrasCache;
+        }
 
         static readonly string[] RODAS = { "SC_RodaSportsP", "SC_RodaSportsM", "SC_RodaSportsG", "SC_RodaOffroadP", "SC_RodaOffroadM", "SC_RodaOffroadG" };
         static unsafe bool Tem(Mapa* m, string nome, int n) { int v = Ler(m, Ecs.HashPrefab(nome), out bool achou); return achou && v >= n; }

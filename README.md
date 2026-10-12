@@ -29,13 +29,13 @@ This mod was vibe-coded, I designed it and tested but didn't write the code.
 - **Electric motors** (small / medium / large) and **fuel motors** fed by the game's pipes and any fuel mix; a motor's force is shared among the bearings it drives (one motor per wheel = a much stronger car); every motor has a brake input that locks the wheels it drives.
 - **Drive Shaft**: the mod's own iron-colored cable that carries a motor's force to the bearings; a **Differential** splits one shaft into 4, a **Shaft Reverser** is a reverse gear and a **Shaft Transmitter** sends it wirelessly (steering knuckles, suspensions).
 - **Wheels**: Sports and Offroad, 1 / 1.5 / 2 m; they only attach by the inner (flange) side.
-- **Pedals** and **steering wheel** for driving; **turret seat** that aims with the mouse and turns everything glued to its plates, with pass-through ports on its base for each plate.
+- **Pedals** and **steering wheel** for driving; **turret seat** that aims with the mouse and turns everything glued to its plates, with pass-through ports on its base for each plate. Three knobs on the front of its base limit how far it turns: left and right, up, and down.
 - **Recoupler**: re-attaches a part that a decoupler released, even in flight. **Beacon**: shows on every radar with its own icon (signal waves, car or ship, picked with its knob), and keeps a loose part simulated beyond 100 km from you (the game normally switches far parts off): a probe with a powered Beacon keeps its physics, camera, transmitter and thrusters working out there.
 - **Single Cell Battery**, **Mini Solar Panel**, **Mini Electric Thruster** and a **Long Range Transmitter** (no distance limit, channel set by a data input; carries camera video too).
 - **Small blue / green fuel tanks** (1x2x1, 500 fuel).
 - Wheels, motors, small tanks and the turret seat take only the space of their shape (like the game's curved frames), so other parts and cables fit around them.
 - **Mirror with V**: every asymmetric part has a mirrored version; a mirrored bearing turns the other way with the same signal, so the left and right wheels of a mirrored car both push forward.
-- Works with blueprints, time rewind and the game's seat key bindings. Settings in the game's options menu with Mod Menu.
+- Works with blueprints, time rewind and the game's seat key bindings. Settings in the game's options menu with Mod Menu, including extra inventory amounts for any block (other mods' blocks too).
 
 ## Requirements
 
@@ -98,13 +98,13 @@ A few parts (the small fuel tanks, the turret seat, the Shaft Transmitter, the L
 <li><strong>Electric motors</strong> (small / medium / large) and <strong>fuel motors</strong> fed by the game&#x27;s pipes and any fuel mix; a motor&#x27;s force is shared among the bearings it drives (one motor per wheel = a much stronger car); every motor has a brake input that locks the wheels it drives.</li>
 <li><strong>Drive Shaft</strong>: the mod&#x27;s own iron-colored cable that carries a motor&#x27;s force to the bearings; a <strong>Differential</strong> splits one shaft into 4, a <strong>Shaft Reverser</strong> is a reverse gear and a <strong>Shaft Transmitter</strong> sends it wirelessly (steering knuckles, suspensions).</li>
 <li><strong>Wheels</strong>: Sports and Offroad, 1 / 1.5 / 2 m; they only attach by the inner (flange) side.</li>
-<li><strong>Pedals</strong> and <strong>steering wheel</strong> for driving; <strong>turret seat</strong> that aims with the mouse and turns everything glued to its plates, with pass-through ports on its base for each plate.</li>
+<li><strong>Pedals</strong> and <strong>steering wheel</strong> for driving; <strong>turret seat</strong> that aims with the mouse and turns everything glued to its plates, with pass-through ports on its base for each plate. Three knobs on the front of its base limit how far it turns: left and right, up, and down.</li>
 <li><strong>Recoupler</strong>: re-attaches a part that a decoupler released, even in flight. <strong>Beacon</strong>: shows on every radar with its own icon (signal waves, car or ship, picked with its knob), and keeps a loose part simulated beyond 100 km from you (the game normally switches far parts off): a probe with a powered Beacon keeps its physics, camera, transmitter and thrusters working out there.</li>
 <li><strong>Single Cell Battery</strong>, <strong>Mini Solar Panel</strong>, <strong>Mini Electric Thruster</strong> and a <strong>Long Range Transmitter</strong> (no distance limit, channel set by a data input; carries camera video too).</li>
 <li><strong>Small blue / green fuel tanks</strong> (1x2x1, 500 fuel).</li>
 <li>Wheels, motors, small tanks and the turret seat take only the space of their shape (like the game&#x27;s curved frames), so other parts and cables fit around them.</li>
 <li><strong>Mirror with V</strong>: every asymmetric part has a mirrored version; a mirrored bearing turns the other way with the same signal, so the left and right wheels of a mirrored car both push forward.</li>
-<li>Works with blueprints, time rewind and the game&#x27;s seat key bindings. Settings in the game&#x27;s options menu with Mod Menu.</li>
+<li>Works with blueprints, time rewind and the game&#x27;s seat key bindings. Settings in the game&#x27;s options menu with Mod Menu, including extra inventory amounts for any block (other mods&#x27; blocks too).</li>
 </ul>
 <h3>Requirements</h3>
 <ul>
@@ -142,7 +142,7 @@ A few parts (the small fuel tanks, the turret seat, the Shaft Transmitter, the L
 # Details
 A mod for **Approximately Up** (BepInEx 6 IL2CPP) that adds pistons, bearings, electric and fuel motors, wheels, pedals, a steering
 wheel, a turret seat, a recoupler, a beacon and fuel tanks: everything you need to build working cars, rovers, cranes and turrets.
-All blocks live in the **Mechanics** tab of the inventory and are always unlocked. Version **0.23.2**, by Andre + Claude.
+All blocks live in the **Mechanics** tab of the inventory and are always unlocked. Version **0.25.0**, by Andre + Claude.
 
 
 
@@ -168,7 +168,7 @@ All blocks live in the **Mechanics** tab of the inventory and are always unlocke
 | **Sports / Offroad Wheels (Small / Medium / Large)** | 1 / 1.5 / 2 m wheels to put on top of a Bearing. Sports = light, friction 1.5; Offroad = heavier, friction 2.2. |
 | **Pedals** | Two floor pedals in one block with one output: left = −1, right = +1, none = 0. |
 | **Steering Wheel** | Works like a Horizontal Joystick (−1..1, springs back to the middle); wire it to bearings in servo mode. |
-| **Turret Seat** | Sit down and aim with the mouse: everything glued to its 4 plates turns with your view (360° yaw, −30..+135° pitch), no bearings needed. The cursor key (Left Ctrl by default) shows/hides the cursor. |
+| **Turret Seat** | Sit down and aim with the mouse: everything glued to its 4 plates turns with your view (up to a full circle sideways and 135° up or down; the 3 knobs on the front of the base set each limit, by default free / 135° up / 30° down, also when the whole ship turns), no bearings needed. The cursor key (Left Ctrl by default) shows/hides the cursor. |
 | **Recoupler** | The opposite of the decoupler: with signal ≥ 0.5, if it is touching (within 0.5 m and 30°) the face of a Decoupler that has already fired, it pulls the piece into place and merges both parts again (the decoupler works again afterwards). |
 | **Beacon** | Shows on every Radar with its own icon, in real time, while powered (5 P/s). Its knob picks the icon — signal waves, car or ship — and the small display shows it. Hides from the radar of its own vehicle. |
 | (bonus) | Each unlocked motor gives extra cables; Recoupler/Beacon/Bearings/motor/wheels unlock +1 Radar. |
@@ -197,13 +197,13 @@ Most blocks have a mirrored version (press **V** in the garage), so the left and
 
 Set `Debug.mark_error_key` (e.g. `F8`; off by default) or bind it in the options menu. When you see something wrong, press it: the log
 gets a line `===== ERROR MARK #n — mark key pressed at HH:MM:SS.mmm =====` with the state of every joint, motor (fuel included),
-recoupler and beacon, and a screenshot goes to `logs/marcas/`. A small window opens so you can write what happened, with a "Send with
-screenshot" checkbox (Ctrl+Enter sends, Esc cancels; an unchecked screenshot is moved to `logs/_lixeira`).
+recoupler and beacon, and a screenshot goes to `logs/marks/`. A small window opens so you can write what happened, with a "Send with
+screenshot" checkbox (Ctrl+Enter sends, Esc cancels; an unchecked screenshot is moved to `logs/_old`).
 
 ## Logs
 
-`BepInEx/plugins/Mecanica/logs/sessao-YYYYMMDD-HHMMSS.log`: one per session, with everything that goes through BepInEx. The 5 most
-recent are kept; older ones are moved to `logs/_lixeira` (nothing is deleted).
+`BepInEx/plugins/Mecanica/logs/session-YYYYMMDD-HHMMSS.log`: one per session, with everything that goes through BepInEx. The 5 most
+recent are kept; older ones are moved to `logs/_old` (nothing is deleted).
 
 ## Config (`BepInEx/config/com.approximatelyup.mods.mecanica.cfg`)
 
@@ -211,18 +211,21 @@ Since 0.13.0 the sections and keys are in English. Values from older (Portuguese
 first launch.
 
 - `General`: `enabled`, `detailed_log`.
-- `Piston`: `speed` (m/s), `max_impulse`, `power_per_meter`, `rails`.
+- `Piston`: `speed` (m/s), `max_impulse`, `power_per_meter_v2`, `rails`, `rails_per_meter`, `max_tilt`, `snap_back`.
 - `Small Motor` / `Medium Motor` / `Large Motor`: `max_speed`, `max_impulse`, `power`.
 - `Small Fuel Motor` / `Medium Fuel Motor` / `Large Fuel Motor`: `max_speed`, `max_impulse`. `Fuel Motor`: `fuel_per_second`, `power`.
 - `Motor`: `ramp`, `brake_factor`, `force_pool` (4 = each motor's force, split among the bearings it drives).
-- `Bearing`: `servo_impulse`, `servo_degrees`, `servo_speed`, `servo_invert`, `extra_support`.
+- `Bearing`: `servo_impulse`, `servo_degrees`, `servo_speed`, `servo_gain`, `servo_invert`, `extra_support`.
 - `Wheel`: `friction`, `offroad_friction`, `no_collision_at_start`.
-- `Physics`: `soft_start`, `start_stagger`, `solver_iterations`, `base_reinforcement`.
-- `Turret Seat`: `sensitivity`, `gain`, `max_speed`, `pitch_min`, `pitch_max`, `link_acceleration`, `seat_mode` (`cockpit` / `A` / `B`),
+- `Physics`: `soft_start`, `start_stagger`, `fit_wait`, `solver_iterations`, `base_reinforcement`.
+- `Turret Seat`: `sensitivity`, `gain`, `max_speed`, `link_acceleration`, `seat_mode` (`cockpit` / `A` / `B`),
   `seat_offset`, `player_position_b`, `view_position_a`, `view_a_rotates`, `infinite_inertia`, `camera`, `cursor_key`.
 - `Recoupler`: `tolerance`, `max_angle`, `pull_time`, `merge`.
 - `Beacon`: `power`, `hide_within`, `hide_on_own_vehicle` (false = also shows on your own vehicle's radar), `icon`, `icon_slot` (preferred slot).
-- `Debug`: `mark_error_key`, `turret_adjust_numpad`.
+- `Seat`: `bindings_reach` (how far the key bindings of the game's normal seat reach).
+- `Signal`: `fix_stuck_ports`.
+- `Bonus`: `extra_blocks` (`SC_Name=amount, ...`: extra inventory amount of any block, other mods' too).
+- `Debug`: `mark_error_key`, `turret_adjust_numpad`, `trace`.
 
 Changes made in the options menu ("Mod settings", with Mod Menu) apply immediately.
 
@@ -235,6 +238,8 @@ Changes made in the options menu ("Mod settings", with Mod Menu) apply immediate
 - Nothing from the Modkit workspace (derived from the game) is published.
 
 ## Changelog
+- 0.25.0: **Turret Seat limit knobs** — three knobs on the front of the base set how far it aims left/right (up to a full circle), up and down (up to 135° each); default = as before (free / 135° up / 30° down); they also limit the whole-ship mode, and the values are kept per seat. `[Turret Seat] pitch_min` / `pitch_max` removed. Mini Piston, Mini Piston End, Mini Slip Ring and Mini Electric Thruster back in the Mechanics tab; the mirrored Bearing / Mini Bearing draw the angle switch in its place (it sat on the data port). Log files and folders in English (`logs/session-*.log`, `logs/marks`, `logs/_old`).
+- 0.24.0: config with one section per kind of part (Mod Menu order) and dead keys removed; piston rails spread with the piston's length (`rails_per_meter`), a bent or stuck piston stops pushing (`max_tilt`), launch fit by time and progress (`fit_wait`) and `snap_back` to the garage pose; knob values no longer reset after an update; Turret Seat ports stay on the base; normal-seat key bindings work in third person (`[Seat] bindings_reach`); stuck Wireless Transmitters across a joint are repaired (`[Signal] fix_stuck_ports`); crash in the tutorial manual fixed; `[Bonus] extra_blocks`; `[Bearing] servo_gain`; `[Debug] trace`.
 - 0.23.2: in-game descriptions follow the game's style (short; the long version is in `DESCRICOES_COMPLETAS.txt`), port tooltips trimmed, and every block shows **status lines** in the inventory panel (max force, power consumption, stroke, grip…) — the plugin fills `_customProperties` at run time from the Localization file, so it works in both languages.
 - 0.23.1: the angle output kept its blue output plug (the pass-through painter was grabbing it, which also shifted the ring pairing by one); the switch has its own tooltip and its own saved value instead of the knob's; a pass-through port with no cable now shows the colour of the cable on the **other** side of the joint, like the Frame Quarter With Ports.
 - 0.23.0: **angle output** on the Bearing, Gyro Bearing and the minis — the last port gives the angle the top is at, in degrees or on the same scale as the servo input, picked by a switch beside the knob. Pistons use 1 P/s per meter of the stroke they actually make (was a flat rate for the full 8 m).

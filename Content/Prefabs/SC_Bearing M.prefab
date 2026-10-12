@@ -1452,7 +1452,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   _drawUIValue: 2
   _buttonTransformOnPos:
-    x: -0.205
+    x: 0.205
     y: -0.16
     z: 0.244
   _buttonTransformOnRot:
@@ -1461,7 +1461,7 @@ MonoBehaviour:
     z: 0
   _meshOn: {fileID: 0}
   _buttonTransformOffPos:
-    x: -0.205
+    x: 0.205
     y: -0.16
     z: 0.244
   _buttonTransformOffRot:

@@ -103,10 +103,10 @@ A quarter of the big piston's force and mass (0.25 m block). Needs electric powe
   - Port2: Pass-through: pairs with port 1 of the Slip Ring.
 
 == Mini Piston End ==
-Smaller Piston End, sized like the logic blocks. Same use; works with Piston and Mini Piston. Mod Mecânica.
+Smaller Piston End, sized like the logic blocks. Same use; works with Piston and Mini Piston.
 
 == Mini Slip Ring ==
-Smaller Slip Ring, sized like the logic blocks. Same use: place it on the moving side of any joint; its 4 ports pair with the joint's pass-through ports. Mod Mecânica.
+Smaller Slip Ring, sized like the logic blocks. Same use: place it on the moving side of any joint; its 4 ports pair with the joint's pass-through ports.
 
   - Port0: Port 1: pairs with pass-through port 1 of the joint.
   - Port1: Port 2: pairs with pass-through port 2 of the joint.
@@ -180,7 +180,7 @@ Needs electric power to move (1 P/s per meter of its stroke while moving); witho
   - Port5: Pass-through 4: pairs with port 4 of the Slip Ring.
 
 == Piston End ==
-Marks where a Piston ends. Place it on the piston's axis, up to its maximum stroke, glued to what the piston pushes: the piston starts at that length. Works with Piston and Mini Piston. Turn on the game's H display to see the piston's guide bar. Mod Mecânica.
+Marks where a Piston ends. Place it on the piston's axis, up to its maximum stroke, glued to what the piston pushes: the piston starts at that length. Works with Piston and Mini Piston. Turn on the game's H display to see the piston's guide bar.
 
 == Recoupler ==
 Couples back two pieces that a Decoupler has already separated. Build it touching the releasing face of a Decoupler (for example, the car's block that sits on the ship's Decoupler).
@@ -248,7 +248,7 @@ One cell of the small rechargeable battery: 2x4x2, stores 500 P (a quarter of th
   - Port0: Power.
 
 == Slip Ring ==
-Carries data and power onto a piece that spins or moves, with no cable crossing the joint. Place it on the moving side of a Bearing, Piston, Recoupler or Turret Seat; its 4 ports pair with the joint's pass-through ports (port 1 with port 1, and so on). Each pair carries data either way, or power. Mod Mecânica.
+Carries data and power onto a piece that spins or moves, with no cable crossing the joint. Place it on the moving side of a Bearing, Piston, Recoupler or Turret Seat; its 4 ports pair with the joint's pass-through ports (port 1 with port 1, and so on). Each pair carries data either way, or power.
 
   - Port0: Port 1: pairs with pass-through port 1 of the joint.
   - Port1: Port 2: pairs with pass-through port 2 of the joint.
@@ -272,7 +272,7 @@ Small fuel tank (1x2x1 m) with 500 Pyrogel fuel. Comes full. Connect it with pip
   - Port0: Output data signal: how much fuel is left in the tank.
 
 == Turret Seat ==
-Turret seat: the thin square base stays glued to the ship and everything above it turns with your view, no bearings: sit down and move the mouse (360 degrees horizontally, -30..+135 vertically, upside down). Whatever is glued to the 4 support plates (left, right, top, back) turns with it. Ctrl shows/hides the cursor (aim stops while it shows). What is glued to the plates must not touch the ship too, or it stays welded. Mod Mecânica.
+Turret seat: the thin square base stays glued to the ship and everything above it turns with your view, no bearings: sit down and move the mouse (up to 360 degrees horizontally and 135 up or down, upside down). The three knobs on the front of the base set the limits, left to right: turn (left and right; all the way = free), up and down. By default: free, 135 up, 30 down. Whatever is glued to the 4 support plates (left, right, top, back) turns with it. Ctrl shows/hides the cursor (aim stops while it shows). What is glued to the plates must not touch the ship too, or it stays welded.
 Pass-through ports on the base, 4 per side (one set per plate): pair with a Slip Ring on the piece attached to that plate.
 
   - Port0: Pass-through 1, left plate: pairs with port 1 of the Slip Ring there.

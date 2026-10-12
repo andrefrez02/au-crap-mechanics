@@ -52,9 +52,14 @@ namespace Mecanica
     {
         static readonly Dictionary<long, Torre> torres = new Dictionary<long, Torre>();
         public static readonly float3 TorretaPivo = new float3 { x = 0f, y = 0f, z = 0f };   // = modelos_v2.TURRET_PIVO (0.12.5: centro do bloco 2 x 2 x 1,5)
-        public static readonly float3 TorretaPorta = new float3 { x = 99f, y = 99f, z = 99f };   // 0.12.2: sem saida
+        // 0.24.0 (Andre: "as portas do turret seat tao girando junto com o proprio seat inves de ficarem na base"): tudo daqui pra
+        // baixo e' a base e NAO gira — os 16 plugues das portas e a area de encaixe de baixo estao todos em y -1,1875, e o que
+        // gira mais baixo e' o banco, em y -0,25. (O TorretaPorta velho era (99,99,99), uma sentinela que nunca casava com nada:
+        // na pratica todo filho fora da origem girava, portas incluidas.)
+        public const float TorretaBaseY = -1.1f;
         // config (o plugin preenche)
-        public static float TorretaSens = 0.1f, TorretaGanho = 12f, TorretaVelMax = 720f, TorretaPitchMin = -30f, TorretaPitchMax = 75f, TorretaEloAcel = 360f;
+        public static float TorretaSens = 0.1f, TorretaGanho = 12f, TorretaVelMax = 720f, TorretaPitchMin = -30f, TorretaPitchMax = 135f,   // 0.25.0: so o padrao quando o turret nao tem os knobs (bundle velho)
+                             TorretaEloAcel = 360f;
         public static bool TorretaInercia = true, TorretaCamera = true; public static Key TorretaTeclaCursor = Key.LeftCtrl;
         public static bool CursorLivre;
         public static Torre TorreSentada;
@@ -421,9 +426,9 @@ namespace Mecanica
                     // 0.19.6 (Andre: "se eu viro muito pra direita ele comeca a virar pra esquerda"): no modo nave inteira a mira NAO dobra em
                     // +-180 (log: mira 159 -> -75 e a nave em 97 ia pelo caminho "mais curto", -172 = esquerda). Mira e rumo sao continuos.
                     if (!t.naveToda) { if (t.yaw > 180f) t.yaw -= 360f; else if (t.yaw < -180f) t.yaw += 360f; }
-                    if (t.pitch > TorretaPitchMax) t.pitch = TorretaPitchMax; else if (t.pitch < TorretaPitchMin) t.pitch = TorretaPitchMin;
                 }
             }
+            LimitarMira(t);
             if (t.naveToda) { NaveTodaGira(em, t, dt); return; }
             var Qalvo = Ecs.QMul(QuatEixo(Ecs.UY, t.yaw * (float)(System.Math.PI / 180.0)), QuatEixo(Ecs.UX, -t.pitch * (float)(System.Math.PI / 180.0)));
             Ecs.Pose(em, t.bloco, out _, out var rotB);
@@ -513,6 +518,16 @@ namespace Mecanica
             t.Qvis = QuatEixo(Ecs.UX, -t.pitch * (float)(System.Math.PI / 180.0));   // so a inclinacao, no desenho (o yaw e' a nave de verdade)
             t.tLog += dt;
             if (LogDetalhe && t.tLog >= 0.5f && System.Math.Abs(erro - t.errLog) >= 5f) { t.tLog = 0f; t.errLog = erro; Registro.Info(t.nome + " " + t.bloco.Index + ": whole ship — aim yaw " + t.yaw.ToString("F0") + ", ship at " + t.rumoCont.ToString("F0") + " (error " + erro.ToString("F0") + " degrees)"); }
+        }
+        /// <summary>0.25.0: limites dos 3 knobs da base (yaw / pitch pra cima / pitch pra baixo) — todo frame, nao so quando o mouse
+        /// mexe: girar um knob pra menos com a mira fora do limite traz a mira de volta na velocidade normal do turret. No modo nave
+        /// inteira o yaw e' contado a partir do rumo de quando ligou.</summary>
+        static void LimitarMira(Torre t)
+        {
+            float yaw = Knobs.TorreYawMax, cima = TorretaPitchMax, baixo = -TorretaPitchMin;
+            Knobs.LimitesTorre(t.bloco, ref yaw, ref cima, ref baixo);
+            if (yaw < Knobs.TorreYawMax - 0.5f) { if (t.yaw > yaw) t.yaw = yaw; else if (t.yaw < -yaw) t.yaw = -yaw; }
+            if (t.pitch > cima) t.pitch = cima; else if (t.pitch < -baixo) t.pitch = -baixo;
         }
         static quaternion QuatEixo(float3 eixo, float rad)
         {
@@ -606,7 +621,7 @@ namespace Mecanica
             {
                 var p = Ecs.LT(em, f).Position;
                 if (Ecs.Comp(p) < 0.003f) continue;                              // base (Renderer / Paintable / colisor na origem)
-                if (Ecs.Dist(p, TorretaPorta) < 0.003f) continue;                // plugue da saida
+                if (p.y <= TorretaBaseY) continue;                               // base: plugues das portas (y -1,1875) e encaixe de baixo
                 l.Add(f);
             }
             bool primeira = t.moveis == null;
@@ -793,7 +808,10 @@ namespace Mecanica
         /// <summary>Postfix do TransformSystemGroup: o LocalToWorld da camera acabou de ser calculado pelo jogo (ainda sem a visao do turret).</summary>
         public static unsafe void CapturarOlhoJogo()
         {
-            if (!EmOk || TorreSentada == null) return;
+            if (!EmOk) return;
+            // 0.24.0: o banco normal tambem precisa do olho do jogo — mas so quando alguem esta sentado de verdade (fora disso
+            // o comportamento e' exatamente o de antes, que so capturava sentado numa torre nossa).
+            if (TorreSentada == null) { if (AlcanceBindsBanco <= 2.12f) return; var emS = EmAtual; if (!PrepararSeat(emS) || Ecs.Nulo(CadeiraAtual(emS))) return; }
             try
             {
                 var em = EmAtual; if (!Camera(em, out var cam) || !Ecs.TemC(em, cam, Ecs.tiLTW)) return;
@@ -807,7 +825,9 @@ namespace Mecanica
             bool escreveu = false;
             try
             {
-                var t = TorreSentada; if (!EmOk || t == null || t.estado != 2) return;
+                if (!EmOk) return;
+                var t = TorreSentada;
+                if (t == null || t.estado != 2) { BindsBanco(EmAtual); return; }   // 0.24.0: sentado no banco do jogo
                 var em = EmAtual;
                 if (!Ecs.Vivo(em, t.bloco)) return;
                 if (!RotacaoDaVisao(em, out _)) { Motivo("turret view off: the game measures from its own view"); return; }
@@ -843,6 +863,50 @@ namespace Mecanica
             }
             catch (Exception ex) { if (errosBinds++ < 3) Registro.Aviso("turret seat: seat key bindings: " + ex.Message); }
             finally { OlhoFixoAtivo = escreveu; }
+        }
+
+        // 0.24.0 (Andre: "o seat normal nao funciona os keybinds"): a mesma correcao de alcance, agora no banco do JOGO. La na torre a
+        // distancia e' medida da visao do turret ou da do jogo (a que for menor); aqui so existe a do jogo, entao e' mais simples.
+        // O jogo aceita ate 4,5 no quadrado (~2,12 m); reescalamos a distancia ao quadrado (mantendo a ordem) pra que "dentro" valha
+        // ate AlcanceBindsBanco. Com 2,12 (ou menos) nao escreve nada e o banco fica exatamente como o jogo faz.
+        public static float AlcanceBindsBanco = 4.5f;   // [Seat] bindings_reach
+        static bool logouBindsBanco; static int errosBindsBanco;
+        static unsafe void BindsBanco(EntityManager em)
+        {
+            if (AlcanceBindsBanco <= 2.12f) return;
+            if (frameOlhoJogo != UnityEngine.Time.frameCount) return;   // sem o olho do jogo deste frame nao da pra medir
+            try
+            {
+                if (!PrepararSeat(em)) return;
+                if (Ecs.Nulo(CadeiraAtual(em))) { logouBindsBanco = false; return; }   // ninguem sentado
+                if (qSeatSing.CalculateEntityCountWithoutFiltering() != 1) return;
+                var eSing = qSeatSing.GetSingletonEntity(); if (!Ecs.TemC(em, eSing, tiSeatSing)) return;
+                var b = (byte*)em.GetComponentDataRawRW(eSing, tiSeatSing); if (b == null) return;
+                var lista = *(byte**)b; if (lista == null) return;
+                var ptr = *(byte**)lista; int n = *(int*)(lista + 8);
+                if (ptr == null || n <= 0 || n > 4096) return;
+                float esc = 4.5f / (AlcanceBindsBanco * AlcanceBindsBanco);
+                int dentro = 0, dentroJogo = 0; float minD = 1e9f;
+                for (int i = 0; i < n; i++)
+                {
+                    var el = ptr + i * 96; var e = *(Entity*)(el + 64);
+                    if (!Ecs.Vivo(em, e) || !Ecs.TemC(em, e, Ecs.tiLTW)) continue;
+                    var ltw = (LocalToWorld*)em.GetComponentDataRawRO(e, Ecs.tiLTW); if (ltw == null) continue;
+                    var q = ltw->Value.c3;
+                    float dx = q.x - OlhoJogo.x, dy = q.y - OlhoJogo.y, dz = q.z - OlhoJogo.z; float d2 = dx * dx + dy * dy + dz * dz;
+                    if (d2 <= 4.5f) dentroJogo++;
+                    if (d2 < minD) minD = d2;
+                    *(float*)(el + 88) = d2 * esc;
+                    if (d2 * esc <= 4.5f) dentro++;
+                }
+                if (!logouBindsBanco)
+                {
+                    logouBindsBanco = true;
+                    Registro.Info("seat: seat key bindings in reach " + dentro + "/" + n + " with bindings_reach " + AlcanceBindsBanco.ToString("F2")
+                        + " m (the game's own reach is 2.12 m and would allow " + dentroJogo + "; closest bound part " + System.Math.Sqrt(minD).ToString("F2") + " m)");
+                }
+            }
+            catch (Exception ex) { if (errosBindsBanco++ < 3) Registro.Aviso("seat: seat key bindings: " + ex.Message); }
         }
 
         static string EstadoTorres()

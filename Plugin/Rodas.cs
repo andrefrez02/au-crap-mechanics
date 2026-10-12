@@ -45,6 +45,7 @@ namespace Mecanica
         [HarmonyPostfix, HarmonyPatch(typeof(EPC_SpaceshipComponent), nameof(EPC_SpaceshipComponent.GetPhysicsMaterial))]
         static void Material(EPC_SpaceshipComponent __instance, ref Unity.Physics.Material __result)
         {
+            Registro.Rastro("Rodas.Material " + (__instance == null ? "(null)" : __instance.name));
             try
             {
                 if (__instance == null || !EhRoda(__instance.name)) return;

@@ -71,6 +71,7 @@ namespace Mecanica
             try
             {
                 motivoLancamento = start ? "simulation started" : "back to the garage";
+                Sinal.Lancado = start;   // 0.24.0: o Sinal so mexe nas portas com a simulacao rodando
                 rechecksLancamento.Clear(); rechecksLancamento.Add(Time.unscaledTime + 1f); rechecksLancamento.Add(Time.unscaledTime + 5f);
             }
             catch (Exception) { }

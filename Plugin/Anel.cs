@@ -190,7 +190,8 @@ namespace Mecanica
             var fJ = Ecs.Fonte(em, c.pj, out _); var fA = Ecs.Fonte(em, c.pa, out _);
             byte tJ = 255, tA = 255;
             bool okJ = !Ecs.Nulo(fJ) && Ecs.Porta(em, fJ, out tJ, out _, out _), okA = !Ecs.Nulo(fA) && Ecs.Porta(em, fA, out tA, out _, out _);
-            if (!okJ) tJ = 255; if (!okA) tA = 255;
+            if (!okJ) tJ = 255; else tJ = Ecs.TipoEfetivo(em, fJ);   // 0.24.0: o runtime manda quando o setup nao diz a direcao
+            if (!okA) tA = 255; else tA = Ecs.TipoEfetivo(em, fA);
             bool enJ = okJ && tJ == Ecs.PortaEnergia, enA = okA && tA == Ecs.PortaEnergia;
             int sentido; string desc;
             if (enJ && enA) { sentido = 3; desc = "power bridge"; }

@@ -30,13 +30,13 @@ This mod was vibe-coded, I designed it and tested but didn't write the code.
 [*][b]Electric motors[/b] (small / medium / large) and [b]fuel motors[/b] fed by the game's pipes and any fuel mix; a motor's force is shared among the bearings it drives (one motor per wheel = a much stronger car); every motor has a brake input that locks the wheels it drives.
 [*][b]Drive Shaft[/b]: the mod's own iron-colored cable that carries a motor's force to the bearings; a [b]Differential[/b] splits one shaft into 4, a [b]Shaft Reverser[/b] is a reverse gear and a [b]Shaft Transmitter[/b] sends it wirelessly (steering knuckles, suspensions).
 [*][b]Wheels[/b]: Sports and Offroad, 1 / 1.5 / 2 m; they only attach by the inner (flange) side.
-[*][b]Pedals[/b] and [b]steering wheel[/b] for driving; [b]turret seat[/b] that aims with the mouse and turns everything glued to its plates, with pass-through ports on its base for each plate.
+[*][b]Pedals[/b] and [b]steering wheel[/b] for driving; [b]turret seat[/b] that aims with the mouse and turns everything glued to its plates, with pass-through ports on its base for each plate. Three knobs on the front of its base limit how far it turns: left and right, up, and down.
 [*][b]Recoupler[/b]: re-attaches a part that a decoupler released, even in flight. [b]Beacon[/b]: shows on every radar with its own icon (signal waves, car or ship, picked with its knob), and keeps a loose part simulated beyond 100 km from you (the game normally switches far parts off): a probe with a powered Beacon keeps its physics, camera, transmitter and thrusters working out there.
 [*][b]Single Cell Battery[/b], [b]Mini Solar Panel[/b], [b]Mini Electric Thruster[/b] and a [b]Long Range Transmitter[/b] (no distance limit, channel set by a data input; carries camera video too).
 [*][b]Small blue / green fuel tanks[/b] (1x2x1, 500 fuel).
 [*]Wheels, motors, small tanks and the turret seat take only the space of their shape (like the game's curved frames), so other parts and cables fit around them.
 [*][b]Mirror with V[/b]: every asymmetric part has a mirrored version; a mirrored bearing turns the other way with the same signal, so the left and right wheels of a mirrored car both push forward.
-[*]Works with blueprints, time rewind and the game's seat key bindings. Settings in the game's options menu with Mod Menu.
+[*]Works with blueprints, time rewind and the game's seat key bindings. Settings in the game's options menu with Mod Menu, including extra inventory amounts for any block (other mods' blocks too).
 [/list]
 
 [size=5][b]Requirements[/b][/size]
@@ -78,3 +78,304 @@ A few parts (the small fuel tanks, the turret seat, the Shaft Transmitter, the L
 [*][b]Quick Start[/b]: Skips the main menu and the planet selection, going straight to the last saved location.
 [*][b]Time Rewind Binds[/b]: Adds configurable keybinds to Pause, Accelerate time and the Time Rewind panel buttons.
 [/list]
+[line]
+
+[size=3][b]Detailed Item Descriptions for each block in the mod:[/b][/size]
+
+[spoiler]Crap Mechanics - full block descriptions
+
+== Beacon ==
+Shows its position on every Radar in real time (its own signal icon: a dot with waves) while it has power (5 P/s). Put one on your ship and one on your car so you never lose either of them. It hides from the radar when you are near it (less than 40 m), so the radar you are using does not show its own vehicle.
+The knob picks its radar icon: signal waves, car or ship (the small display shows the one picked).
+
+  - Port0: Power input: 5 P/s while transmitting. Without power the beacon does not show on the radars.
+
+== Bearing ==
+Lets the block on its top face spin around the bearing's axis. Its 4 inputs (bottom face, lined up with a Frame Quarter With Ports) are untyped:
+- a Drive Shaft from a Motor: spins at the motor's speed; 0 = coasting (free, use the brake to hold); motor without power = spins freely;
+- a data signal: holds an angle, -1..1 = -45..45 degrees (steering);
+- both: the shaft drives while it turns; at 0 the data signal holds the angle;
+- nothing: spins freely.
+The small arrows on the side show which way the top turns with a POSITIVE signal. The mirrored version (V) turns the other way with the same signal, so the left and right wheels of a mirrored car both push forward.
+Red LED on the sides = locked by its shaft (two motors turning against each other, or a Shaft Reverser on one path only). The knob on the side sets the servo angle (10 to 360 degrees).
+4 pass-through ports on the side opposite the knob: pair with a Slip Ring on the top disc.
+
+  - Port0: Untyped input: a Drive Shaft (from a Motor) turns the bearing; a data signal -1..1 holds an angle (steering). With both, the shaft wins while it turns and the data signal holds the angle when the shaft is at 0.
+  - Port1: Untyped input: a Drive Shaft (from a Motor) turns the bearing; a data signal -1..1 holds an angle (steering). With both, the shaft wins while it turns and the data signal holds the angle when the shaft is at 0.
+  - Port2: Untyped input: a Drive Shaft (from a Motor) turns the bearing; a data signal -1..1 holds an angle (steering). With both, the shaft wins while it turns and the data signal holds the angle when the shaft is at 0.
+  - Port3: Untyped input: a Drive Shaft (from a Motor) turns the bearing; a data signal -1..1 holds an angle (steering). With both, the shaft wins while it turns and the data signal holds the angle when the shaft is at 0.
+  - Port4: Pass-through 1: pairs with port 1 of the Slip Ring.
+  - Port5: Pass-through 2: pairs with port 2 of the Slip Ring.
+  - Port6: Pass-through 3: pairs with port 3 of the Slip Ring.
+  - Port7: Pass-through 4: pairs with port 4 of the Slip Ring.
+  - Port8: Current angle (output): how far the top has turned. The switch on the side picks the unit: on = degrees (-180..180), off = the same number the servo input would need to hold that angle (-1..1 on the knob's range).
+
+== Differential ==
+Joins and splits Drive Shafts: 4 inputs (orange) on one face, 4 outputs (purple) on the opposite face. Motors on the inputs add up their force; the total is shared equally by all the bearings reached. Motors turning against each other lock the bearings (red LED).
+
+  - Port0: Drive Shaft input 1 (from a Motor).
+  - Port1: Drive Shaft input 2 (from a Motor).
+  - Port2: Drive Shaft input 3 (from a Motor).
+  - Port3: Drive Shaft input 4 (from a Motor).
+  - Port4: Drive Shaft output 1.
+  - Port5: Drive Shaft output 2.
+  - Port6: Drive Shaft output 3.
+  - Port7: Drive Shaft output 4.
+
+== Drive Shaft ==
+Mechanical shaft: carries a Motor's force to Bearings, Differentials and Shaft Reversers. Placed like a cable (it is a cable of its own, iron colored). Only Drive Shafts transmit force: game cables, logic blocks and plasma parts in the way don't.
+
+== Gyro Bearing ==
+A bearing that aims its own servo: the block on its top face keeps the tilt it had when the simulation started (as built in the garage, upright), no matter how the vehicle rolls around the bearing's axis. One levels one axis; two stacked at 90 degrees level both (a gimbal for a camera, an antenna or a platform). It only turns what is on top of it, it does not steady the vehicle.
+Its 4 inputs (bottom face) are untyped: a data signal -1..1 adds an offset to the levelled angle (up to the degrees set by the knob, default 45); a Drive Shaft from a Motor takes over while it turns. With the axis nearly vertical, or with no gravity around (space), it holds its last angle.
+The green rings mark it as a gyro; the knob on the side sets the offset range.
+4 pass-through ports on the side opposite the knob: pair with a Slip Ring on the top disc.
+
+  - Port0: Untyped input: a data signal -1..1 shifts the levelled angle by up to the knob's degrees; a Drive Shaft (from a Motor) turns the bearing while it runs.
+  - Port1: Untyped input: a data signal -1..1 shifts the levelled angle by up to the knob's degrees; a Drive Shaft (from a Motor) turns the bearing while it runs.
+  - Port2: Untyped input: a data signal -1..1 shifts the levelled angle by up to the knob's degrees; a Drive Shaft (from a Motor) turns the bearing while it runs.
+  - Port3: Untyped input: a data signal -1..1 shifts the levelled angle by up to the knob's degrees; a Drive Shaft (from a Motor) turns the bearing while it runs.
+  - Port4: Pass-through 1: pairs with port 1 of the Slip Ring.
+  - Port5: Pass-through 2: pairs with port 2 of the Slip Ring.
+  - Port6: Pass-through 3: pairs with port 3 of the Slip Ring.
+  - Port7: Pass-through 4: pairs with port 4 of the Slip Ring.
+  - Port8: Current angle (output): how far the top has turned. The switch on the side picks the unit: on = degrees (-180..180), off = the same number the servo input would need to hold that angle (-1..1 on the knob's range).
+
+== Long Range Transmitter ==
+Wireless data with no distance limit (any vehicle in the world). The channel comes from a data input and can change during the simulation. Wire the signal port to an output to send, or to an input to receive. Its channels are separate from the game's Wireless Transmitters. The screen shows the current channel. Camera video passes through it too.
+
+  - Port0: Signal (in or out).
+  - Port1: Channel (data input, rounded).
+
+== Mini Bearing ==
+Quarter-size Bearing (0.25 m block, a quarter of the force): lets the block on its top face spin around its axis. One untyped input in a corner cell of the bottom face (lines up with a Frame Quarter With Ports):
+- a Drive Shaft from a Motor: spins at the motor's speed; 0 = coasting (free, use the brake to hold); motor without power = spins freely;
+- a data signal: holds an angle, -1..1 = -45..45 degrees (steering);
+- nothing: spins freely.
+The small arrows on the side show which way the top turns with a POSITIVE signal; the mirrored version (V) turns the other way. Red LED on the side = locked by its shaft. The knob on the side sets the servo angle (10 to 360 degrees).
+1 pass-through port on the side opposite the knob: pairs with a Slip Ring on the top disc.
+
+  - Port0: Untyped input: a Drive Shaft (from a Motor) turns the bearing; a data signal -1..1 holds an angle (steering). With both, the shaft wins while it turns and the data signal holds the angle when the shaft is at 0.
+  - Port1: Pass-through: pairs with port 1 of the Slip Ring.
+  - Port2: Current angle (output): how far the top has turned. The switch on the side picks the unit: on = degrees (-180..180), off = the same number the servo input would need to hold that angle (-1..1 on the knob's range).
+
+== Mini Electric Thruster ==
+The small electric thruster at half size (0.5 x 1 x 0.5): a quarter of the force and of the power use. Same glow, flame and reverse button.
+
+  - Port0: Thrust (0..1).
+  - Port1: Power.
+
+== Mini Gyro Bearing ==
+A bearing that aims its own servo: the block on its top face keeps the tilt it had when the simulation started (as built in the garage, upright), no matter how the vehicle rolls around the bearing's axis. One levels one axis; two stacked at 90 degrees level both (a gimbal for a camera, an antenna or a platform). It only turns what is on top of it, it does not steady the vehicle.
+Quarter-size version (0.25 m block, a quarter of the force). Its single input (a corner cell of the bottom face) is untyped: a data signal -1..1 adds an offset to the levelled angle (up to the degrees set by the knob, default 45); a Drive Shaft from a Motor takes over while it turns. With the axis nearly vertical, or with no gravity around (space), it holds its last angle.
+The green rings mark it as a gyro; the knob on the side sets the offset range.
+1 pass-through port on the side opposite the knob: pairs with a Slip Ring on the top disc.
+
+  - Port0: Untyped input: a data signal -1..1 shifts the levelled angle by up to the knob's degrees; a Drive Shaft (from a Motor) turns the bearing while it runs.
+  - Port1: Pass-through: pairs with port 1 of the Slip Ring.
+  - Port2: Current angle (output): how far the top has turned. The switch on the side picks the unit: on = degrees (-180..180), off = the same number the servo input would need to hold that angle (-1..1 on the knob's range).
+
+== Mini Piston ==
+Pushes the block on its top face along its axis, proportional to the input signal (0..1). Stroke: up to 4 m, or, with a PISTON END block placed on its axis (any distance up to 4 m, on the garage grid), exactly the distance to that block — the rod is already drawn extended in the garage, so you can build things that will compress when the simulation starts. The knob on the side sets the fraction of that stroke the signal reaches (10 to 100%).
+With the game's H display on (centre of mass), a translucent guide bar shows the stroke along the axis to help you place the Piston End; it turns RED on the piston nearest to a Piston End that is not aligned with any piston.
+A quarter of the big piston's force and mass (0.25 m block). Needs electric power to move (10 P/s while moving); without power it holds its position. Status light on the side: GREEN = pushing, YELLOW = free (it closes a loop of pistons/bearings, so it just slides along while the others push), RED = welded (the top block is also attached to the base by another path).
+1 pass-through port on the side opposite the knob: pairs with a Slip Ring on the piston's head (or right after the Piston End).
+
+  - Port0: Input data signal from 0 (retracted) to 1 (extended).
+  - Port1: Power port. Uses 10 P/s while moving.
+  - Port2: Pass-through: pairs with port 1 of the Slip Ring.
+
+== Mini Piston End ==
+Smaller Piston End, sized like the logic blocks. Same use; works with Piston and Mini Piston.
+
+== Mini Slip Ring ==
+Smaller Slip Ring, sized like the logic blocks. Same use: place it on the moving side of any joint; its 4 ports pair with the joint's pass-through ports.
+
+  - Port0: Port 1: pairs with pass-through port 1 of the joint.
+  - Port1: Port 2: pairs with pass-through port 2 of the joint.
+  - Port2: Port 3: pairs with pass-through port 3 of the joint.
+  - Port3: Port 4: pairs with pass-through port 4 of the joint.
+
+== Fuel Motor Large ==
+Fuel motor that turns the Bearings on its Drive Shaft. 50% stronger than the electric motor of the same size. Takes fuel through the pipe connection on the same face as the ports (bottom corner, with the pipe mouth drawn) (any mix: the force follows the mix performance, like the fuel thrusters) and burns up to 0.85 fuel/s at full signal. Needs 5 P/s of electric power while turning. Without fuel it brakes; without power the bearings spin freely. Its force is 4x the listed value, shared by the bearings it drives (one motor per wheel = a strong car).
+
+  - Port0: Input data signal from -1 (reverse) to 1 (forward) for speed; 0 brakes.
+  - Port1: Power port. Uses 5 P/s while turning.
+  - Port2: Drive Shaft output: connect a Drive Shaft to the Bearings (a Differential splits it to up to 4, a Shaft Reverser turns them the other way). The force is shared by all bearings it drives.
+  - Port3: Brake input (0..1): with signal above 0 the motor stops driving and ALL wheels of the vehicle lock (mechanical brake: works without power or fuel; steering bearings are not locked). Strength = motor force x Motor.freio_fator (30).
+
+== Fuel Motor Medium ==
+Fuel motor that turns the Bearings on its Drive Shaft. 50% stronger than the electric motor of the same size. Takes fuel through the pipe connection on the same face as the ports (bottom corner, with the pipe mouth drawn) (any mix: the force follows the mix performance, like the fuel thrusters) and burns up to 0.85 fuel/s at full signal. Needs 5 P/s of electric power while turning. Without fuel it brakes; without power the bearings spin freely. Its force is 4x the listed value, shared by the bearings it drives (one motor per wheel = a strong car).
+
+  - Port0: Input data signal from -1 (reverse) to 1 (forward) for speed; 0 brakes.
+  - Port1: Power port. Uses 5 P/s while turning.
+  - Port2: Drive Shaft output: connect a Drive Shaft to the Bearings (a Differential splits it to up to 4, a Shaft Reverser turns them the other way). The force is shared by all bearings it drives.
+  - Port3: Brake input (0..1): with signal above 0 the motor stops driving and ALL wheels of the vehicle lock (mechanical brake: works without power or fuel; steering bearings are not locked). Strength = motor force x Motor.freio_fator (30).
+
+== Fuel Motor Small ==
+Fuel motor that turns the Bearings on its Drive Shaft. 50% stronger than the electric motor of the same size. Takes fuel through the pipe connection on the same face as the ports (bottom corner, with the pipe mouth drawn) (any mix: the force follows the mix performance, like the fuel thrusters) and burns up to 0.85 fuel/s at full signal. Needs 5 P/s of electric power while turning. Without fuel it brakes; without power the bearings spin freely. Its force is 4x the listed value, shared by the bearings it drives (one motor per wheel = a strong car).
+
+  - Port0: Input data signal from -1 (reverse) to 1 (forward) for speed; 0 brakes.
+  - Port1: Power port. Uses 5 P/s while turning.
+  - Port2: Drive Shaft output: connect a Drive Shaft to the Bearings (a Differential splits it to up to 4, a Shaft Reverser turns them the other way). The force is shared by all bearings it drives.
+  - Port3: Brake input (0..1): with signal above 0 the motor stops driving and ALL wheels of the vehicle lock (mechanical brake: works without power or fuel; steering bearings are not locked). Strength = motor force x Motor.freio_fator (30).
+
+== Large Motor ==
+Electric motor that drives the Bearings on its Drive Shaft. Input -1..1 sets speed and direction; 0 brakes. Uses up to 70 P/s. Without power the bearings spin freely. Its force is 4x the listed value, shared by the bearings it drives (one motor per wheel = a strong car).
+
+  - Port0: Input data signal from -1 (reverse) to 1 (forward) to control speed; 0 brakes.
+  - Port1: Power port. Uses up to 70 P/s.
+  - Port2: Drive Shaft output: connect a Drive Shaft to the Bearings (a Differential splits it to up to 4, a Shaft Reverser turns them the other way). The force is shared by all bearings it drives.
+  - Port3: Brake input (0..1): with signal above 0 the motor stops driving and ALL wheels of the vehicle lock (mechanical brake: works without power or fuel; steering bearings are not locked). Strength = motor force x Motor.freio_fator (30).
+
+== Medium Motor ==
+Electric motor that drives the Bearings on its Drive Shaft. Input -1..1 sets speed and direction; 0 brakes. Uses up to 28 P/s. Without power the bearings spin freely. Its force is 4x the listed value, shared by the bearings it drives (one motor per wheel = a strong car).
+
+  - Port0: Input data signal from -1 (reverse) to 1 (forward) to control speed; 0 brakes.
+  - Port1: Power port. Uses up to 28 P/s.
+  - Port2: Drive Shaft output: connect a Drive Shaft to the Bearings (a Differential splits it to up to 4, a Shaft Reverser turns them the other way). The force is shared by all bearings it drives.
+  - Port3: Brake input (0..1): with signal above 0 the motor stops driving and ALL wheels of the vehicle lock (mechanical brake: works without power or fuel; steering bearings are not locked). Strength = motor force x Motor.freio_fator (30).
+
+== Small Motor ==
+Electric motor that drives the Bearings on its Drive Shaft. Input -1..1 sets speed and direction; 0 brakes. Uses up to 7 P/s. Without power the bearings spin freely. Its force is 4x the listed value, shared by the bearings it drives (one motor per wheel = a strong car).
+
+  - Port0: Input data signal from -1 (reverse) to 1 (forward) to control speed; 0 brakes.
+  - Port1: Power port. Uses up to 7 P/s.
+  - Port2: Drive Shaft output: connect a Drive Shaft to the Bearings (a Differential splits it to up to 4, a Shaft Reverser turns them the other way). The force is shared by all bearings it drives.
+  - Port3: Brake input (0..1): with signal above 0 the motor stops driving and ALL wheels of the vehicle lock (mechanical brake: works without power or fuel; steering bearings are not locked). Strength = motor force x Motor.freio_fator (30).
+
+== Pedals ==
+Two floor pedals in one block, each one a button (1 while pressed), with ONE output: left pedal = -1, right pedal = +1, none = 0 (e.g. -1 = reverse/brake, +1 = accelerate on a Motor input).
+
+  - Port0: Output: -1 (left pedal pressed) .. 0 (released) .. +1 (right pedal pressed).
+
+== Piston ==
+Pushes the block on its top face along its axis, proportional to the input signal (0..1). Stroke: up to 8 m, or, with a PISTON END block placed on its axis (any distance up to 8 m, on the garage grid), exactly the distance to that block — the rod is already drawn extended in the garage, so you can build things that will compress when the simulation starts. The knob on the side sets the fraction of that stroke the signal reaches (10 to 100%).
+With the game's H display on (centre of mass), a translucent guide bar shows the stroke along the axis to help you place the Piston End; it turns RED on the piston nearest to a Piston End that is not aligned with any piston.
+Needs electric power to move (1 P/s per meter of its stroke while moving); without power it holds its position. Status light on the side: GREEN = pushing, YELLOW = free (it closes a loop of pistons/bearings, so it just slides along while the others push), RED = welded (the top block is also attached to the base by another path).
+4 pass-through ports on the side opposite the knob: pair with a Slip Ring on the piston's head (or right after the Piston End).
+
+  - Port0: Input data signal from 0 (retracted) to 1 (extended).
+  - Port1: Power port. Uses 1 P/s per meter of its stroke while moving (8 m = 8 P/s, 2 m = 2 P/s).
+  - Port2: Pass-through 1: pairs with port 1 of the Slip Ring.
+  - Port3: Pass-through 2: pairs with port 2 of the Slip Ring.
+  - Port4: Pass-through 3: pairs with port 3 of the Slip Ring.
+  - Port5: Pass-through 4: pairs with port 4 of the Slip Ring.
+
+== Piston End ==
+Marks where a Piston ends. Place it on the piston's axis, up to its maximum stroke, glued to what the piston pushes: the piston starts at that length. Works with Piston and Mini Piston. Turn on the game's H display to see the piston's guide bar.
+
+== Recoupler ==
+Couples back two pieces that a Decoupler has already separated. Build it touching the releasing face of a Decoupler (for example, the car's block that sits on the ship's Decoupler).
+With the input on (0.5 or more), as soon as it gets within 0.5 m of the releasing face of a fired Decoupler, it pulls the piece into the right place and joins both pieces back into one, just like before decoupling. To separate them again, fire the Decoupler.
+If the two blocks were not glued together in the garage, it only locks them rigidly (input below 0.5 releases).
+<b>It never couples on its own: only onto a Decoupler that has already decoupled.</b>
+4 pass-through ports on the side opposite the input: pair with a Slip Ring glued to the Decoupler it couples onto.
+
+  - Port0: Input data signal: 0.5 or higher = couple when touching a fired Decoupler; below 0.5 = do not couple (and release a rigid lock).
+  - Port1: Pass-through 1: pairs with port 1 of the Slip Ring.
+  - Port2: Pass-through 2: pairs with port 2 of the Slip Ring.
+  - Port3: Pass-through 3: pairs with port 3 of the Slip Ring.
+  - Port4: Pass-through 4: pairs with port 4 of the Slip Ring.
+
+== Large Offroad Wheel ==
+Grippy wheel for rough ground and climbs. Diameter 2 m, width 0.5 m, mass 200 kg, grip 2.2 (a normal block is about 0.5).
+Grips more than the Sports of the same size, but is heavier: accelerates slower and loads the Bearing more.
+<b>Place it on the rotating face of a Bearing.</b>
+Only the inner side (the one with the dark mounting flange) sticks: that is the side that goes on the Bearing. Press V to get the mirrored version.
+
+== Medium Offroad Wheel ==
+Grippy wheel for rough ground and climbs. Diameter 1.5 m, width 0.5 m, mass 120 kg, grip 2.2 (a normal block is about 0.5).
+Grips more than the Sports of the same size, but is heavier: accelerates slower and loads the Bearing more.
+<b>Place it on the rotating face of a Bearing.</b>
+Only the inner side (the one with the dark mounting flange) sticks: that is the side that goes on the Bearing. Press V to get the mirrored version.
+
+== Small Offroad Wheel ==
+Grippy wheel for rough ground and climbs. Diameter 1 m, width 0.5 m, mass 60 kg, grip 2.2 (a normal block is about 0.5).
+Grips more than the Sports of the same size, but is heavier: accelerates slower and loads the Bearing more.
+<b>Place it on the rotating face of a Bearing.</b>
+Only the inner side (the one with the dark mounting flange) sticks: that is the side that goes on the Bearing. Press V to get the mirrored version.
+
+== Large Sports Wheel ==
+Light wheel for speed. Diameter 2 m, width 0.5 m, mass 140 kg, grip 1.5 (a normal block is about 0.5).
+Lighter than the Offroad of the same size: accelerates faster and puts less load on the Bearing.
+<b>Place it on the rotating face of a Bearing.</b>
+Only the inner side (the one with the dark mounting flange) sticks: that is the side that goes on the Bearing. Press V to get the mirrored version.
+
+== Medium Sports Wheel ==
+Light wheel for speed. Diameter 1.5 m, width 0.5 m, mass 80 kg, grip 1.5 (a normal block is about 0.5).
+Lighter than the Offroad of the same size: accelerates faster and puts less load on the Bearing.
+<b>Place it on the rotating face of a Bearing.</b>
+Only the inner side (the one with the dark mounting flange) sticks: that is the side that goes on the Bearing. Press V to get the mirrored version.
+
+== Small Sports Wheel ==
+Light wheel for speed. Diameter 1 m, width 0.5 m, mass 40 kg, grip 1.5 (a normal block is about 0.5).
+Lighter than the Offroad of the same size: accelerates faster and puts less load on the Bearing.
+<b>Place it on the rotating face of a Bearing.</b>
+Only the inner side (the one with the dark mounting flange) sticks: that is the side that goes on the Bearing. Press V to get the mirrored version.
+
+== Shaft Reverser ==
+Reverse gear for a Drive Shaft: everything after it turns the other way (+1 becomes -1).
+
+  - Port0: Drive Shaft input.
+  - Port1: Drive Shaft output, turning the other way.
+
+== Shaft Transmitter ==
+Wireless Drive Shaft: works like the game's Wireless Transmitter, but for shafts. A Motor's shaft that goes into one comes out of every other Shaft Transmitter on the same channel (steering knuckles, suspensions, other vehicles). Its channels are separate from the data transmitters' channels. Shaft ports: orange = input, purple = output, half and half = both.
+
+  - Port0: Drive Shaft in or out (input on the motor's side, output on the other side).
+
+== Single Cell Battery ==
+One cell of the small rechargeable battery: 2x4x2, stores 500 P (a quarter of the small battery). Charges and discharges like the game's batteries.
+
+  - Port0: Power.
+
+== Slip Ring ==
+Carries data and power onto a piece that spins or moves, with no cable crossing the joint. Place it on the moving side of a Bearing, Piston, Recoupler or Turret Seat; its 4 ports pair with the joint's pass-through ports (port 1 with port 1, and so on). Each pair carries data either way, or power.
+
+  - Port0: Port 1: pairs with pass-through port 1 of the joint.
+  - Port1: Port 2: pairs with pass-through port 2 of the joint.
+  - Port2: Port 3: pairs with pass-through port 3 of the joint.
+  - Port3: Port 4: pairs with pass-through port 4 of the joint.
+
+== Mini Solar Panel ==
+The solar panel at the size of a Frame Quarter (0.5 x 0.125 x 0.5): an eighth of the area and of the power it makes. Charges batteries like the big one.
+
+  - Port0: Power.
+  - Port1: Power.
+
+== Small Blue Tank ==
+Small fuel tank (1x2x1 m) with 500 Bluebeam fuel. Comes full. Connect it with pipes to fuel motors and thrusters; the valve opens and closes the output.
+
+  - Port0: Output data signal: how much fuel is left in the tank.
+
+== Small Green Tank ==
+Small fuel tank (1x2x1 m) with 500 Pyrogel fuel. Comes full. Connect it with pipes to fuel motors and thrusters; the valve opens and closes the output.
+
+  - Port0: Output data signal: how much fuel is left in the tank.
+
+== Turret Seat ==
+Turret seat: the thin square base stays glued to the ship and everything above it turns with your view, no bearings: sit down and move the mouse (up to 360 degrees horizontally and 135 up or down, upside down). The three knobs on the front of the base set the limits, left to right: turn (left and right; all the way = free), up and down. By default: free, 135 up, 30 down. Whatever is glued to the 4 support plates (left, right, top, back) turns with it. Ctrl shows/hides the cursor (aim stops while it shows). What is glued to the plates must not touch the ship too, or it stays welded.
+Pass-through ports on the base, 4 per side (one set per plate): pair with a Slip Ring on the piece attached to that plate.
+
+  - Port0: Pass-through 1, left plate: pairs with port 1 of the Slip Ring there.
+  - Port1: Pass-through 2, left plate: pairs with port 2 of the Slip Ring there.
+  - Port2: Pass-through 3, left plate: pairs with port 3 of the Slip Ring there.
+  - Port3: Pass-through 4, left plate: pairs with port 4 of the Slip Ring there.
+  - Port4: Pass-through 1, right plate: pairs with port 1 of the Slip Ring there.
+  - Port5: Pass-through 2, right plate: pairs with port 2 of the Slip Ring there.
+  - Port6: Pass-through 3, right plate: pairs with port 3 of the Slip Ring there.
+  - Port7: Pass-through 4, right plate: pairs with port 4 of the Slip Ring there.
+  - Port8: Pass-through 1, back plate: pairs with port 1 of the Slip Ring there.
+  - Port9: Pass-through 2, back plate: pairs with port 2 of the Slip Ring there.
+  - Port10: Pass-through 3, back plate: pairs with port 3 of the Slip Ring there.
+  - Port11: Pass-through 4, back plate: pairs with port 4 of the Slip Ring there.
+  - Port12: Pass-through 1, top plate: pairs with port 1 of the Slip Ring there.
+  - Port13: Pass-through 2, top plate: pairs with port 2 of the Slip Ring there.
+  - Port14: Pass-through 3, top plate: pairs with port 3 of the Slip Ring there.
+  - Port15: Pass-through 4, top plate: pairs with port 4 of the Slip Ring there.
+
+== Steering Wheel ==
+A steering wheel on a tilted column rising from the small box: works exactly like a Horizontal Joystick (one axis, -1..1, springs back to the middle). The box goes in the bottom back corner (glue it to the wall behind or the floor); the single output is on its back face, to bearings in servo mode (steering).
+
+  - Port0: Steering output (-1 left .. +1 right).[/spoiler]

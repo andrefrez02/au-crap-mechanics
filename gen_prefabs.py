@@ -898,7 +898,8 @@ def turret(nome, yaml):
     yb0, yb1 = mv.TURRET_BASE_Y
     txt = prefab(nome, mv.TURRET_BOUNDS, TURRET_MASSA, areas, mv.TURRET_PORTAS, script=S_SEAT, extra_raiz=extra,
                  colisor_caixa=[((0, (yb0 + yb1) / 2, 0), (mv.TURRET_BASE_LADO, yb1 - yb0, mv.TURRET_BASE_LADO))],
-                 pintaveis_extra=[x for x in pint_jogo if nomes.get(_go_do(docs, x), "") in ("Piston", "Upper Paintable")], pintar_extras=("MovelPint",))
+                 pintaveis_extra=[x for x in pint_jogo if nomes.get(_go_do(docs, x), "") in ("Piston", "Upper Paintable")], pintar_extras=("MovelPint",),
+                 alavancas={suf: ("knob", (0, 0, -150), (0, 0, 150), (0.028, 0, pad, (0, 0, 0.007))) for suf, pad in zip(mv.TURRET_KNOB_SUF, mv.TURRET_KNOB_PADRAO)})   # 0.25.0: knobs de limite
     meu_tr = fid(nome, "tr")
     # --- 2) os docs do seat do jogo (menos raiz, Lower, JointsArea e colisores da raiz), deslocados e pendurados na minha raiz
     copiar = []; filhos_tr = []
@@ -1012,6 +1013,14 @@ def espelhar(txt, nome):
             d = re.sub(r"(\n  _position:\n    x: )([^\n]+)", lambda k: k.group(1) + _neg(k.group(2)), d, count=1)
             d = re.sub(r"(\n  _rotation:\n    x: [^\n]+\n    y: )([^\n]+)(\n    z: )([^\n]+)", lambda k: k.group(1) + _neg(k.group(2)) + k.group(3) + _neg(k.group(4)), d, count=1)
             d = re.sub(r"(\n  _scale:\n    x: )([^\n]+)", lambda k: k.group(1) + _neg(k.group(2)), d, count=1)
+        elif sc == S_TOGGLE:
+            # 0.25.1 (Andre: "o switch do bearing invertido (modo M) esta em cima do port de dados"): o jogo ESCREVE a pose da haste
+            # (_buttonTransformOn/OffPos/Rot) no renderer do switch, em coordenadas do bloco — o _position do renderer espelhado era
+            # descartado e a haste voltava pro lado da versao normal.
+            for campo in ("_buttonTransformOnPos", "_buttonTransformOffPos"):
+                d = re.sub(r"(\n  %s:\n    x: )([^\n]+)" % campo, lambda k: k.group(1) + _neg(k.group(2)), d, count=1)
+            for campo in ("_buttonTransformOnRot", "_buttonTransformOffRot"):
+                d = re.sub(r"(\n  %s:\n    x: [^\n]+\n    y: )([^\n]+)(\n    z: )([^\n]+)" % campo, lambda k: k.group(1) + _neg(k.group(2)) + k.group(3) + _neg(k.group(4)), d, count=1)
         elif sc in (S_COL, S_COL_CONV_):
             d = re.sub(r"(\n  _offset:\n    x: )([^\n]+)", lambda k: k.group(1) + _neg(k.group(2)), d, count=1)
             d = re.sub(r"(\n  _rotation:\n    x: [^\n]+\n    y: )([^\n]+)(\n    z: )([^\n]+)", lambda k: k.group(1) + _neg(k.group(2)) + k.group(3) + _neg(k.group(4)), d, count=1)

@@ -331,7 +331,7 @@ BEARING_KNOB_S = {1.0: BEARING_KNOB, 0.5: (-0.065, -0.08)}; BEARING_LED_S = {1.0
 # painel +Z fica com LED (borda +X), switch (meio) e knob — o switch nao cabe do lado direito do knob num bloco de 0,25.
 BEARING_SWITCH_S = {1.0: BEARING_SWITCH, 0.5: (0.010, -0.08)}
 BEARING_PAINEL_S = {1.0: (-0.0625, 0.345), 0.5: (-0.010, 0.190)}   # (centro x, largura) do painel +Z: abre espaco pro switch e sai de baixo do bolso da saida
-def knob_painel(c, pos, eixo, n_marcas=0, r=0.02, h=0.016):
+def knob_painel(c, pos, eixo, n_marcas=0, r=0.02, h=0.016, suf="Knob"):
     """0.19.2: knob deitado num painel vertical (eixo = +1 painel +Z / -1 painel -Z): anel de marcas no painel + o knob (extra "Knob").
     0.19.3 (Andre: "o knob no bearing ta pra dentro do modelo"): o EPC_Actionable_Knob do jogo ESCREVE a rotacao do knob
     (lerp de _rotationMin a _rotationMax), entao a rotacao de repouso (90,0,0) era descartada e o knob ficava com o eixo em +Y, dentro
@@ -343,7 +343,7 @@ def knob_painel(c, pos, eixo, n_marcas=0, r=0.02, h=0.016):
     knob.cilindro(2, (0, 0, eixo * 0.007), r, h, MEDIO, n=12, chanfro=0.002)
     zt = eixo * (0.007 + h / 2)
     knob.caixa(-0.0022, 0.0022, 0.003, r - 0.0025, min(zt, zt + eixo * 0.001), max(zt, zt + eixo * 0.001), CLARO)   # risco apontando (pra cima no meio do curso)
-    return ("Knob", knob, (x, y, z), (1, 1, 1), (0, 0, 0))
+    return (suf, knob, (x, y, z), (1, 1, 1), (0, 0, 0))
 def switch_painel(c, pos, eixo, esc=1.0, suf="Switch"):
     """0.23.0: switch de duas posicoes num painel vertical (eixo = +1 painel +Z / -1 painel -Z). E' o ActionableToggle do jogo — o
     mesmo do Input Switch do Datameter e do botao de re do mini propulsor: o jogo escreve a pose da haste (_buttonTransformOn/Off),
@@ -840,6 +840,14 @@ TURRET_PLACA = 0.04                      # espessura das placas de apoio
 TURRET_PLACA_LADO, TURRET_PLACA_TOPO = 0.25, 0.25   # meios-lados: TODAS as placas = 1 frame quarter (0,5 x 0,5)
 TURRET_BASE_Y = (-1.25, -1.125)          # base parada, 1 casa de espessura (igual)
 TURRET_BASE_LADO = 1.5                   # chapa da base 1,5 x 1,5 (igual)
+# 0.25.0 (Andre: "tres knobs ... pra eu poder setar o angulo maximo dela em cada dimensao ... parte da frente da base"): na face +Z
+# da base, a direita das 4 portas de passagem, num rebaixo de 1,8 cm (o knob nao passa da face, nem da casca de colisao):
+# yaw (0..180 graus, 180 = livre) / pitch pra cima (0..135) / pitch pra baixo (0..135). O plugin acha os tres pela posicao em X.
+TURRET_KNOB_XS = (0.575, 0.455, 0.335)   # de frente pra face +Z o +X fica a esquerda: lendo da esquerda pra direita = yaw, cima, baixo
+TURRET_KNOB_Y = -1.1875
+TURRET_KNOB_PROF = 0.018
+TURRET_KNOB_SUF = ("Knob", "KnobCima", "KnobBaixo")
+TURRET_KNOB_PADRAO = (1.0, 1.0, round(30.0 / 135.0, 4))   # = o que o turret fazia antes: yaw livre, 135 pra cima, 30 pra baixo
 TURRET_PITCH_MAX = 135.0                 # olhar pra cima ate a placa de cima ficar a ~5 cm da base (conta em 0.12.6)
 # o tick do seat do jogo (SCTick_Seat) poe o Upper em y -0,775 (altura 0) ignorando o _position do prefab; o plugin
 # (Torreta.AlturasDosSeats) reescreve o LocalTransform do Upper = TURRET_UPPER antes do TransformSystemGroup (garagem e simulacao).
@@ -905,7 +913,8 @@ def turret(portas=None):
     p.caixa_chanfrada(-hb, hb, yb0, yb1, -hb, hb, PINTA, topo=0.006, base=0.004, vert=0.05,
                       rebaixos={"+y": [rebaixo_centrado(0, 0, 1.34, 1.34, 0.006, PINTA, ESCURO, [rebaixo_centrado(0, 0, 1.24, 1.24, 0.004, MEDIO, ESCURO)])],
                                 "-x": portas_na_face(c, portas, 0, -1, -hb), "+x": portas_na_face(c, portas, 0, 1, hb),
-                                "-z": portas_na_face(c, portas, 2, -1, -hb), "+z": portas_na_face(c, portas, 2, 1, hb)})
+                                "-z": portas_na_face(c, portas, 2, -1, -hb),
+                                "+z": portas_na_face(c, portas, 2, 1, hb) + [rebaixo_centrado(sum(TURRET_KNOB_XS) / 3, TURRET_KNOB_Y, max(TURRET_KNOB_XS) - min(TURRET_KNOB_XS) + 0.1, 0.09, TURRET_KNOB_PROF, MEDIO, ESCURO)]})
     c.anel(1, (0, yb1 - 0.010 + 0.014, 0), 0.36, 0.66, 0.028, ESCURO, n=48, chanfro=0.006)   # mesa giratoria (parada): anel escuro
     c.anel(1, (0, yb1 - 0.010 + 0.034, 0), 0.42, 0.58, 0.012, CLARO, n=48, chanfro=0.004)    # faixa clara por cima
     for k in range(16):
@@ -974,6 +983,8 @@ def turret(portas=None):
     extras = [("Movel", mv, TURRET_EXTRA, (1, 1, 1)), ("MovelPint", mp, TURRET_EXTRA, (1, 1, 1)),
               ("Pedestal", pd, TURRET_PEDESTAL, (1, 1, 1)),
               ("Marca", _marca(), TURRET_MARCA, (1, 1, 1))]   # 0.12.5: marca invisivel = o plugin reconhece o turret ate na garagem
+    for kx, suf in zip(TURRET_KNOB_XS, TURRET_KNOB_SUF):   # 0.25.0: os 3 knobs de limite (yaw / pitch cima / pitch baixo)
+        extras.append(knob_painel(c, (kx, TURRET_KNOB_Y, hb - TURRET_KNOB_PROF), 1, suf=suf))
     # previa: malhas do seat do jogo (so imagem/icone)
     previa = None
     if MESH_JOGO:

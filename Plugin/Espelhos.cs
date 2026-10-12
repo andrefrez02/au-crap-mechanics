@@ -46,6 +46,7 @@ namespace Mecanica
         [HarmonyPostfix, HarmonyPatch(typeof(UIInventory), nameof(UIInventory.PreAwake))]
         static void TirarDoInventario(UIInventory __instance)
         {
+            Registro.Rastro("Espelhos.TirarDoInventario");
             if (__instance == null) return;
             try
             {

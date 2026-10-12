@@ -19,15 +19,18 @@ namespace Mecanica
             try
             {
                 var pasta = Path.Combine(pastaPlugin, "logs"); Directory.CreateDirectory(pasta);
-                var velhos = Directory.GetFiles(pasta, "sessao-*.log"); Array.Sort(velhos);
+                // 0.25.0: nomes em ingles (session-*.log, _old); os sessao-*.log de versoes antigas vao direto pra _old
+                var lixo = Path.Combine(pasta, "_old");
+                foreach (var v in Directory.GetFiles(pasta, "sessao-*.log")) { try { Directory.CreateDirectory(lixo); var d = Path.Combine(lixo, Path.GetFileName(v)); if (!File.Exists(d)) File.Move(v, d); } catch (Exception) { } }
+                var velhos = Directory.GetFiles(pasta, "session-*.log"); Array.Sort(velhos);
                 // guarda as 4 mais novas + a que vai nascer = 5 (move as antigas pra _lixeira em vez de apagar)
                 if (velhos.Length > 4)
                 {
-                    var lixo = Path.Combine(pasta, "_lixeira"); Directory.CreateDirectory(lixo);
+                    Directory.CreateDirectory(lixo);
                     // regra do projeto: nada e' apagado — as antigas vao pra logs/_lixeira (o Andre limpa quando quiser)
                     for (int i = 0; i < velhos.Length - 4; i++) { try { var d = Path.Combine(lixo, Path.GetFileName(velhos[i])); if (!File.Exists(d)) File.Move(velhos[i], d); } catch (Exception) { } }
                 }
-                var caminho = Path.Combine(pasta, "sessao-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".log");
+                var caminho = Path.Combine(pasta, "session-" + DateTime.Now.ToString("yyyyMMdd-HHmmss") + ".log");
                 var l = new LogArquivo(caminho);
                 Logger.Listeners.Add(l);
                 l.Escrever("[Mecanica] session log: " + caminho);

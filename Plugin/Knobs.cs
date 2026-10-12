@@ -72,6 +72,29 @@ namespace Mecanica
         static string Metros(int pct, float cursoM) => cursoM > 0.0005f ? " (" + (cursoM * pct / 100f).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) + " m)" : "";
         public static float FracaoCurso(float v) => (float)Math.Round(10f + 90f * v) / 100f;
 
+        // ---------------------------------------------------------------- 0.25.0 (Andre: "tres knobs no turret seat, pra eu poder setar
+        // o angulo maximo dela em cada dimensao ... parte da frente da base"; "no modo nave toda vale tambem"): na face +Z da base,
+        // lendo da esquerda pra direita (= X do bloco decrescente): limite de yaw (0..180, 180 = livre), de pitch pra cima (0..135) e de
+        // pitch pra baixo (0..135). Os tres sao knobs iguais; quem e' quem sai da posicao em X. Valor guardado por SCGuid + sufixo.
+        public const float TorreYawMax = 180f, TorrePitchMax = 135f;
+        static readonly string[] TorreSuf = { "yaw", "up", "down" };
+        public static int GrausTorre(int i, float v) => (int)Math.Round((i == 0 ? TorreYawMax : TorrePitchMax) * v);
+        static string DicaTorre(int i, int g)
+        {
+            if (i == 0) return g >= TorreYawMax ? Texto("SC_TurretSeat_KnobYawFree", "Turn: free (full circle)") : Texto("SC_TurretSeat_KnobYaw", "Turn limit: ±{0}°").Replace("{0}", g.ToString());
+            return (i == 1 ? Texto("SC_TurretSeat_KnobUp", "Aim up limit: {0}°") : Texto("SC_TurretSeat_KnobDown", "Aim down limit: {0}°")).Replace("{0}", g.ToString());
+        }
+        static readonly System.Collections.Generic.Dictionary<long, (Entity bloco, int i)> knobsTorre = new System.Collections.Generic.Dictionary<long, (Entity, int)>();
+        static readonly System.Collections.Generic.Dictionary<long, int[]> limitesTorre = new System.Collections.Generic.Dictionary<long, int[]>();
+        static readonly System.Collections.Generic.HashSet<long> torreLogada = new System.Collections.Generic.HashSet<long>();
+        /// <summary>0.25.0: limites do turret seat (graus) lidos dos 3 knobs. false = ainda nao achou os knobs (fica o padrao de quem chama).</summary>
+        public static bool LimitesTorre(Entity bloco, ref float yaw, ref float cima, ref float baixo)
+        {
+            if (!limitesTorre.TryGetValue(Ecs.K(bloco), out var l)) return false;
+            if (l[0] >= 0) yaw = l[0]; if (l[1] >= 0) cima = l[1]; if (l[2] >= 0) baixo = l[2];
+            return true;
+        }
+
         /// <summary>Por junta, todo frame (barato): acha o knob a cada 3 s se nao tiver; le o valor; atualiza a dica quando muda.</summary>
         public static void Passo(EntityManager em, Junta j, float dt)
         {
@@ -116,7 +139,9 @@ namespace Mecanica
         // garagem/lancamento. Guardamos o valor por SCGuid em BepInEx/config/Mecanica/knobs.txt e escrevemos de volta no
         // ActionableData quando o knob (re)aparece — vale na garagem, no lancamento e no time rewind.
         static readonly System.Collections.Generic.Dictionary<string, float> salvos = new System.Collections.Generic.Dictionary<string, float>();
-        static readonly System.Collections.Generic.HashSet<long> aplicados = new System.Collections.Generic.HashSet<long>();   // knob entity ja conferido
+        // 0.24.0: guarda o SCGuid junto. Era um HashSet nunca limpo: o indice/versao de uma entity e' reaproveitado entre garagem e
+        // lancamento, entao um knob NOVO podia cair numa chave velha, pular a restauracao e gravar o padrao por cima do valor salvo.
+        static readonly System.Collections.Generic.Dictionary<long, string> aplicados = new System.Collections.Generic.Dictionary<long, string>();   // knob entity -> guid ja conferido
         static readonly System.Collections.Generic.Dictionary<long, int> dicaGaragem = new System.Collections.Generic.Dictionary<long, int>();
         static bool carregado, sujo; static float tGravar; static string arquivo;
         static string Arquivo()
@@ -160,15 +185,22 @@ namespace Mecanica
             if (string.IsNullOrEmpty(guid)) return v;
             if (sufixo != null) guid += "|" + sufixo;   // 0.23.1: o switch da saida de angulo tem chave propria
             long k = Ecs.K(knob);
-            if (!aplicados.Contains(k))
+            // 0.24.0 (Andre: "essa atualizacao resetou o angulo dos bearings e o tamanho dos pistoes"): o arquivo so e' escrito
+            // quando a mudanca veio do jogador. Antes, uma unica passada em que a restauracao nao acontecia (entity reaproveitada,
+            // ou o ActionableData ainda nao gravavel) marcava o knob como conferido e a chamada seguinte gravava o PADRAO por cima
+            // do valor salvo — perda definitiva. Agora so marca conferido quando a restauracao realmente valeu.
+            if (!aplicados.TryGetValue(k, out var guidConf) || guidConf != guid)
             {
-                aplicados.Add(k);
-                if (salvos.TryGetValue(guid, out var sv) && Math.Abs(sv - v) > 0.0005f)
+                if (salvos.TryGetValue(guid, out var sv))
                 {
-                    var p = (float*)em.GetComponentDataRawRW(knob, tiData);
-                    if (p != null) { p[0] = sv; if (LogDetalheKnob) Registro.Info("knobs: block " + bloco.Index + " (" + guid.Substring(0, 8) + "…): knob restored to " + sv.ToString("F3") + " (was " + v.ToString("F3") + ")"); return sv; }
+                    if (Math.Abs(sv - v) <= 0.0005f) { aplicados[k] = guid; return v; }   // ja esta no valor salvo
+                    float* p = null; try { p = (float*)em.GetComponentDataRawRW(knob, tiData); } catch (Exception) { }
+                    if (p == null) return v;   // ainda nao da pra escrever: tenta de novo no proximo passo, sem gravar nada
+                    p[0] = sv; aplicados[k] = guid;
+                    if (LogDetalheKnob) Registro.Info("knobs: block " + bloco.Index + " (" + guid.Substring(0, 8) + "…): knob restored to " + sv.ToString("F3") + " (was " + v.ToString("F3") + ")");
+                    return sv;
                 }
-                if (!salvos.ContainsKey(guid)) { salvos[guid] = v; sujo = true; }
+                salvos[guid] = v; sujo = true; aplicados[k] = guid;   // bloco visto pela 1a vez: semeia o arquivo
                 return v;
             }
             if (!salvos.TryGetValue(guid, out var atual) || Math.Abs(atual - v) > 0.0005f) { salvos[guid] = v; sujo = true; }
@@ -186,12 +218,23 @@ namespace Mecanica
             float agora = UnityEngine.Time.unscaledTime; tMapa += tUltimo < 0f ? 9f : agora - tUltimo; tUltimo = agora;
             if (tMapa >= 1f)
             {
-                tMapa = 0f; knobsMod.Clear(); switchesMod.Clear();
+                tMapa = 0f; knobsMod.Clear(); switchesMod.Clear(); knobsTorre.Clear(); torreTmp.Clear(); torreBloco.Clear();
+                Registro.Rastro("knobs: listing the world's actionables");
                 Entity[] knobs; try { knobs = BeaconIcone.TodosActionables(em); } catch (Exception) { return; }
+                Registro.Rastro("knobs: " + knobs.Length + " actionable(s) to look at");
                 foreach (var kn in knobs)
                 {
+                    Registro.Rastro("knobs: actionable " + kn.Index + ":" + kn.Version + " — owner?");
                     var bloco = BeaconIcone.BlocoDoActionable(em, kn); if (Ecs.Nulo(bloco) || !Ecs.Vivo(em, bloco)) continue;
+                    Registro.Rastro("knobs: actionable " + kn.Index + " owner " + bloco.Index + " — prefab?");
                     ulong h; try { h = Ecs.Prefab(em, bloco); } catch (Exception) { continue; }
+                    Registro.Rastro("knobs: actionable " + kn.Index + " prefab ok");
+                    if (tiKnobC.Value != 0 && Ecs.TemC(em, kn, tiKnobC) && Juntas.TipoDoHash(h, out var tpT, out _, out _) && tpT == Tipo.Torreta)
+                    {
+                        float x = 0f; try { Ecs.Eixos(em, bloco, out var ex, out _, out _); x = Ecs.Dot(Ecs.Sub(Ecs.Posicao(em, kn), Ecs.Posicao(em, bloco)), ex); } catch (Exception) { continue; }
+                        long kb = Ecs.K(bloco); if (!torreTmp.TryGetValue(kb, out var lt)) torreTmp[kb] = lt = new System.Collections.Generic.List<(Entity, float)>();
+                        lt.Add((kn, x)); torreBloco[kb] = bloco; continue;
+                    }
                     if (!Juntas.BlocoComKnob(h, out _, out var bearing, out var giro, out var cursoP)) continue;
                     // 0.23.1 (Andre: "o switch do bearing ta com texto errado"): o bearing tem DOIS actionables — o switch da saida
                     // de angulo caia aqui e levava a dica e o valor guardado do knob. Agora vai pra lista dele.
@@ -199,6 +242,8 @@ namespace Mecanica
                     knobsMod[Ecs.K(kn)] = (bloco, bearing, giro, cursoP);
                 }
             }
+            if (torreTmp.Count > 0) MapaTorres();
+            Registro.Rastro("knobs: map ready (" + knobsMod.Count + " knob(s), " + switchesMod.Count + " switch(es))");
             foreach (var kv in knobsMod)
             {
                 var kn = Ecs.DeK(kv.Key); var bloco = kv.Value.bloco; bool bearing = kv.Value.bearing, giro = kv.Value.giro; float cursoMaxP = kv.Value.curso;
@@ -219,7 +264,20 @@ namespace Mecanica
                     if (chave != antes) { dicaGaragem[k] = chave; Dica(em, kn, Texto("SC_Pistao_KnobCurso", "Stroke: {0}%").Replace("{0}", pct.ToString()) + Metros(pct, cursoM)); }
                 }
             }
+            foreach (var kv in knobsTorre)
+            {
+                var kn = Ecs.DeK(kv.Key); var bloco = kv.Value.bloco; int i = kv.Value.i;
+                if (!Ecs.Vivo(em, kn) || !Ecs.Vivo(em, bloco)) continue;
+                float v = Valor(em, kn); if (float.IsNaN(v)) continue;
+                v = Persistir(em, kn, bloco, v, TorreSuf[i]);
+                int g = GrausTorre(i, v); long kb = Ecs.K(bloco);
+                if (!limitesTorre.TryGetValue(kb, out var l)) limitesTorre[kb] = l = new[] { -1, -1, -1 };
+                if (l[i] != g) { if (LogDetalheKnob && l[i] >= 0) Registro.Info("turret seat " + bloco.Index + ": " + TorreSuf[i] + " limit " + l[i] + " -> " + g + " degrees"); l[i] = g; }
+                long k = Ecs.K(kn); dicaGaragem.TryGetValue(k, out var antes);
+                if (antes != g + 1000) { dicaGaragem[k] = g + 1000; Dica(em, kn, DicaTorre(i, g)); }
+            }
             // 0.23.1: switch da saida de angulo — dica propria e valor guardado por bloco (o jogo nao salva actionable de bloco generico)
+            Registro.Rastro("knobs: knobs done");
             foreach (var kv in switchesMod)
             {
                 var sw = Ecs.DeK(kv.Key); var bloco = kv.Value;
@@ -230,9 +288,28 @@ namespace Mecanica
                 if (!dicaGaragem.TryGetValue(k, out var antes) || antes != quer)
                 { dicaGaragem[k] = quer; Dica(em, sw, Texto(graus ? "SC_Bearing_SwitchGraus" : "SC_Bearing_SwitchNorm", graus ? "Angle out: degrees" : "Angle out: -1..1")); }
             }
+            Registro.Rastro("knobs: switches done");
             if (dicaGaragem.Count > 4096) dicaGaragem.Clear();
         }
-        public static void Esquecer() { aplicados.Clear(); dicaGaragem.Clear(); knobsMod.Clear(); switchesMod.Clear(); tMapa = 9f; }
+        static readonly System.Collections.Generic.Dictionary<long, System.Collections.Generic.List<(Entity kn, float x)>> torreTmp = new System.Collections.Generic.Dictionary<long, System.Collections.Generic.List<(Entity, float)>>();
+        static readonly System.Collections.Generic.Dictionary<long, Entity> torreBloco = new System.Collections.Generic.Dictionary<long, Entity>();
+        /// <summary>0.25.0: os knobs de cada turret seat, em ordem de X decrescente = yaw, pitch pra cima, pitch pra baixo.</summary>
+        static void MapaTorres()
+        {
+            foreach (var kv in torreTmp)
+            {
+                var lista = kv.Value; var bloco = torreBloco[kv.Key];
+                if (lista.Count < 3)
+                {
+                    if (torreLogada.Add(kv.Key)) Registro.Aviso("turret seat " + bloco.Index + ": " + lista.Count + " knob(s), expected 3 — rebuild the bundle in the Modkit (the limits stay at yaw free / 135 up / 30 down)");
+                    continue;
+                }
+                lista.Sort((a, b) => b.x.CompareTo(a.x));
+                for (int i = 0; i < 3; i++) knobsTorre[Ecs.K(lista[i].kn)] = (bloco, i);
+                if (torreLogada.Add(kv.Key)) Registro.Info("turret seat " + bloco.Index + ": limit knobs = entities " + lista[0].kn.Index + " (turn), " + lista[1].kn.Index + " (up), " + lista[2].kn.Index + " (down); x " + lista[0].x.ToString("F2") + " / " + lista[1].x.ToString("F2") + " / " + lista[2].x.ToString("F2"));
+            }
+        }
+        public static void Esquecer() { aplicados.Clear(); dicaGaragem.Clear(); knobsMod.Clear(); switchesMod.Clear(); knobsTorre.Clear(); torreLogada.Clear(); tMapa = 9f; }
         static string Texto(string chave, string padrao)
         {
             try { var loc = Localization._cachedInstance; if (loc != null && loc._map != null && loc._map.ContainsKey(chave)) return loc._map[chave]; } catch (Exception) { }

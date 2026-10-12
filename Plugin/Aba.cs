@@ -21,6 +21,7 @@ namespace Mecanica
         [HarmonyPostfix, HarmonyPatch(typeof(UIInventory), nameof(UIInventory.OnEnable))]
         static void DepoisDeAbrir(UIInventory __instance)
         {
+            Registro.Rastro("Aba.DepoisDeAbrir");
             try
             {
                 if (minha != null && inv == __instance && minha.gameObject != null) { Pintar(__instance._currentHeaderTab == Bit); return; }
@@ -127,6 +128,7 @@ namespace Mecanica
         [HarmonyPostfix, HarmonyPatch(typeof(UIInventory), nameof(UIInventory.ShowHeaderTab))]
         static void DepoisDeTrocar(UIInventory __instance, int tabID)
         {
+            Registro.Rastro("Aba.DepoisDeTrocar " + tabID);
             try { if (__instance == inv) Pintar(tabID == Bit); } catch (Exception) { }
         }
 

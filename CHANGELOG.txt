@@ -1,10 +1,18 @@
-Version 0.23.2
+Version 0.25.0
 
-New: angle output on the Bearing, Gyro Bearing, Mini Bearing and Mini Gyro Bearing. The last port gives the angle the top is at right now, and a switch beside the knob picks the unit: degrees, or the same scale as the servo input, so you can feed it straight back into your own logic.
-New: status lines in the inventory panel of every block (max force, max speed, power consumption, stroke, grip and so on), like the game's own parts.
-Changed: pistons use 1 P/s per meter of the stroke they actually make, instead of a flat rate for the whole 8 m. A piston set to 2 m now costs 2 P/s.
-Changed: in-game descriptions follow the game's style and are much shorter, and so are the port tooltips. The full text of every block is on this page.
-Changed: a pass-through port with no cable shows the colour of the cable on the other side of the joint, like the Frame Quarter With Ports.
-Fixed: the bearing's angle output came up as an untyped port and turned into I/O when a cable was plugged in; it is a blue output now.
-Fixed: the pairing between a bearing's pass-through ports and the Slip Ring was off by one.
-Fixed: the switch showed the knob's tooltip and took the knob's saved value.
+New: three knobs on the front of the Turret Seat's base limit how far it aims: left and right (up to a full circle), up and down (up to 135 degrees each). By default it works as before: free sideways, 135 up, 30 down. The limits also hold when the turret turns the whole ship, and each seat keeps its own values.
+New: extra inventory amount for any block, other mods' blocks included ([Bonus] extra_blocks, for example SC_MFA1x1=2000).
+New: [Bearing] servo_gain sets how early a servo bearing starts braking; lower it if a heavy load overshoots and swings.
+Changed: the 4 rails of a piston move apart as the piston gets longer ([Piston] rails_per_meter), so long pistons stay straight under load instead of bending until the part breaks.
+Changed: a piston that ends up bent or stuck stops pushing and only holds its place ([Piston] max_tilt), and pushes again on the next new target. A stuck piston no longer walks the whole ship across the ground.
+Changed: on launch, bearings and pistons wait for both sides to line up for up to [Physics] fit_wait seconds, and stop waiting as soon as the fit stops moving. A piece that slid while the game was still rebuilding the ship is pulled back to its garage position ([Piston] snap_back).
+Changed: everything the mod writes is in English, log files and folders included (logs/session-*.log, logs/marks, logs/_old).
+Changed: the config file has one section per kind of part, in the same order as the Mod Menu, and keys that no version reads anymore are removed. [Turret Seat] pitch_min and pitch_max are gone (the knobs replace them).
+Fixed: pistons without a Piston End misbehaved on the first launch of a session.
+Fixed: bearing angles and piston strokes set with the knobs could go back to default after an update.
+Fixed: the Turret Seat's ports turned with the seat instead of staying on the base.
+Fixed: in the game's normal seat, the key bindings stopped working in third person view; they now reach bound parts up to 4.5 m away ([Seat] bindings_reach).
+Fixed: a Wireless Transmitter on a moving part (across a bearing or a piston) could stay stuck with no signal and an amber LED. The mod now asks the game to connect it again ([Signal] fix_stuck_ports).
+Fixed: the game crashed when opening some pages of the tutorial manual (M), such as Small Maneuvering Thrusters.
+Fixed: the Mini Piston, Mini Piston End, Mini Slip Ring and Mini Electric Thruster were missing from the Mechanics tab.
+Fixed: on the mirrored (V) Bearing and Mini Bearing, the angle switch was drawn on top of the data port.

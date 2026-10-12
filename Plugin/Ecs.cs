@@ -297,6 +297,22 @@ namespace Mecanica
             try { if (!em.HasComponent(bloco, ComponentType.ReadOnly(tiPortRef))) return new Entity[0]; return BufferEntities(em, bloco, tiPortRef); }
             catch (Exception) { return new Entity[0]; }
         }
+        /// <summary>0.24.0: o tipo que vale na pratica. _setupType (+20) e' o do prefab; o jogo resolve _runtimeType (+21) a partir
+        /// dele e e' o runtime que manda na hora de passar valor. Numa porta DataInOut (3) ou Unset (5) o setup nao diz a direcao —
+        /// se o runtime ja estiver resolvido em entrada ou saida, e' ele. (Sem isso o Anel via "sem saida dos dois lados" num
+        /// Wireless Transmitter receptor, que e' DataInOut no prefab e DataOutput em tempo de execucao, e nao fazia a ponte.)</summary>
+        public static unsafe byte TipoEfetivo(EntityManager em, Entity p)
+        {
+            try
+            {
+                if (!Vivo(em, p) || !em.HasComponent(p, ComponentType.ReadOnly(tiPort))) return 255;
+                var b = (TemC(em, p, tiPort) ? (byte*)em.GetComponentDataRawRO(p, tiPort) : null); if (b == null) return 255;
+                byte setup = b[20], run = b[21];
+                if ((setup == 3 || setup == 5) && (run == PortaEntrada || run == PortaSaida)) return run;
+                return setup;
+            }
+            catch (Exception) { return 255; }
+        }
         public static unsafe bool Porta(EntityManager em, Entity p, out byte tipo, out float valor, out Entity outraPonta)
         {
             tipo = 255; valor = 0f; outraPonta = Entity.Null;
@@ -422,7 +438,19 @@ namespace Mecanica
         {
             try
             {
-                if (prefabCru) { try { return ((Ecs.TemC(em, e, tiPrefab) ? (SCPrefab*)em.GetComponentDataRawRO(e, tiPrefab) : null))->_prefab; } catch (Exception) { prefabCru = false; } }
+                // 0.24.0: o ternario devolvia null quando a entity nao tem SCPrefab e o ->_prefab lia o endereco 0 na hora —
+                // violacao de acesso nativa, que nem o catch pega (o processo morre). Foi o que derrubou o jogo no menu de tutorial,
+                // varrendo clicaveis que nao sao bloco de nave (log: "knobs: actionable 21494 owner 21443 — prefab?" como ultima linha).
+                if (prefabCru)
+                {
+                    try
+                    {
+                        var pf = (Ecs.TemC(em, e, tiPrefab) ? (SCPrefab*)em.GetComponentDataRawRO(e, tiPrefab) : null);
+                        if (pf == null) return 0;
+                        return pf->_prefab;
+                    }
+                    catch (Exception) { prefabCru = false; }
+                }
                 return em.GetSharedComponent<SCPrefab>(e)._prefab;
             }
             catch (Exception ex) { if (!prefabAvisou) { prefabAvisou = true; Registro.Aviso("could not read the block's SCPrefab: " + ex.Message); } return 0; }
@@ -516,6 +544,12 @@ namespace Mecanica
 
     internal static class Registro
     {
+        /// <summary>0.24.0: migalha de pao pro crash nativo. Crash em coreclr nao deixa excecao nem pilha no log do mod — o unico
+        /// jeito de saber ONDE foi e' marcar cada passo e olhar a ultima linha gravada (o arquivo tem AutoFlush, entao a ultima
+        /// linha e' mesmo o ultimo passo que rodou). Ligado so por [Debug] trace, porque enche o log.</summary>
+        public static bool Rastreando;
+        public static void Rastro(string onde) { if (Rastreando) Info("trace: " + onde); }
+
         public static BepInEx.Logging.ManualLogSource Fonte;
         public static void Info(string s) { Fonte?.LogInfo(s); }
         public static void Aviso(string s) { Fonte?.LogWarning(s); }

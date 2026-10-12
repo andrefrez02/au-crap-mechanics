@@ -26,7 +26,8 @@ namespace Mecanica
         public float3 eixo, ancora;
         // 0.7.4: ponto/eixo/perpendicular do encaixe no lado de cima guardados no espaco do BLOCO vizinho (nao da part, que o
         // jogo recria). Assim da pra recriar o joint na mesma pose quando o jogo refaz as parts.
-        public float3 bLocP, bLocE, bLocQ, gP, gE, gQ; public long locViz = -1; public int adiamentos;
+        public float3 bLocP, bLocE, bLocQ, gP, gE, gQ; public long locViz = -1; public int adiamentos; public float tEspera, tMelhora, melhorLateral;   // 0.24.0: espera do encaixe por tempo/convergencia
+        public float tTorto, tTortoAcum, cursoMedido, cursoAntes, alvoDesistiu, tCedeLog; public bool torto;   // 0.24.0: pistao que nao consegue fechar o erro para de empurrar
         // pistao: curso (m) em que os dois frames do joint coincidem. 0 na 1a vez; ao recriar = curso atual. Alvo do motor =
         // -(curso pedido - cursoBase), igual a convencao que ja funciona na 1a vez (frames juntos, -x estica x).
         public float cursoBase; public float tAlinha; public string alinhaLog;
@@ -143,9 +144,15 @@ namespace Mecanica
         public static float CombConsumo = 0.85f, CombEnergia = 5f;
         public static float FreioFator = 3f;   // 0.11.0: impulso do freio = impulso do motor x fator
         public static float MotorRampa = 1f, ServoImpulso = 3000f, ServoGraus = 45f, BearingApoio = 1f, ServoVel = 3f; public static bool ServoInverter = false;
-        const float ServoGanho = 8f;   // rad/s de velocidade pedida por rad de erro
+        // 0.24.0 (Andre: "quando eu mando girar 180 ele passa e fica caindo sem nunca parar"): o ganho decide ONDE o servo comeca a
+        // frear — ele pede ServoGanho x erro, limitado a ServoVel, entao a freada so comeca com erro abaixo de ServoVel/ServoGanho
+        // (com 3 e 8, a 21 graus do alvo). Carga pesada precisa comecar a frear bem antes: ganho MENOR = freada mais cedo e mais longa.
+        public static float ServoGanho = 8f;   // rad/s de velocidade pedida por rad de erro
         public static int IteracoesSolver = 8;
-        public static float ReforcoBase = 20f, PartidaTempo = 1f, PartidaPausa = 0.3f, PistaoGuia = 0.5f; public const float ReforcoTeto = 1e7f;
+        public static float ReforcoBase = 20f, PartidaTempo = 1f, PartidaPausa = 0.3f, PistaoGuia = 0.5f, PistaoGuiaPorMetro = 0.4f;
+        public const float ReforcoTeto = 1e7f;
+        public static float EsperaEncaixe = 3f; public const float EsperaParado = 1f; public static bool SnapVolta = true;
+        public static float PistaoTortoMax = 15f; public const float PistaoTortoTempo = 1f;   // 0.24.0: [Piston] max_tilt
         public const float ConsumoOcioso = 0.05f;   // P/s parado: mantem o estado de energia do circuito valido
         public static bool LogDetalhe = true;
 
@@ -153,7 +160,7 @@ namespace Mecanica
         /// ciclos depois do menu de BP fechar, cada etapa vai pro log (o log por sessao do Replay grava linha a linha — se o jogo cair,
         /// a ultima linha diz em qual etapa).</summary>
         public static int Trilha;
-        public static void T(string etapa) { if (Trilha > 0) Registro.Info("after BP load (" + Trilha + "): " + etapa); }
+        public static void T(string etapa) { if (Trilha > 0) Registro.Info("after BP load (" + Trilha + "): " + etapa); else Registro.Rastro("cycle " + etapa); }
         public static void Passo(EntityManager em, float dt)
         {
             if (!Ecs.Preparar(em)) return;
@@ -172,17 +179,17 @@ namespace Mecanica
                     Registro.Info("prefab " + PREFABS[i].nome + " hash=" + h + " (M " + hm + ")");
                 }
             }
-            tDescobrir += dt;
+            T("hashes"); tDescobrir += dt;
             // 0.20.1: pistao com Piston End que acabou de ser lancado (a garagem sabia dele): descobre JA, no mesmo frame — a cada 0,5 s a
             // peca presa na ponta ja tinha caido ate 1 m antes do motor nascer
-            if (tDescobrir < 0.5f) foreach (var pe in Garagem.PistoesComPonta()) if (!juntas.ContainsKey(Ecs.K(pe)) && Ecs.EhPart(em, Ecs.Pai(em, pe))) { tDescobrir = 9f; Registro.Info("piston with a Piston End just launched (block " + pe.Index + ") — discovering now"); break; }
+            T("pistons with end..."); if (tDescobrir < 0.5f) foreach (var pe in Garagem.PistoesComPonta()) if (!juntas.ContainsKey(Ecs.K(pe)) && Ecs.EhPart(em, Ecs.Pai(em, pe))) { tDescobrir = 9f; Registro.Info("piston with a Piston End just launched (block " + pe.Index + ") — discovering now"); break; }
             if (tDescobrir >= 0.5f) { tDescobrir = 0f; T("discover..."); Descobrir(em); T("discover done"); }
             // 0.20.0 (Andre: "diminui pra .1"): knobs da garagem a cada 0,1 s (era junto com o Descobrir, 0,5 s); + passo da garagem (pistao + Piston End, guia do H)
-            tKnobs += dt;
-            if (tKnobs >= 0.1f) { tKnobs = 0f; try { Knobs.PassoGaragem(em); } catch (Exception ex) { AvisoEixo("knobs (garage): " + ex.Message); } }   // 0.19.15
-            try { Garagem.Passo(em, dt); } catch (Exception ex) { AvisoEixo("garage: " + ex.Message); }
-            Knobs.Gravar(dt);
-            try { Pintura.Passo(em, dt); } catch (Exception ex) { AvisoEixo("paint: " + ex.Message); }   // 0.17.1
+            T("pistons with end done"); tKnobs += dt;
+            if (tKnobs >= 0.1f) { tKnobs = 0f; T("knobs (garage)..."); try { Knobs.PassoGaragem(em); } catch (Exception ex) { AvisoEixo("knobs (garage): " + ex.Message); } }   // 0.19.15
+            T("knobs (garage) done"); try { Garagem.Passo(em, dt); } catch (Exception ex) { AvisoEixo("garage: " + ex.Message); }
+            T("garage pass done"); Knobs.Gravar(dt);
+            T("knobs saved"); try { Pintura.Passo(em, dt); } catch (Exception ex) { AvisoEixo("paint: " + ex.Message); }   // 0.17.1
             T("paint done");
             try { Radio.Passo(em); } catch (Exception ex) { AvisoEixo("long range: " + ex.Message); }   // 0.18.0
             T("long range done");
@@ -230,6 +237,7 @@ namespace Mecanica
             Fila(em, dt); T("queue");
             Acoplador.Passo(em, dt); T("recoupler/beacon");
             try { Anel.Passo(em, dt); } catch (Exception ex) { AvisoEixo("slip ring: " + ex.Message); } T("slip ring");   // 0.21.0; 0.22.0: anel coletor
+            try { Sinal.Passo(em, dt); } catch (Exception ex) { AvisoEixo("signal: " + ex.Message); }   // 0.24.0: transmitter preso sem sinal
             Alavancas.Passo(em, dt); T("levers");
             PassoTorres(em, dt); T("turrets");
         }
@@ -754,6 +762,7 @@ namespace Mecanica
             // 0.12.3 (Andre: "o amarelo ta fraco e nao atualiza junto"): o pistao que fecha o anel tambem empurra com o proprio sinal
             if (j.tPartida > 0f) return;   // partida suave: segura onde nasceu ate a fila liberar (0.7.12)
             Carga(em, j);
+            if (PistaoTortoMax > 0f) Torto(em, j, dt);
             float sinal = 0f; string motivo = null; bool tem = false;
             var pe = Ecs.PortaDoTipo(em, j.bloco, Ecs.PortaEntrada);
             if (Ecs.Nulo(pe)) motivo = "no input port";
@@ -762,22 +771,27 @@ namespace Mecanica
             bool energia = Ecs.TemEnergia(em, j.bloco, out var estado);
             if (LogDetalhe && estado != j.energiaEstado) { j.energiaEstado = estado; Registro.Info(j.nome + " " + j.bloco.Index + ": power " + NomeEstado(estado)); }
             float pedido = tem ? System.Math.Max(0f, System.Math.Min(1f, sinal)) * j.curso * j.fracaoCurso : j.alvoAtual;   // sem sinal: fica onde esta (0.19.2: x knob do curso)
+            // 0.24.0: desistiu = o alvo vira onde a haste esta (erro zero, sem empurrao). Volta a valer na hora em que o jogador
+            // pede OUTRA coisa — senao o pistao ficaria inutilizado depois de empacar uma vez.
+            if (j.torto && System.Math.Abs(pedido - j.alvoDesistiu) > 1e-3f) { j.torto = false; j.tTortoAcum = 0f; Registro.Info(j.nome + " " + j.bloco.Index + ": new target — the motor is pushing again"); }
+            if (j.torto) pedido = j.cursoMedido;
             bool quer = System.Math.Abs(pedido - j.alvoAtual) > 1e-4f;
             // 0.23.0 (Andre: "agora todos pistoes tem o maximo de curso ... eu tava usando so 1..2 m e ainda consumia 20 P/s"):
             // o consumo segue o curso que o pistao REALMENTE faz (distancia ate o Piston End, ou o maximo, x a fracao do knob)
-            Ecs.Consumo(em, j.bloco, quer ? PistaoConsumoPorM * j.curso * j.fracaoCurso : ConsumoOcioso);
+            Ecs.Consumo(em, j.bloco, quer && !j.torto ? PistaoConsumoPorM * j.curso * j.fracaoCurso : ConsumoOcioso);
             if (!quer || !energia) return;   // sem energia: segura onde esta
             float passo = PistaoVel * dt;
             float alvo = pedido > j.alvoAtual + passo ? j.alvoAtual + passo : pedido < j.alvoAtual - passo ? j.alvoAtual - passo : pedido;
             j.alvoAtual = alvo;
             var pj = (Ecs.TemC(em, j.joint, Ecs.tiJoint) ? (PhysicsJoint*)em.GetComponentDataRawRW(j.joint, Ecs.tiJoint) : null);
+            float alvoMotor = alvo;
             Constraint* c = Restricao(pj, j.idxMotor);
-            c->Target.x = -(alvo - j.cursoBase);   // motor de posicao: -x estica x a partir de onde os frames coincidem
+            c->Target.x = -(alvoMotor - j.cursoBase);   // motor de posicao: -x estica x a partir de onde os frames coincidem
             pj->m_Version++;
             if (j.idxExtra >= 0 && Ecs.Vivo(em, j.extra))
             {
                 var px = (Ecs.TemC(em, j.extra, Ecs.tiJoint) ? (PhysicsJoint*)em.GetComponentDataRawRW(j.extra, Ecs.tiJoint) : null);
-                Restricao(px, j.idxExtra)->Target.x = -(alvo - j.cursoBaseExtra);
+                Restricao(px, j.idxExtra)->Target.x = -(alvoMotor - j.cursoBaseExtra);
                 px->m_Version++;
             }
         }
@@ -829,8 +843,20 @@ namespace Mecanica
                 j.visualExt = -1f;
             }
             Encaixes(em, j, out var pA, out var eA, out _, out var pB, out _, out _);
-            float ext = Ecs.Dot(Ecs.Sub(pB, pA), eA) + j.extBase;   // 0.20.0: + extensao de nascenca (Piston End)
+            float extReal = Ecs.Dot(Ecs.Sub(pB, pA), eA) + j.extBase;   // 0.20.0: + extensao de nascenca (Piston End)
+            float ext = extReal;
             if (ext < 0f) ext = 0f; if (ext > j.cursoMax + 0.5f) ext = j.cursoMax + 0.5f;
+            // 0.24.0 (Andre: "a ponta do pistao mesmo recolhido ta dentro do damper"): o desenho CORTA em 0 — com curso negativo a
+            // haste e' desenhada recolhida enquanto as duas parts estao, de verdade, mais perto do que o recolhido. O bloco de baixo
+            // parece engolir a haste, mas nao ha contato nenhum: o que existe e' o pistao CEDENDO sob o peso, e o desenho escondendo.
+            if (extReal < -0.05f && j.tCedeLog <= 0f)
+            {
+                j.tCedeLog = 10f;
+                Registro.Aviso(j.nome + " " + j.bloco.Index + ": sagging " + (-extReal * 100f).ToString("F0") + " cm BELOW retracted (parts "
+                    + j.partA.Index + " " + Ecs.Massa(em, j.partA).ToString("F0") + " kg and " + j.partB.Index + " " + Ecs.Massa(em, j.partB).ToString("F0")
+                    + " kg). The rod is drawn at 0, so the sag looks like the rod buried in the block below");
+            }
+            if (j.tCedeLog > 0f) j.tCedeLog -= dt;
             if (System.Math.Abs(ext - j.visualExt) < 0.002f) return;
             j.visualExt = ext;
             PorVisualPistao(em, j.haste, j.cabeca, ext, j.esc);
@@ -1213,6 +1239,48 @@ namespace Mecanica
                 string s = "actual stroke " + (ax + j.extBase).ToString("F2") + " m (requested " + j.alvoAtual.ToString("F2") + "), off-axis " + (lat * 100f).ToString("F0") + " cm, tilted " + ang.ToString("F1") + " degrees";
                 string chave = ruim ? "bad " + (lat * 10f).ToString("F0") + " " + ((int)(ang / 3f)) : "ok";
                 if (chave != j.alinhaLog) { j.alinhaLog = chave; if (ruim) Registro.Aviso(j.nome + " " + j.bloco.Index + ": MISALIGNED — " + s); else Registro.Info(j.nome + " " + j.bloco.Index + ": aligned — " + s); }
+            }
+            catch (Exception) { }
+        }
+
+
+        /// <summary>0.24.0 (Andre: "sem motor, thruster ou fan ligado, a nave foi caindo sozinha pra fora da plataforma"). Um pistao
+        /// que entortou continua empurrando pra fechar o erro de posicao — so que o empurrao ja nao sai no eixo dele, entao sobra uma
+        /// componente LATERAL constante e a nave anda sozinha, pousada e parada. No log do Andre ele estava presos em -0,15 m com 27
+        /// graus, estavel por minutos (nao e' oscilacao: e' briga constante). Torto acima de PistaoTortoMax por PistaoTortoTempo: o
+        /// alvo passa a ser onde a haste esta (erro zero, nada de empurrao) e o joint so segura. Volta sozinho se endireitar.</summary>
+        static unsafe void Torto(EntityManager em, Junta j, float dt)
+        {
+            j.tTorto += dt; if (j.tTorto < 0.25f) return; float passou = j.tTorto; j.tTorto = 0f;
+            try
+            {
+                Encaixes(em, j, out var pA, out var eA, out _, out var pB, out var eB, out _);
+                float cos = System.Math.Max(-1f, System.Math.Min(1f, Ecs.Dot(eA, eB)));
+                float ang = (float)(System.Math.Acos(cos) * 180.0 / System.Math.PI);
+                var d = Ecs.Sub(pB, pA); float curso = Ecs.Dot(d, eA) + j.extBase;
+                float erro = System.Math.Abs(curso - j.alvoAtual);
+                float andou = System.Math.Abs(curso - j.cursoAntes); j.cursoAntes = curso;
+                j.cursoMedido = curso;
+                // dois motivos pra desistir, e os dois sao a mesma coisa vista de angulos diferentes: o pistao nao consegue chegar
+                // no alvo. (a) TORTO: o empurrao sai fora do eixo. (b) EMPACADO: o erro e' grande e a haste nao se mexe — a carga
+                // ganhou. Nos dois casos insistir so injeta forca constante na nave, que sai andando sozinha e balanca o damper.
+                bool torto = PistaoTortoMax > 0f && ang > (j.torto ? System.Math.Max(1f, PistaoTortoMax - 3f) : PistaoTortoMax);
+                bool empacado = erro > (j.torto ? 0.03f : 0.05f) && andou < 0.01f;
+                if (!torto && !empacado)
+                {
+                    j.tTortoAcum = 0f;
+                    if (j.torto) { j.torto = false; Registro.Info(j.nome + " " + j.bloco.Index + ": moving again (" + ang.ToString("F0") + " degrees off axis, " + (erro * 100f).ToString("F0") + " cm from the target) — the motor is pushing again"); }
+                    return;
+                }
+                j.tTortoAcum += passou;
+                if (!j.torto && j.tTortoAcum >= PistaoTortoTempo)
+                {
+                    j.torto = true; j.alvoDesistiu = j.alvoAtual;
+                    Registro.Aviso(j.nome + " " + j.bloco.Index + ": stuck " + (erro * 100f).ToString("F0") + " cm from its target (" + ang.ToString("F0")
+                        + " degrees off axis) for " + PistaoTortoTempo.ToString("F0") + " s — the motor stopped fighting and now only holds where it is."
+                        + " It was pushing with no hope of getting there, and that constant force shoves the whole ship and shakes whatever is under it."
+                        + " It goes back to normal as soon as you give it a new target");
+                }
             }
             catch (Exception) { }
         }
@@ -1713,11 +1781,37 @@ namespace Mecanica
                 // 0.20.1 (Andre: "o que vai grudar no pistao cai antes do pistao chegar e acopla no lugar errado"): pistao com Piston End
                 // nascendo: a ponta (outra part) ja pode ter caido/derivado — o joint nasce apontando pra pose da GARAGEM (pivo de B no
                 // ponto certo de B, alvo = vao da garagem), e o motor + trilhos puxam a peca de volta pro lugar em vez de aceitar onde caiu
-                bool snapPonta = j.tipo == Tipo.Pistao && j.comPonta && !continuar && Garagem.RecemLancado(j.bloco);   // 0.20.5: so logo depois de sair da garagem (num load a pose salva vale)
+                // 0.24.0 (Andre: "o pistao caiu na primeira run"): o log mostrou as pecas assentando 50 a 82 cm fora e PARANDO la
+                // ("the fit stopped moving" / "time limit"), ou seja, esperar mais nao resolve — elas nao voltam sozinhas. O mesmo
+                // tratamento que ja existia pro Piston End agora vale pra qualquer peca em cima do pistao: o joint nasce apontando
+                // pra pose da GARAGEM e o motor + trilhos puxam ela de volta, em vez de soldar onde caiu. Continua valendo so logo
+                // depois de sair da garagem (num load a pose salva e' a certa).
+                bool snapPonta = j.tipo == Tipo.Pistao && (j.comPonta || SnapVolta) && !continuar && Garagem.RecemLancado(j.bloco);   // 0.20.5: so logo depois de sair da garagem (num load a pose salva vale)
                 if (lateral > 0.1f && !snapPonta)
                 {
-                    if (j.adiamentos < 5) { j.adiamentos++; if (j.adiamentos == 1 && LogDetalhe) Registro.Info(j.nome + " " + j.bloco.Index + ": fit off by " + (lateral * 100f).ToString("F0") + " cm — waiting for the game to finish rebuilding the parts"); adiado = true; return false; }
-                    { coincidir = true; Registro.Aviso(j.nome + " " + j.bloco.Index + ": fit still off by " + (lateral * 100f).ToString("F0") + " cm after 5 frames — creating in the current pose"); }
+                    // 0.24.0 (Andre: "a primeira simulacao sempre buga os pistoes, eles caem e encaixam no lugar errado"): esperar
+                    // 5 FRAMES nao serve na primeira decolagem — o jogo ainda esta remontando as parts e cada frame e' longo, entao
+                    // os 5 frames acabavam com a estrutura ainda assentando e o joint nascia onde a peca estivesse (o log do dia 10/10
+                    // mostrou TODOS os pistoes da nave entre 46 e 93 cm fora). Agora a espera e' por TEMPO, e sai antes se o encaixe
+                    // parar de se aproximar (nao adianta esperar o que nao vai melhorar).
+                    float agora = UnityEngine.Time.unscaledTime;
+                    if (j.adiamentos == 0) { j.tEspera = agora; j.tMelhora = agora; j.melhorLateral = lateral; }
+                    j.adiamentos++;
+                    // 0.24.0b: "parou de melhorar" era cedo demais — na primeira decolagem a peca esta CAINDO, entao o encaixe
+                    // piora antes de melhorar e o atalho disparava com 0,5 s (log: "after 0,5 s / 4 frame(s) (it stopped getting
+                    // closer)" em todos os pistoes). O atalho agora so vale quando o encaixe esta mesmo PARADO: qualquer mexida,
+                    // pra perto ou pra longe, reinicia a contagem.
+                    if (System.Math.Abs(lateral - j.melhorLateral) > 0.01f) { j.melhorLateral = lateral; j.tMelhora = agora; }
+                    float espera = agora - j.tEspera;
+                    bool acabouTempo = espera >= EsperaEncaixe, parouDeMelhorar = agora - j.tMelhora >= EsperaParado;
+                    if (!acabouTempo && !parouDeMelhorar)
+                    {
+                        if (j.adiamentos == 1 && LogDetalhe) Registro.Info(j.nome + " " + j.bloco.Index + ": fit off by " + (lateral * 100f).ToString("F0") + " cm — waiting for the game to finish rebuilding the parts");
+                        adiado = true; return false;
+                    }
+                    coincidir = true;
+                    Registro.Aviso(j.nome + " " + j.bloco.Index + ": fit still off by " + (lateral * 100f).ToString("F0") + " cm after " + espera.ToString("F1") + " s / " + j.adiamentos + " frame(s) ("
+                        + (acabouTempo ? "time limit" : "the fit stopped moving") + ") — creating in the current pose");
                 }
                 else if (podePuxar && (lateral > 0.02f || angE > 2f)) puxar = true;
                 if (LogDetalhe && j.tipo == Tipo.Bearing) Registro.Info(j.nome + " " + j.bloco.Index + ": " + (continuar ? "recreating" : "spawning") + " with the wheel " + (lateral * 100f).ToString("F1") + " cm / " + angE.ToString("F1") + " degrees from the correct fit" + (puxar ? " — will pull it into place" : ""));
@@ -1765,7 +1859,8 @@ namespace Mecanica
                 else if (!continuar && PartidaTempo > 0f || continuar && j.tPartida > 0f) { joint = PhysicsJoint.CreateFixed(j.fa, j.fb); j.idxMotor = -1; if (!continuar) { j.modo = 0; j.impulsoModo = 0f; j.origemModo = "nothing connected"; j.alvo = 0f; j.alvoAtual = 0f; } }
                 else if (continuar && j.modo >= 0) { joint = Montar(j, j.modo, j.alvo, j.impulsoModo, out j.idxMotor); if (j.modo == 2) { j.alvoAtual = 0f; j.angServo = 999f; } if (j.modo == 3) j.modo = -1; }   // 0.12.1: travado -> refaz a trava no proximo frame
                 else { joint = PhysicsJoint.CreateHinge(j.fa, j.fb); j.idxMotor = -1; j.modo = 0; j.impulsoModo = 0f; j.origemModo = "nothing connected"; j.alvo = 0f; j.alvoAtual = 0f; }
-                var par = new PhysicsConstrainedBodyPair(); par.Entities = new EntityPair { EntityA = j.partA, EntityB = j.partB }; par.EnableCollision = 0;
+                var par = new PhysicsConstrainedBodyPair(); par.Entities = new EntityPair { EntityA = j.partA, EntityB = j.partB };
+                par.EnableCollision = 0;
                 var tipos = new Il2CppStructArray<ComponentType>(3);
                 tipos[0] = ComponentType.ReadWrite(Ecs.tiPar); tipos[1] = ComponentType.ReadWrite(Ecs.tiJoint); tipos[2] = ComponentType.ReadWrite(Ecs.tiPWI);
                 var e = em.CreateEntity(tipos);
@@ -1777,12 +1872,19 @@ namespace Mecanica
                 ApagarGuias(em, j);
                 if (j.tipo == Tipo.Pistao && PistaoGuia > 0f)
                 {
-                    var eZ = Ecs.Norm(Ecs.Cross(eA, qA)); float g = PistaoGuia * j.esc;   // 0.20.0: mini = trilhos mais perto
+                    // 0.24.0 (nave do Andre, pistoes de 8 m em dois estagios): o afastamento fixo de 0,75 m segurava bem um pistao
+                    // curto e nada um comprido — o log mostrava o erro crescendo com o curso (0,8 m -> 4 cm / 2,3 graus; 4,5 m ->
+                    // 130 cm / 12,7 graus) ate o jogo quebrar a part. O desvio lateral e' a inclinacao x o braco, entao o suporte
+                    // tem que crescer junto com a haste: alcance total x PistaoGuiaPorMetro, com PistaoGuia como piso.
+                    float alcance = j.cursoMax + (j.extBase > 0f ? j.extBase : 0f);
+                    float g = System.Math.Max(PistaoGuia * j.esc, alcance * PistaoGuiaPorMetro);   // 0.20.0: mini = trilhos mais perto
+                    var eZ = Ecs.Norm(Ecs.Cross(eA, qA));
                     foreach (var off in new[] { Ecs.Mul(qA, g), Ecs.Mul(qA, -g), Ecs.Mul(eZ, g), Ecs.Mul(eZ, -g) })
                     {
                         var pg = Ecs.Add(pA, off);
                         var ga = Ecs.Frame(em, j.partA, pg, eA, qA); var gbf = Ecs.Frame(em, j.partB, snapPonta ? Ecs.Add(pB, off) : pg, eB, qB);   // 0.20.1: trilhos tambem na pose da garagem
-                        var pr = PhysicsJoint.CreatePrismatic(ga, gbf, new Unity.Physics.Math.FloatRange { Min = -1000f, Max = 1000f });
+                        var faixa = new Unity.Physics.Math.FloatRange { Min = -1000f, Max = 1000f };
+                        var pr = PhysicsJoint.CreatePrismatic(ga, gbf, faixa);
                         var eg = em.CreateEntity(tipos);
                         *(Ecs.TemC(em, eg, Ecs.tiPar) ? (PhysicsConstrainedBodyPair*)em.GetComponentDataRawRW(eg, Ecs.tiPar) : null) = par;
                         *(Ecs.TemC(em, eg, Ecs.tiJoint) ? (PhysicsJoint*)em.GetComponentDataRawRW(eg, Ecs.tiJoint) : null) = pr;
@@ -1884,6 +1986,7 @@ namespace Mecanica
             try { Radio.Esquecer(); } catch (Exception) { }
             try { Alavancas.Esquecer(); } catch (Exception) { }
             try { Knobs.Esquecer(); } catch (Exception) { }   // 0.19.15
+            try { Sinal.Esquecer(); } catch (Exception) { }   // 0.24.0
             try { Garagem.Esquecer(); } catch (Exception) { }   // 0.20.0
             try { Anel.Esquecer(); } catch (Exception) { }   // 0.22.0
             try { EsquecerTorres(); } catch (Exception) { }

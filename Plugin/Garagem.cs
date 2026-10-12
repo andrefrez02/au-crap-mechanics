@@ -54,7 +54,10 @@ namespace Mecanica
         /// load / reconstrucao a pose atual e' a que vale.</summary>
         public static bool RecemLancado(Entity bloco)
         {
-            if (!pistoes.TryGetValue(Ecs.K(bloco), out var i) || Ecs.Nulo(i.ponta)) return false;
+            // 0.24.0: o Piston End deixou de ser exigencia. Sem ele o tLancado nunca era anotado e o RecemLancado dava sempre false,
+            // entao o snap de volta pra pose da garagem ([Piston] snap_back) nunca chegava a rodar nos pistoes do Andre, que nao
+            // usam Piston End nenhum ("17 piston(s), 0 Piston End(s)" no log).
+            if (!pistoes.TryGetValue(Ecs.K(bloco), out var i)) return false;
             return i.tLancado < 0f || UnityEngine.Time.time - i.tLancado < 5f;
         }
         /// <summary>Vao ate o Piston End alinhado com este pistao na garagem (0 se nao tem / nao e' da garagem).</summary>
@@ -186,7 +189,7 @@ namespace Mecanica
             {
                 var inf = pistoes[k]; var e = Ecs.DeK(k);
                 try { if (Ecs.Vivo(em, inf.guia) && inf.guiaL > 0.001f) { Ecs.EscalaY(em, inf.guia, 0.0005f); inf.guiaL = 0.0005f; } } catch (Exception) { }
-                if (!Ecs.Nulo(inf.ponta) && Ecs.Vivo(em, e) && !Juntas.JuntaAtiva(e)) { if (inf.tLancado < 0f) inf.tLancado = UnityEngine.Time.time; continue; }   // 0.20.5: fica ate o motor nascer (RecemLancado)
+                if (Ecs.Vivo(em, e) && !Juntas.JuntaAtiva(e)) { if (inf.tLancado < 0f) inf.tLancado = UnityEngine.Time.time; continue; }   // 0.20.5: fica ate o motor nascer (RecemLancado); 0.24.0: todo pistao, com ou sem Piston End
                 pistoes.Remove(k);
             }
             if (h != hAntes) { hAntes = h; if (LogDetalhe) Registro.Info("garage: H display " + (h ? "on" : "off") + (hFonte == 2 ? " (H key)" : " (game's garage bot)") + " — " + pist.Count + " piston(s), " + pontas.Count + " Piston End(s)"); }
