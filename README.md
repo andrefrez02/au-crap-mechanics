@@ -42,7 +42,7 @@ This mod was vibe-coded, I designed it and tested but didn't write the code.
 - BepInEx 6.0.0-be.788 (IL2CPP, Windows x64)
 - BepInEx Interop Patcher (by CohoJET, on Nexus Mods)
 - Components Framework (by CohoJET, on Nexus Mods)
-- Mod Menu (optional: rebind this mod's keys and change its settings in the game's options menu) *Coming soon!
+- Mod Menu (optional: rebind this mod's keys and change its settings in the game's options menu)
 
 Tested on the Steam version of Approximately Up from 08 October 2026 (update 1.0.214).
 
@@ -111,7 +111,7 @@ A few parts (the small fuel tanks, the turret seat, the Shaft Transmitter, the L
 <li>BepInEx 6.0.0-be.788 (IL2CPP, Windows x64)</li>
 <li>BepInEx Interop Patcher (by CohoJET, on Nexus Mods)</li>
 <li>Components Framework (by CohoJET, on Nexus Mods)</li>
-<li>Mod Menu (optional: rebind this mod&#x27;s keys and change its settings in the game&#x27;s options menu) *Coming soon!</li>
+<li>Mod Menu (optional: rebind this mod&#x27;s keys and change its settings in the game&#x27;s options menu)</li>
 </ul>
 <p>Tested on the Steam version of Approximately Up from 08 October 2026 (update 1.0.214).</p>
 <h3>Modding practice</h3>
