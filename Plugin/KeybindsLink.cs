@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 
-namespace Mecanica
+namespace CrapMechanics
 {
     /// <summary>Optional link to the Mod Menu library (ModMenu.dll) (by reflection: this mod works fine without it). With the library the keys
     /// show up in the game's options menu ("Mod keys") and live in its .cfg; without it they come from this mod's own .cfg. The library
@@ -34,13 +34,13 @@ namespace Mecanica
                     var mh = t.GetMethod("HideSetting", BindingFlags.Public | BindingFlags.Static);
                     if (mh != null) hide = (Action<string, string, string>)Delegate.CreateDelegate(typeof(Action<string, string, string>), mh);
                     found = true;
-                    Registro.Info("Mod Menu found: keys and settings can be changed in the options menu");
+                    ModLog.Info("Mod Menu found: keys and settings can be changed in the options menu");
                     foreach (var a in pend) { try { a(); } catch (Exception) { } }
                     return;
                 }
-                if (tries == 12) Registro.Info("Mod Menu not installed: keys and settings come from this mod's .cfg");
+                if (tries == 12) ModLog.Info("Mod Menu not installed: keys and settings come from this mod's .cfg");
             }
-            catch (Exception ex) { Registro.Aviso("Mod Menu link failed: " + ex.Message); reg = null; get = null; found = false; tries = 99; }
+            catch (Exception ex) { ModLog.Warn("Mod Menu link failed: " + ex.Message); reg = null; get = null; found = false; tries = 99; }
         }
         static void Call(Action a) { pend.Add(a); Look(); if (found) { try { a(); } catch (Exception) { } } }
 

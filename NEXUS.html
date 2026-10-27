@@ -1,4 +1,5 @@
 <h2>Crap Mechanics <em>- Physics Objects / Cars and more!</em></h2>
+<p><strong>Updating from 0.25.0 or older?</strong> The mod&#x27;s files now have English names: <strong>delete the old BepInEx/plugins/Mecanica folder</strong> and install the new BepInEx/plugins/CrapMechanics folder. While the old folder is still there the new version stays off (the BepInEx log says so). Nothing you made is lost: your settings and knob values are copied from the old files on the first launch, and the blueprints in the game&#x27;s blueprint folder are converted to the new part names when the game starts (a .bak-0.27 copy of each changed file is kept). For a blueprint kept somewhere else, close the game and run <strong>bp_convert.py</strong> from the plugin folder (instructions inside it). In multiplayer, everyone needs the same version.</p>
 <p><strong>Updating from 0.19.13?</strong> The old <strong>Piston 2</strong>, <strong>Piston 4</strong> and <strong>Piston 8</strong> are no longer in the mod: they were replaced by a single Piston (up to 8 m) and the Piston End block, so blueprints that use the old pistons need them replaced with the new Piston. Motors now glue only by the bottom of their base and the small fuel tanks only by their brackets (like the game&#x27;s tanks): in old blueprints, anything glued to their other faces needs to be glued again.</p>
 <h3>Description</h3>
 <p>Crap Mechanics adds moving parts to Approximately Up. Pistons push, bearings spin, motors drive them, and wheels, pedals and a steering wheel turn a pile of frames into a car you can actually drive. Data and power reach the moving side through a <strong>Slip Ring</strong>, so nothing has to be left unpowered. Everything is made to look like the game&#x27;s own parts, uses the game&#x27;s ports and data cables (plus its own <strong>Drive Shaft</strong>), and lives in its own <strong>Mechanics</strong> tab of the inventory.</p>
@@ -9,7 +10,7 @@
 <li>Install <strong>BepInEx 6.0.0-be.788 (IL2CPP, Windows x64)</strong> into the game folder (the folder with ApproximatelyUp.exe) and run the game once, so BepInEx creates its folders.</li>
 <li>Install <strong>BepInEx Interop Patcher (by CohoJET, on Nexus Mods)</strong>.</li>
 <li>Install <strong>Components Framework (by CohoJET, on Nexus Mods)</strong>.</li>
-<li>Extract this archive into <strong>BepInEx/plugins</strong> (you get <strong>BepInEx/plugins/Mecanica/</strong> with Mecanica.dll, Localization.json and the Mecanica asset bundle).</li>
+<li>Extract this archive into <strong>BepInEx/plugins</strong> (you get <strong>BepInEx/plugins/CrapMechanics/</strong> with CrapMechanics.dll, Localization.json, the CrapMechanics asset bundle and bp_convert.py).</li>
 <li>Start the game. The new parts are in the <strong>Mechanics</strong> tab of the garage inventory.</li>
 </ol>
 <h3>Main features</h3>

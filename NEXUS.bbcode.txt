@@ -1,5 +1,7 @@
 [size=6][b]Crap Mechanics [i]- Physics Objects / Cars and more![/i][/b][/size]
 
+[b]Updating from 0.25.0 or older?[/b] The mod's files now have English names: [b]delete the old BepInEx/plugins/Mecanica folder[/b] and install the new BepInEx/plugins/CrapMechanics folder. While the old folder is still there the new version stays off (the BepInEx log says so). Nothing you made is lost: your settings and knob values are copied from the old files on the first launch, and the blueprints in the game's blueprint folder are converted to the new part names when the game starts (a .bak-0.27 copy of each changed file is kept). For a blueprint kept somewhere else, close the game and run [b]bp_convert.py[/b] from the plugin folder (instructions inside it). In multiplayer, everyone needs the same version.
+
 [b]Updating from 0.19.13?[/b] The old [b]Piston 2[/b], [b]Piston 4[/b] and [b]Piston 8[/b] are no longer in the mod: they were replaced by a single Piston (up to 8 m) and the Piston End block, so blueprints that use the old pistons need them replaced with the new Piston. Motors now glue only by the bottom of their base and the small fuel tanks only by their brackets (like the game's tanks): in old blueprints, anything glued to their other faces needs to be glued again.
 
 [size=5][b]Description[/b][/size]
@@ -16,7 +18,7 @@ This mod was vibe-coded, I designed it and tested but didn't write the code.
 [*]Install [b]BepInEx 6.0.0-be.788 (IL2CPP, Windows x64)[/b] into the game folder (the folder with ApproximatelyUp.exe) and run the game once, so BepInEx creates its folders.[/*]
 [*]Install [b]BepInEx Interop Patcher (by CohoJET, on Nexus Mods)[/b].[/*]
 [*]Install [b]Components Framework (by CohoJET, on Nexus Mods)[/b].[/*]
-[*]Extract this archive into [b]BepInEx/plugins[/b] (you get [b]BepInEx/plugins/Mecanica/[/b] with Mecanica.dll, Localization.json and the Mecanica asset bundle).[/*]
+[*]Extract this archive into [b]BepInEx/plugins[/b] (you get [b]BepInEx/plugins/CrapMechanics/[/b] with CrapMechanics.dll, Localization.json, the CrapMechanics asset bundle and bp_convert.py).[/*]
 [*]Start the game. The new parts are in the [b]Mechanics[/b] tab of the garage inventory.[/*]
 [/list]
 

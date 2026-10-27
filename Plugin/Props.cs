@@ -2,52 +2,52 @@ using System;
 using System.Collections.Generic;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 
-namespace Mecanica
+namespace CrapMechanics
 {
-    /// <summary>0.23.2 (Andre: "faz igual as outras descricoes do mod, onde mostra mass, max force, etc. separadinho"): as linhas de
-    /// status do painel do inventario. O jogo monta a lista em `EPC_SpaceshipComponent.GetPropertiesList`: massa (chave InvSCMass),
-    /// material/calor da cola, e no fim um `list.AddRange(_customProperties)` — as strings do `_customProperties` entram COMO ESTAO,
-    /// sem passar pelo Localization. Como o prefab e' um so pros dois idiomas, quem preenche e' o plugin, aqui, lendo as chaves
-    /// `&lt;prefab&gt;_Prop1`, `_Prop2`, … do Localization.json (para na primeira que faltar). Uma vez so, quando o Core e o mapa de
-    /// textos ja existem.</summary>
+    /// <summary>0.23.2 (Andre: "do it like the mod's other descriptions, where it shows mass, max force, etc. separately"): the status
+    /// lines of the inventory panel. The game builds the list in `EPC_SpaceshipComponent.GetPropertiesList`: mass (key InvSCMass),
+    /// glue material/heat, and at the end a `list.AddRange(_customProperties)` — the strings of `_customProperties` go in AS THEY ARE,
+    /// without going through Localization. Since the prefab is the same for both languages, the plugin fills them in, here, reading the keys
+    /// `&lt;prefab&gt;_Prop1`, `_Prop2`, … from Localization.json (stops at the first one missing). Only once, when the Core and the
+    /// texts map already exist.</summary>
     internal static class Props
     {
-        static bool feito, falhou; static float t = 9f;
+        static bool isDone, failed; static float t = 9f;
 
-        public static void Passo(float dt)
+        public static void Step(float dt)
         {
-            if (feito || falhou) return;
+            if (isDone || failed) return;
             t += dt; if (t < 1f) return; t = 0f;
-            var core = JogoMalhas.Nucleo; if (core == null) return;
-            Il2CppSystem.Collections.Generic.Dictionary<string, string> mapa = null;
-            try { var loc = Localization._cachedInstance; mapa = loc == null ? null : loc._map; } catch (Exception) { }
-            if (mapa == null) return;
+            var core = GameMeshes.CoreEntity; if (core == null) return;
+            Il2CppSystem.Collections.Generic.Dictionary<string, string> map = null;
+            try { var loc = Localization._cachedInstance; map = loc == null ? null : loc._map; } catch (Exception) { }
+            if (map == null) return;
             try
             {
-                var lista = core._spaceshipComponents; if (lista == null) return;
-                int blocos = 0, linhas = 0;
-                for (int i = 0; i < lista.Length; i++)
+                var list = core._spaceshipComponents; if (list == null) return;
+                int blocks = 0, lines = 0;
+                for (int i = 0; i < list.Length; i++)
                 {
-                    var epc = lista[i]; if (epc == null) continue;
-                    string n = epc.name; if (string.IsNullOrEmpty(n) || !Juntas.EhDoMod(n)) continue;
+                    var epc = list[i]; if (epc == null) continue;
+                    string n = epc.name; if (string.IsNullOrEmpty(n) || !JointSystem.IsModBlock(n)) continue;
                     var txt = new List<string>();
                     for (int p = 1; p <= 8; p++)
                     {
-                        string chave = n + "_Prop" + p;
-                        if (!mapa.ContainsKey(chave)) break;
-                        string v = mapa[chave]; if (string.IsNullOrEmpty(v)) break;
+                        string key = n + "_Prop" + p;
+                        if (!map.ContainsKey(key)) break;
+                        string v = map[key]; if (string.IsNullOrEmpty(v)) break;
                         txt.Add(v);
                     }
                     if (txt.Count == 0) continue;
                     var arr = new Il2CppStringArray(txt.Count);
                     for (int k = 0; k < txt.Count; k++) arr[k] = txt[k];
-                    epc._customProperties = arr; blocos++; linhas += txt.Count;
+                    epc._customProperties = arr; blocks++; lines += txt.Count;
                 }
-                feito = true;
-                Registro.Info("properties: " + linhas + " status line(s) on " + blocos + " block(s)");
+                isDone = true;
+                ModLog.Info("properties: " + lines + " status line(s) on " + blocks + " block(s)");
             }
-            catch (Exception ex) { falhou = true; Registro.Aviso("properties: " + ex.Message); }
+            catch (Exception ex) { failed = true; ModLog.Warn("properties: " + ex.Message); }
         }
-        public static void Esquecer() { feito = false; t = 9f; }
+        public static void Forget() { isDone = false; t = 9f; }
     }
 }

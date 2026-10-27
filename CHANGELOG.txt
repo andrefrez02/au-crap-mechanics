@@ -1,3 +1,42 @@
+Version 0.28.2
+
+Fixed: ships and cars came apart at launch. In 0.28.1 the line that installs the mod's game hooks ended up inside a comment, so the joint of a piston or bearing was no longer created in the same physics tick in which the game splits the parts. The wheel friction, the hidden mirrored parts, the pause while a world unloads, the radar icon and the time rewind button came back too.
+Fixed: a solo game counted as a network game (the game always hosts, so friends can join), so the Recoupler only locked, beacons lost the 100 km exemption and Replay playback didn't freeze. The network rules now apply only while another player is in the game.
+
+Version 0.28.1
+
+Fixed: the game closed by itself while starting, right after the Components Framework applied the texts. The conversion of old blueprints hooked a function the game calls for every saved blueprint at start, and that hook crashed. Old blueprints are now converted on disk at start, before the game reads them, keeping a .bak-0.27 copy of each changed file.
+
+Version 0.28.0
+
+New: multiplayer (experimental, needs testing with two players). Everyone needs the same version of the mod; the log compares the versions and the installed plugins when a player joins.
+New: the server runs everything the mod does to physics (splitting the ship at launch, joints, motors, pistons, bearings, brakes, the Turret Seat, the Recoupler) and the clients draw the mod's parts from the poses the server sends: piston rods and heads, the bearing's angle output, the Turret Seat's seat and rings.
+New: a player sitting in a Turret Seat on a client aims it. The aim goes to the server over the mod's own Steam channel (separate from the game's connection) and the server turns the turret.
+New: [Multiplayer] test_loopback tests the Turret Seat's network path in a solo game; net_log logs every message of the mod's channel.
+Changed: on a network the Recoupler only locks (it doesn't merge the two parts), and parts beyond 100 km follow the game's own rule (beacons are not exempt in multiplayer).
+Changed: knob values saved in knobs.txt are restored only on the server, so a client no longer overwrites the host's knobs.
+Fixed: a client broke the game's joints of every piston and bearing on its own copy of the ship at launch, and could drive parts the server owns.
+
+Version 0.27.0
+
+Changed: the mod is now in English all the way through, code included, and its files have English names: the plugin folder is BepInEx/plugins/CrapMechanics (CrapMechanics.dll and the CrapMechanics asset bundle), the settings are in BepInEx/config/com.approximatelyup.mods.crapmechanics.cfg and the knob values in BepInEx/config/CrapMechanics/knobs.txt.
+Changed: the parts with Portuguese internal names were renamed (SC_Pistao is now SC_Piston, SC_MotorP/M/G are SC_MotorSmall/Medium/Large, SC_RodaSportsP is SC_WheelSportsSmall, and so on; the full list is in the README). [Bonus] extra_blocks accepts both names.
+Updating: delete the old BepInEx/plugins/Mecanica folder. While it is still there the new version stays off and says so in the log. Settings and knob values are copied from the old files on the first launch (the old files are left in place). Blueprints saved before 0.27.0 keep all their parts: the files in the game's blueprint folder are converted to the new part names when the game starts (a .bak-0.27 copy of each changed file is kept). For blueprints kept somewhere else, close the game and run bp_convert.py from the plugin folder (see the README). In multiplayer, everyone needs the same version.
+New: rigid pistons and servo bearings ([Physics] rigid_joints, on by default): they hold the position you asked for exactly, like a weld whose length the mod sets, instead of pushing towards it with a force limit. No sagging under load and no wobble; a blocked piston simply stops.
+New: at launch the world's gravity is held at zero for a moment while the game finishes splitting the ship into parts ([Physics] zero_gravity_on_launch), so pistons, bearings and the Turret Seat start in the pose you built.
+New: a piston stays one part with its load until it gets a target ([Piston] whole_until_moved), and the Turret Seat stays one part with its plates until someone sits and aims ([Turret Seat] whole_until_aimed): nothing sags, falls or breaks at the start of the simulation.
+New: the piston's part and its load collide with each other ([Piston] collide_with_load), so the load can't sink into the piston.
+New: while a piston holds two parts, the lighter one counts as at least 1/10 of the heavier one for the physics ([Piston] mass_ratio_max). This keeps a heavy ship from sagging on light legs and a car from sagging on its mini pistons.
+New: servo bearings limit the speed of the far end of what they turn ([Bearing] servo_tip_speed), so turning a big wing no longer tears it apart. Servos also accelerate and brake smoothly instead of jerking.
+New: [Physics] solver_iterations_rigid raises the solver iterations also when only welds and free bearings are active (stiffer chains of parts, costs CPU).
+New: [Multiplayer] section. By default the physics of the mod's parts runs only on the machine that owns the part (host_only).
+Changed: the mod's work per frame with a big ship is about half of what it was.
+Fixed: on the first launch after loading a world the ship could blow apart. The joints are now created in the same physics step in which the game splits the parts.
+Fixed: a piece that ended up far from its place at launch was welded where it landed. It is now left loose, and the mod doesn't keep retrying it.
+Fixed: a chain of pistons and slip rings could double its power draw on every toggle, or burn the wires right away with the piston knob at 10%.
+Fixed: a piston or bearing wired to a Wireless Transmitter could read no signal after the parts split. The channel is now read from the sending transmitter.
+Fixed: the mirrored (V) wheels were still the 0.19 version, without the 0.22 change that makes a part take only the space of its shape. They now take only the space of their shape, like the normal wheels.
+
 Version 0.25.0
 
 New: three knobs on the front of the Turret Seat's base limit how far it aims: left and right (up to a full circle), up and down (up to 135 degrees each). By default it works as before: free sideways, 135 up, 30 down. The limits also hold when the turret turns the whole ship, and each seat keeps its own values.

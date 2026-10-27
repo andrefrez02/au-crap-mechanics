@@ -2,6 +2,8 @@
 
 > Pistons, bearings, electric and fuel motors, drive shafts, slip rings, wheels, pedals, a steering wheel, a turret seat, a recoupler, a beacon and small fuel tanks: build working cars, rovers, cranes and turrets in Approximately Up.
 
+**Updating from 0.25.0 or older?** The mod's files now have English names: **delete the old BepInEx/plugins/Mecanica folder** and install the new BepInEx/plugins/CrapMechanics folder. While the old folder is still there the new version stays off (the BepInEx log says so). Nothing you made is lost: your settings and knob values are copied from the old files on the first launch, and the blueprints in the game's blueprint folder are converted to the new part names when the game starts (a .bak-0.27 copy of each changed file is kept). For a blueprint kept somewhere else, close the game and run **bp_convert.py** from the plugin folder (instructions inside it). In multiplayer, everyone needs the same version.
+
 **Updating from 0.19.13?** The old **Piston 2**, **Piston 4** and **Piston 8** are no longer in the mod: they were replaced by a single Piston (up to 8 m) and the Piston End block, so blueprints that use the old pistons need them replaced with the new Piston. Motors now glue only by the bottom of their base and the small fuel tanks only by their brackets (like the game's tanks): in old blueprints, anything glued to their other faces needs to be glued again.
 
 ## Description
@@ -17,7 +19,7 @@ This mod was vibe-coded, I designed it and tested but didn't write the code.
 1. Install **BepInEx 6.0.0-be.788 (IL2CPP, Windows x64)** into the game folder (the folder with ApproximatelyUp.exe) and run the game once, so BepInEx creates its folders.
 2. Install **BepInEx Interop Patcher (by CohoJET, on Nexus Mods)**.
 3. Install **Components Framework (by CohoJET, on Nexus Mods)**.
-4. Extract this archive into **BepInEx/plugins** (you get **BepInEx/plugins/Mecanica/** with Mecanica.dll, Localization.json and the Mecanica asset bundle).
+4. Extract this archive into **BepInEx/plugins** (you get **BepInEx/plugins/CrapMechanics/** with CrapMechanics.dll, Localization.json, the CrapMechanics asset bundle and bp_convert.py).
 5. Start the game. The new parts are in the **Mechanics** tab of the garage inventory.
 
 ## Main features
@@ -76,6 +78,7 @@ A few parts (the small fuel tanks, the turret seat, the Shaft Transmitter, the L
 
 ```html
 <h2>Crap Mechanics <em>- Physics Objects / Cars and more!</em></h2>
+<p><strong>Updating from 0.25.0 or older?</strong> The mod&#x27;s files now have English names: <strong>delete the old BepInEx/plugins/Mecanica folder</strong> and install the new BepInEx/plugins/CrapMechanics folder. While the old folder is still there the new version stays off (the BepInEx log says so). Nothing you made is lost: your settings and knob values are copied from the old files on the first launch, and the blueprints in the game&#x27;s blueprint folder are converted to the new part names when the game starts (a .bak-0.27 copy of each changed file is kept). For a blueprint kept somewhere else, close the game and run <strong>bp_convert.py</strong> from the plugin folder (instructions inside it). In multiplayer, everyone needs the same version.</p>
 <p><strong>Updating from 0.19.13?</strong> The old <strong>Piston 2</strong>, <strong>Piston 4</strong> and <strong>Piston 8</strong> are no longer in the mod: they were replaced by a single Piston (up to 8 m) and the Piston End block, so blueprints that use the old pistons need them replaced with the new Piston. Motors now glue only by the bottom of their base and the small fuel tanks only by their brackets (like the game&#x27;s tanks): in old blueprints, anything glued to their other faces needs to be glued again.</p>
 <h3>Description</h3>
 <p>Crap Mechanics adds moving parts to Approximately Up. Pistons push, bearings spin, motors drive them, and wheels, pedals and a steering wheel turn a pile of frames into a car you can actually drive. Data and power reach the moving side through a <strong>Slip Ring</strong>, so nothing has to be left unpowered. Everything is made to look like the game&#x27;s own parts, uses the game&#x27;s ports and data cables (plus its own <strong>Drive Shaft</strong>), and lives in its own <strong>Mechanics</strong> tab of the inventory.</p>
@@ -86,7 +89,7 @@ A few parts (the small fuel tanks, the turret seat, the Shaft Transmitter, the L
 <li>Install <strong>BepInEx 6.0.0-be.788 (IL2CPP, Windows x64)</strong> into the game folder (the folder with ApproximatelyUp.exe) and run the game once, so BepInEx creates its folders.</li>
 <li>Install <strong>BepInEx Interop Patcher (by CohoJET, on Nexus Mods)</strong>.</li>
 <li>Install <strong>Components Framework (by CohoJET, on Nexus Mods)</strong>.</li>
-<li>Extract this archive into <strong>BepInEx/plugins</strong> (you get <strong>BepInEx/plugins/Mecanica/</strong> with Mecanica.dll, Localization.json and the Mecanica asset bundle).</li>
+<li>Extract this archive into <strong>BepInEx/plugins</strong> (you get <strong>BepInEx/plugins/CrapMechanics/</strong> with CrapMechanics.dll, Localization.json, the CrapMechanics asset bundle and bp_convert.py).</li>
 <li>Start the game. The new parts are in the <strong>Mechanics</strong> tab of the garage inventory.</li>
 </ol>
 <h3>Main features</h3>
@@ -142,7 +145,7 @@ A few parts (the small fuel tanks, the turret seat, the Shaft Transmitter, the L
 # Details
 A mod for **Approximately Up** (BepInEx 6 IL2CPP) that adds pistons, bearings, electric and fuel motors, wheels, pedals, a steering
 wheel, a turret seat, a recoupler, a beacon and fuel tanks: everything you need to build working cars, rovers, cranes and turrets.
-All blocks live in the **Mechanics** tab of the inventory and are always unlocked. Version **0.25.0**, by Andre + Claude.
+All blocks live in the **Mechanics** tab of the inventory and are always unlocked. Version **0.28.2**, by Andre + Claude.
 
 
 
@@ -202,42 +205,138 @@ screenshot" checkbox (Ctrl+Enter sends, Esc cancels; an unchecked screenshot is 
 
 ## Logs
 
-`BepInEx/plugins/Mecanica/logs/session-YYYYMMDD-HHMMSS.log`: one per session, with everything that goes through BepInEx. The 5 most
+`BepInEx/plugins/CrapMechanics/logs/session-YYYYMMDD-HHMMSS.log`: one per session, with everything that goes through BepInEx. The 5 most
 recent are kept; older ones are moved to `logs/_old` (nothing is deleted).
 
-## Config (`BepInEx/config/com.approximatelyup.mods.mecanica.cfg`)
+## Config (`BepInEx/config/com.approximatelyup.mods.crapmechanics.cfg`)
 
 Since 0.13.0 the sections and keys are in English. Values from older (Portuguese) configs are carried over automatically on the
-first launch.
+first launch. Up to 0.26.x the file was `com.approximatelyup.mods.mecanica.cfg` and the knob values were in `config/Mecanica/knobs.txt`:
+0.27.0 copies both to the new names on its first launch (`config/CrapMechanics/knobs.txt`) and leaves the old files in place.
 
 - `General`: `enabled`, `detailed_log`.
-- `Piston`: `speed` (m/s), `max_impulse`, `power_per_meter_v2`, `rails`, `rails_per_meter`, `max_tilt`, `snap_back`.
+- `Piston`: `speed` (m/s), `max_impulse`, `power_per_meter_v2`, `rails`, `rails_per_meter`, `max_tilt`, `snap_back`, `collide_with_load`,
+  `whole_until_moved`, `mass_ratio_max`.
 - `Small Motor` / `Medium Motor` / `Large Motor`: `max_speed`, `max_impulse`, `power`.
 - `Small Fuel Motor` / `Medium Fuel Motor` / `Large Fuel Motor`: `max_speed`, `max_impulse`. `Fuel Motor`: `fuel_per_second`, `power`.
 - `Motor`: `ramp`, `brake_factor`, `force_pool` (4 = each motor's force, split among the bearings it drives).
-- `Bearing`: `servo_impulse`, `servo_degrees`, `servo_speed`, `servo_gain`, `servo_invert`, `extra_support`.
+- `Bearing`: `servo_impulse`, `servo_degrees`, `servo_speed`, `servo_gain`, `servo_tip_speed`, `servo_invert`, `extra_support`.
 - `Wheel`: `friction`, `offroad_friction`, `no_collision_at_start`.
-- `Physics`: `soft_start`, `start_stagger`, `fit_wait`, `solver_iterations`, `base_reinforcement`.
+- `Physics`: `rigid_joints`, `zero_gravity_on_launch`, `soft_start`, `start_stagger`, `fit_wait`, `solver_iterations`,
+  `solver_iterations_rigid`, `base_reinforcement`.
 - `Turret Seat`: `sensitivity`, `gain`, `max_speed`, `link_acceleration`, `seat_mode` (`cockpit` / `A` / `B`),
-  `seat_offset`, `player_position_b`, `view_position_a`, `view_a_rotates`, `infinite_inertia`, `camera`, `cursor_key`.
+  `seat_offset`, `player_position_b`, `view_position_a`, `view_a_rotates`, `infinite_inertia`, `camera`, `cursor_key`, `bindings_reach`,
+  `whole_until_aimed`.
 - `Recoupler`: `tolerance`, `max_angle`, `pull_time`, `merge`.
-- `Beacon`: `power`, `hide_within`, `hide_on_own_vehicle` (false = also shows on your own vehicle's radar), `icon`, `icon_slot` (preferred slot).
+- `Beacon`: `power`, `hide_within`, `hide_on_own_vehicle` (false = also shows on your own vehicle's radar), `icon`, `icon_slot` (preferred slot),
+  `keep_simulated_far`.
 - `Seat`: `bindings_reach` (how far the key bindings of the game's normal seat reach).
 - `Signal`: `fix_stuck_ports`.
-- `Bonus`: `extra_blocks` (`SC_Name=amount, ...`: extra inventory amount of any block, other mods' too).
+- `Bonus`: `extra_blocks` (`SC_Name=amount, ...`: extra inventory amount of any block, other mods' too; the pre-0.27.0 names of this mod's
+  blocks are accepted too).
+- `Multiplayer`: `host_only` (the server runs the mod's physics; clients only draw), `break_on_client`, `ring_on_client`,
+  `fake_client`, `net_log` (debug), `test_loopback` (test the turret seat's network path in a solo game). See *Multiplayer*.
 - `Debug`: `mark_error_key`, `turret_adjust_numpad`, `trace`.
 
 Changes made in the options menu ("Mod settings", with Mod Menu) apply immediately.
 
 ## Building
 
-- Plugin: `Plugin/Mecanica.csproj` (Modkit format).
-  `dotnet build Mecanica.csproj -c Release -p:ModkitGameDir="...\Approximately Up" -p:CFDir=<folder with ComponentsFramework.dll>`.
+- Plugin: `Plugin/CrapMechanics.csproj` (Modkit format; in the Modkit workspace the mod lives in `Assets/Mods/CrapMechanics`).
+  `dotnet build CrapMechanics.csproj -c Release -p:ModkitGameDir="...\Approximately Up" -p:CFDir=<folder with ComponentsFramework.dll>`.
 - Prefabs: `python3 gen_prefabs.py <Content/Prefabs> <workspace>/Assets/Game/GameObject` (generated YAML; the tanks are copies of the
   game's `SC_GreenTank`). Then, in the Modkit's Unity editor: **Modkit > Mods > Build (+ Deploy)** to produce the AssetBundle.
 - Nothing from the Modkit workspace (derived from the game) is published.
 
+## Multiplayer (0.28.0, experimental)
+
+Everyone in the game needs the same version of Crap Mechanics (the log compares them when a player joins). The game always hosts,
+even alone (so friends can join): the rules below apply only while another player is in the game, or when you join someone else's. The game is not lockstep:
+the server owns the parts and sends their poses to the clients. So:
+
+- The **server** runs everything the mod does to physics: splitting the ship at launch, the joints, motors, pistons, bearings, brakes,
+  the Turret Seat, the Recoupler and the knob values saved in `knobs.txt`.
+- A **client** never touches physics or the game's joints. It draws the mod's parts from the poses the server sends (piston rods and
+  heads, the bearing's angle output, the Turret Seat's seat and rings) and its knob changes reach the server through the game itself.
+- The **Turret Seat** of a player sitting on a client: the client adds that player's mouse to the aim and sends it to the server over
+  the mod's own channel (Steam networking messages, channel 7741, separate from the game's connection); the server turns the turret.
+- The **Recoupler** only locks on a network (merging two parts is not something the game sends to the other players).
+- Parts farther than 100 km follow the game's own rule on a network (the beacon exemption only works in a solo game).
+- Replay Mod 0.10.0+ does not freeze the world during playback on a network, and the mod keeps running meanwhile.
+
+Test settings: `[Multiplayer] test_loopback` (solo game: the Turret Seat aim goes through the network message path and comes back as if
+another player had sent it), `fake_client` (solo game: this machine behaves like a client, nothing of the mod moves) and `net_log`
+(every message of the mod's channel in the log). If on a client the top of a piston or bearing jumps or stays stuck to its base, try
+`break_on_client = true` on that client and report what changed.
+
+## Old blueprints and part names (0.27.0)
+
+Up to 0.26.x some parts had Portuguese prefab names; 0.27.0 renamed them (the mirrored `... M` versions too):
+
+| Before 0.27.0 | From 0.27.0 |
+|---|---|
+| `SC_Pistao` | `SC_Piston` |
+| `SC_MiniPistao` | `SC_MiniPiston` |
+| `SC_PistaoFim` | `SC_PistonEnd` |
+| `SC_MiniPistaoFim` | `SC_MiniPistonEnd` |
+| `SC_MotorP / M / G` | `SC_MotorSmall / Medium / Large` |
+| `SC_MotorCombP / M / G` | `SC_MotorFuelSmall / Medium / Large` |
+| `SC_RodaSportsP / M / G` | `SC_WheelSportsSmall / Medium / Large` |
+| `SC_RodaOffroadP / M / G` | `SC_WheelOffroadSmall / Medium / Large` |
+| `SC_Volante` | `SC_SteeringWheel` |
+| `SC_TanqueAzul` | `SC_TankSmallBlue` |
+| `SC_TanqueVerde` | `SC_TankSmallGreen` |
+
+A blueprint stores each part by the hash of its prefab name. When the game starts, before it reads any blueprint, the mod goes through the
+`.bp` files of the game's blueprint folder (subfolders too) and swaps the old hashes for the new ones; each changed file is copied to
+`<name>.bp.bak-0.27` first (the log says `old prefab names: <file> — N part(s) renamed` and, at the end, how many were converted). A file
+that doesn't follow the format to the last byte is left alone. A converted file has no old name left, so later starts only read it.
+
+Offline converter, for blueprints kept somewhere else (a copy, a download) or to convert a folder by hand:
+
+1. Start the game once with 0.27.0: it writes `BepInEx/config/CrapMechanics/prefab-renames.txt` (both names and both hashes of every
+   renamed part, as the game computes them).
+2. Close the game and, in the game folder, run
+   `python BepInEx/plugins/CrapMechanics/bp_convert.py BepInEx/config/CrapMechanics/prefab-renames.txt --dry-run`
+   to see what would change, then the same without `--dry-run` to convert. With no blueprint path it converts the game's blueprint folder
+   (`%USERPROFILE%/AppData/LocalLow/ApproximatelyGames/ApproximatelyUp/Blueprints`); pass `.bp` files or folders to pick others.
+   Each changed file is copied to `<name>.bp.bak-0.27` first, and a file it doesn't fully understand is left alone.
+
 ## Changelog
+- 0.28.2: ships and cars came apart at launch: in 0.28.1 a comment swallowed the line that installs the mod's game hooks, so the joint
+  was no longer created in the same physics tick in which the game splits the parts (and the wheel friction, the hidden mirrored parts,
+  the world unload pause, the radar icon and the time rewind button were off too). Also: a solo game counted as a network game (the
+  game always hosts, as ServerOpen), so the Recoupler only locked, beacons lost the 100 km exemption and Replay playback didn't freeze;
+  now the network rules apply only with another player in the game.
+- 0.28.1: the game closed by itself while starting, right after the Components Framework applied the texts: 0.27.0/0.28.0 converted old
+  blueprints with a hook on a function the game calls for every saved blueprint at start, and that hook crashed. Old blueprints are now
+  converted on disk at start, before the game reads them, keeping a `.bak-0.27` copy of each changed file. The transition log works again.
+- 0.28.0: **multiplayer** (experimental, see *Multiplayer*) — the server runs the mod's physics and clients only draw the mod's parts
+  from the server's poses; a player seated in a Turret Seat on a client aims it (the aim goes to the server over the mod's own Steam
+  channel, which also compares the mod versions and plugin lists of the players); knob values are restored only by the server; the
+  Recoupler locks without merging and the 100 km rule is the game's on a network. Before, a client broke the game's joints of every
+  piston/bearing on its own copy of the ship at launch and could drive the server's parts. New `[Multiplayer] net_log` and
+  `test_loopback`.
+- 0.27.0: **English release** — everything is in English, code included. Plugin folder `BepInEx/plugins/CrapMechanics`
+  (`CrapMechanics.dll`, `CrapMechanics` asset bundle), config `com.approximatelyup.mods.crapmechanics.cfg`, knob values
+  `config/CrapMechanics/knobs.txt`. The old `.cfg` and `knobs.txt` are copied on the first launch; the new version stays off while
+  `plugins/Mecanica` is still installed (both would register every block twice). Parts with Portuguese prefab names were renamed (see
+  *Old blueprints and part names*): old blueprints in the game's blueprint folder are converted on disk when the game starts, with `bp_convert.py` for any other folder.
+  The mirrored (V) wheels are generated again (they were left over from 0.19, before parts took only the space of their shape): they now do, like
+  the normal wheels.
+  Everything from the 0.26.x test builds is in it too:
+- 0.26.x (test builds): **rigid joints** (`[Physics] rigid_joints`, on by default) — pistons and servo bearings hold the requested
+  position exactly (a weld whose length/angle the mod sets): no sag, no wobble, a blocked piston just stops. **Zero gravity while the
+  game splits the ship at launch** (`zero_gravity_on_launch`, ramped back afterwards). A piston stays one part with its load until it
+  gets a target (`[Piston] whole_until_moved`) and the Turret Seat until someone sits and aims (`[Turret Seat] whole_until_aimed`).
+  The piston's part and its load collide (`collide_with_load`). Mass and inertia are balanced across piston welds and the bearings
+  next to them (`mass_ratio_max`), so heavy ships don't sag on light legs and cars don't sag on mini pistons. Servos accelerate and
+  brake smoothly and limit the speed of the far end of what they turn (`[Bearing] servo_tip_speed`), so turning a big wing no
+  longer tears it apart. Joints are created inside the physics step in which the game splits the parts (the first launch after
+  loading no longer blows the ship apart); a piece that lands more than 0.5 m from its fit is left loose instead of welded there.
+  `solver_iterations_rigid`. The mod's cost per frame roughly halved with a big ship. Pistons and bearings wired to a Wireless
+  Transmitter read the channel from the sending transmitter. A chain of pistons and slip rings no longer doubles its power draw
+  on every toggle (or burns the wires with the piston knob at 10%). New `[Multiplayer]` section.
 - 0.25.0: **Turret Seat limit knobs** — three knobs on the front of the base set how far it aims left/right (up to a full circle), up and down (up to 135° each); default = as before (free / 135° up / 30° down); they also limit the whole-ship mode, and the values are kept per seat. `[Turret Seat] pitch_min` / `pitch_max` removed. Mini Piston, Mini Piston End, Mini Slip Ring and Mini Electric Thruster back in the Mechanics tab; the mirrored Bearing / Mini Bearing draw the angle switch in its place (it sat on the data port). Log files and folders in English (`logs/session-*.log`, `logs/marks`, `logs/_old`).
 - 0.24.0: config with one section per kind of part (Mod Menu order) and dead keys removed; piston rails spread with the piston's length (`rails_per_meter`), a bent or stuck piston stops pushing (`max_tilt`), launch fit by time and progress (`fit_wait`) and `snap_back` to the garage pose; knob values no longer reset after an update; Turret Seat ports stay on the base; normal-seat key bindings work in third person (`[Seat] bindings_reach`); stuck Wireless Transmitters across a joint are repaired (`[Signal] fix_stuck_ports`); crash in the tutorial manual fixed; `[Bonus] extra_blocks`; `[Bearing] servo_gain`; `[Debug] trace`.
 - 0.23.2: in-game descriptions follow the game's style (short; the long version is in `DESCRICOES_COMPLETAS.txt`), port tooltips trimmed, and every block shows **status lines** in the inventory panel (max force, power consumption, stroke, grip…) — the plugin fills `_customProperties` at run time from the Localization file, so it works in both languages.

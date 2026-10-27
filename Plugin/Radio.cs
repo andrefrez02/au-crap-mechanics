@@ -3,214 +3,214 @@ using Il2CppInterop.Runtime;
 using System.Collections.Generic;
 using Unity.Entities;
 
-namespace Mecanica
+namespace CrapMechanics
 {
-    /// <summary>0.18.0 (Andre: "um long range transmitter que inves de colocar o canal pela telinha ele vai colocar o canal por uma entrada de
-    /// dados, que pode mudar durante a simulacao, e o range dele vai ser muito grande"; "duas portas: uma entra/sai, outra pro canal").
-    /// Bloco do mod com as malhas do Wireless Transmitter: porta 0 = sinal (InOut, igual a do transmitter do jogo), porta 1 = canal (entrada
-    /// de dados, arredondada). Todo frame: quem tem o sinal ligado numa SAIDA (a porta resolve como entrada) envia; quem tem o sinal ligado
-    /// numa ENTRADA (a porta resolve como saida) recebe o valor do que envia no mesmo canal. Sem limite de distancia (qualquer nave no
-    /// mundo). Canais proprios: nao conversa com o Wireless Transmitter do jogo.</summary>
+    /// <summary>0.18.0 (Andre: "a long range transmitter that instead of setting the channel on the little screen takes the channel from a data
+    /// input, which can change during the simulation, and its range will be huge"; "two ports: one in/out, another for the channel").
+    /// A mod block with the Wireless Transmitter's meshes: port 0 = signal (InOut, like the game transmitter's), port 1 = channel (data
+    /// input, rounded). Every frame: whoever has the signal wired to an OUTPUT (the port resolves as input) sends; whoever has the signal wired
+    /// to an INPUT (the port resolves as output) receives the value of whoever sends on the same channel. No distance limit (any ship in the
+    /// world). Channels of its own: it doesn't talk to the game's Wireless Transmitter.</summary>
     internal static class Radio
     {
-        sealed class R { public Entity bloco, sinal, canalP, texto; public bool portasOk, logado, textoProcurado; public int canal = int.MinValue, avisos, canalTela = int.MinValue; public byte tipoLog = 255; public float tTexto; public bool pintado; public float tPintura, tLed = 9f; public Entity led; public int ledEscrito = -1;
-            public int canalCand = int.MinValue; public float tCand; public Entity fonteCanal; public bool segurouLog;
-            public float ultimoV = float.NaN, tUltimoV; public bool congeladoLog, semFonteLog; }   // 0.19.8: diagnostico de fonte de video congelada   // 0.19.7: fonte do canal (segura o canal se a mesma fonte ler 0)   // 0.19.6: canal candidato (so vira o canal depois de 0,3 s estavel)
+        sealed class R { public Entity block, signal, channelP, text; public bool portsOk, logged, searchedText; public int channel = int.MinValue, warnings, channelScreen = int.MinValue; public byte kindLog = 255; public float tText; public bool painted; public float tPaint, tLed = 9f; public Entity led; public int ledWritten = -1;
+            public int channelCand = int.MinValue; public float tCand; public Entity channelSource; public bool heldLog;
+            public float latestV = float.NaN, tLastV; public bool frozenLog, noSourceLog; }   // 0.19.8: frozen video source diagnostics   // 0.19.7: channel source (holds the channel if the same source reads 0)   // 0.19.6: candidate channel (only becomes the channel after 0.3 s stable)
         static readonly Dictionary<long, R> radios = new Dictionary<long, R>();
-        public static IEnumerable<Entity> Blocos() { foreach (var r in radios.Values) yield return r.bloco; }   // 0.19.12: log de transicao
-        public static int Quantos() => radios.Count;
-        static readonly Dictionary<int, float> valorCanal = new Dictionary<int, float>();
-        static readonly Dictionary<int, Entity> quemEnvia = new Dictionary<int, Entity>();
-        static readonly HashSet<int> avisoDoisEnviam = new HashSet<int>();
+        public static IEnumerable<Entity> Blocks() { foreach (var r in radios.Values) yield return r.block; }   // 0.19.12: transition log
+        public static int RadioCount() => radios.Count;
+        static readonly Dictionary<int, float> channelValue = new Dictionary<int, float>();
+        static readonly Dictionary<int, Entity> whoSends = new Dictionary<int, Entity>();
+        static readonly HashSet<int> twoSendWarn = new HashSet<int>();
 
-        public static bool Tem(long k) => radios.ContainsKey(k);
-        // 0.18.2: numero do canal na tela (texto 3D do jogo, "RendererText3D Channel", 3 casas alinhadas a direita)
-        static TypeIndex tiTexto; static bool textoOk, textoFalhou;
-        static readonly Unity.Mathematics.float3 PosTexto = new Unity.Mathematics.float3 { x = 0.04958624f, y = -0.01527491f, z = -0.04406795f };
-        static unsafe void Tela(EntityManager em, R r, float dt)
+        public static bool Has(long k) => radios.ContainsKey(k);
+        // 0.18.2: channel number on the screen (the game's 3D text, "RendererText3D Channel", 3 digits right-aligned)
+        static TypeIndex tiText; static bool textOk, textFailed;
+        static readonly Unity.Mathematics.float3 TextPos = new Unity.Mathematics.float3 { x = 0.04958624f, y = -0.01527491f, z = -0.04406795f };
+        static unsafe void ScreenSize(EntityManager em, R r, float dt)
         {
-            if (textoFalhou) return;
+            if (textFailed) return;
             try
             {
-                if (!textoOk) { tiTexto = TypeManager.GetTypeIndex(Il2CppInterop.Runtime.Il2CppType.Of<CRPText3DString>()); textoOk = true; }
-                r.tTexto += dt;
-                if (!Ecs.Vivo(em, r.texto) && (!r.textoProcurado || r.tTexto > 3f))
+                if (!textOk) { tiText = TypeManager.GetTypeIndex(Il2CppInterop.Runtime.Il2CppType.Of<CRPText3DString>()); textOk = true; }
+                r.tText += dt;
+                if (!Ecs.Alive(em, r.text) && (!r.searchedText || r.tText > 3f))
                 {
-                    r.textoProcurado = true; r.tTexto = 0f; r.texto = Entity.Null; Entity tres = Entity.Null;
-                    foreach (var f in Ecs.Filhos(em, r.bloco))
+                    r.searchedText = true; r.tText = 0f; r.text = Entity.Null; Entity three = Entity.Null;
+                    foreach (var f in Ecs.Children(em, r.block))
                     {
-                        if (!em.HasComponent(f, ComponentType.ReadOnly(tiTexto))) continue;
+                        if (!em.HasComponent(f, ComponentType.ReadOnly(tiText))) continue;
                         var p = Ecs.LT(em, f).Position;
-                        if (System.Math.Abs(System.Math.Abs(p.x) - PosTexto.x) +   /* 0.19.0: versao M tem x espelhado */ System.Math.Abs(p.y - PosTexto.y) + System.Math.Abs(p.z - PosTexto.z) < 0.01f) { r.texto = f; break; }
-                        if (em.GetBufferLength(f, tiTexto) == 3) tres = f;
+                        if (System.Math.Abs(System.Math.Abs(p.x) - TextPos.x) +   /* 0.19.0: the M version has x mirrored */ System.Math.Abs(p.y - TextPos.y) + System.Math.Abs(p.z - TextPos.z) < 0.01f) { r.text = f; break; }
+                        if (em.GetBufferLength(f, tiText) == 3) three = f;
                     }
-                    if (Ecs.Nulo(r.texto)) r.texto = tres;
-                    if (Ecs.Nulo(r.texto)) { if (r.avisos++ < 1 && Ecs.EhPart(em, Ecs.Pai(em, r.bloco))) Registro.Aviso("SC_LongRangeTransmitter " + r.bloco.Index + ": channel display not found (rebuild the bundle in the Modkit)"); return; }
-                    r.canalTela = int.MinValue;
+                    if (Ecs.IsNull(r.text)) r.text = three;
+                    if (Ecs.IsNull(r.text)) { if (r.warnings++ < 1 && Ecs.IsPart(em, Ecs.Parent(em, r.block))) ModLog.Warn("SC_LongRangeTransmitter " + r.block.Index + ": channel display not found (rebuild the bundle in the Modkit)"); return; }
+                    r.channelScreen = int.MinValue;
                 }
-                if (Ecs.Nulo(r.texto) || r.canal == r.canalTela) return;
-                int n = em.GetBufferLength(r.texto, tiTexto); var b = (char*)em.GetBufferRawRW(r.texto, tiTexto); if (b == null || n <= 0) return;
-                string s = r.canal.ToString(); if (s.Length > n) s = s.Substring(s.Length - n);
+                if (Ecs.IsNull(r.text) || r.channel == r.channelScreen) return;
+                int n = em.GetBufferLength(r.text, tiText); var b = (char*)em.GetBufferRawRW(r.text, tiText); if (b == null || n <= 0) return;
+                string s = r.channel.ToString(); if (s.Length > n) s = s.Substring(s.Length - n);
                 s = s.PadLeft(n);
                 for (int i = 0; i < n; i++) b[i] = s[i];
-                r.canalTela = r.canal;
+                r.channelScreen = r.channel;
             }
-            catch (Exception ex) { textoFalhou = true; Registro.Aviso("SC_LongRangeTransmitter: channel display: " + ex.Message); }
+            catch (Exception ex) { textFailed = true; ModLog.Warn("SC_LongRangeTransmitter: channel display: " + ex.Message); }
         }
-        public static void Esquecer() { radios.Clear(); valorCanal.Clear(); quemEnvia.Clear(); }
-        public static void Novo(Entity e) { radios[Ecs.K(e)] = new R { bloco = e }; Registro.Info("SC_LongRangeTransmitter found: block " + e.Index + ":" + e.Version); }
+        public static void Forget() { radios.Clear(); channelValue.Clear(); whoSends.Clear(); }
+        public static void Track(Entity e) { radios[Ecs.K(e)] = new R { block = e }; ModLog.Info("SC_LongRangeTransmitter found: block " + e.Index + ":" + e.Version); }
 
-        static unsafe byte TipoRuntime(EntityManager em, Entity p)
+        static unsafe byte RuntimeKind(EntityManager em, Entity p)
         {
-            // 0.19.3 (crash dump 01/10, 16:47: AV lendo [porta+21] — a porta cacheada tinha sido destruida quando o jogo refez o BP na
-            // garagem): so le se a entity ainda existe e tem o componente
-            try { if (!Ecs.TemC(em, p, Ecs.tiPort)) return 255; var b = (byte*)em.GetComponentDataRawRO(p, Ecs.tiPort); return b == null ? (byte)255 : b[21]; } catch (Exception) { return 255; }
+            // 0.19.3 (crash dump 01/10, 16:47: AV reading [port+21] — the cached port had been destroyed when the game rebuilt the BP in the
+            // garage): only reads if the entity still exists and has the component
+            try { if (!Ecs.HasC(em, p, Ecs.tiPort)) return 255; var b = (byte*)em.GetComponentDataRawRO(p, Ecs.tiPort); return b == null ? (byte)255 : b[21]; } catch (Exception) { return 255; }
         }
 
-        /// <summary>0.19.0 (Andre: "o transmitter longo nao ta transmitindo dados da camera"): o sinal de video da camera e' um
-        /// identificador grande na porta de dados — o Ecs.LerEntrada zera valores acima de 1e6 (o DataValue() do jogo faz isso pra mostrar
-        /// numero). Aqui o valor vai cru (os 4 bytes), igual o Wireless Transmitter do jogo repassa.</summary>
-        static unsafe bool LerCru(EntityManager em, Entity entrada, out float v)
+        /// <summary>0.19.0 (Andre: "the long transmitter isn't transmitting the camera's data"): the camera's video signal is a
+        /// large identifier on the data port — Ecs.ReadInput zeroes values above 1e6 (the game's DataValue() does that to show
+        /// numbers). Here the value goes raw (the 4 bytes), as the game's Wireless Transmitter passes it on.</summary>
+        static unsafe bool ReadRaw(EntityManager em, Entity input, out float v)
         {
-            v = 0f; var f = Ecs.Fonte(em, entrada, out _);
-            if (Ecs.Nulo(f) || !Ecs.Vivo(em, f) || !em.HasComponent(f, ComponentType.ReadOnly(Ecs.tiPort))) return false;
+            v = 0f; var f = Ecs.Source(em, input, out _);
+            if (Ecs.IsNull(f) || !Ecs.Alive(em, f) || !em.HasComponent(f, ComponentType.ReadOnly(Ecs.tiPort))) return false;
             var b = (byte*)em.GetComponentDataRawRO(f, Ecs.tiPort); if (b == null) return false;
             v = *(float*)(b + 8);
-            // sem filtro: o identificador pode ter qualquer bit (copia os 4 bytes como estao)
-            if (!logCru && Math.Abs(v) > 1e6f) { logCru = true; Registro.Info("SC_LongRangeTransmitter: passing a large signal (" + v.ToString("G9") + " — camera video?) through the channel"); }
+            // no filter: the identifier may have any bit (copies the 4 bytes as they are)
+            if (!rawLog && Math.Abs(v) > 1e6f) { rawLog = true; ModLog.Info("SC_LongRangeTransmitter: passing a large signal (" + v.ToString("G9") + " — camera video?) through the channel"); }
             return true;
         }
-        static bool logCru;
-        /// <summary>0.19.6 (Andre: "a camera ta piscando sem parar usando o LRT" a 3x e ate em velocidade normal; "perdendo sinal depois de
-        /// um tempo"): o sinal era copiado 1x por FRAME (Update), mas o identificador do video e o monitor andam por TICK de fisica
-        /// (a 3x sao 3 ticks por frame: 2 ficavam com valor velho = chuvisco); e o canal, lido entre ticks, caia pra 0 por alguns frames.
-        /// Agora a copia roda no prefix/postfix dos grupos de tick dos componentes (e no Update, por garantia), e o canal so muda
-        /// depois de 0,3 s estavel.</summary>
-        public static void Copiar(EntityManager em, bool noTick)
+        static bool rawLog;
+        /// <summary>0.19.6 (Andre: "the camera keeps flickering non-stop using the LRT" at 3x and even at normal speed; "losing signal after
+        /// a while"): the signal was copied once per FRAME (Update), but the video identifier and the monitor move per physics TICK
+        /// (at 3x there are 3 ticks per frame: 2 kept an old value = static); and the channel, read between ticks, dropped to 0 for a few frames.
+        /// Now the copy runs in the prefix/postfix of the components' tick groups (and in Update, to be safe), and the channel only changes
+        /// after 0.3 s stable.</summary>
+        public static void Copy(EntityManager em, bool inTick)
         {
             if (radios.Count == 0) return;
-            valorCanal.Clear(); quemEnvia.Clear();
-            float agora = UnityEngine.Time.unscaledTime;
+            channelValue.Clear(); whoSends.Clear();
+            float now = UnityEngine.Time.unscaledTime;
             foreach (var r in radios.Values)
             {
-                if (!r.portasOk || !Ecs.Vivo(em, r.bloco)) continue;
+                if (!r.portsOk || !Ecs.Alive(em, r.block)) continue;
                 try
                 {
-                    int canal = 0;
-                    bool temCanal = Ecs.LerEntrada(em, r.canalP, out var vc, out var fonte, out var trilha); if (temCanal) canal = (int)Math.Round(vc);
-                    // 0.19.7 (log: os 3 LRTs iam pro canal 0 juntos ao sair do banco / no time rewind e o sinal sumia): se a MESMA fonte que
-                    // dava um canal != 0 passa a ler 0, segura o canal (o jogo zera as portas nesses momentos).
-                    // 0.19.8 (Andre: "saindo da atmosfera perde o sinal"; log: canal 0 sem o "holding" = a FONTE sumiu, nao leu 0): segura
-                    // tambem quando o caminho ate a fonte some, e loga 1x o caminho (trilha) pra ver o que o jogo mudou.
-                    bool mesmaFonte = fonte.Index == r.fonteCanal.Index && fonte.Version == r.fonteCanal.Version;
-                    if ((!temCanal || canal == 0) && r.canal != int.MinValue && r.canal != 0 && (mesmaFonte || !temCanal))
+                    int channel = 0;
+                    bool hasChannel = Ecs.ReadInput(em, r.channelP, out var vc, out var source, out var trail); if (hasChannel) channel = (int)Math.Round(vc);
+                    // 0.19.7 (log: the 3 LRTs went to channel 0 together when leaving the seat / on time rewind and the signal vanished): if the SAME source that
+                    // gave a channel != 0 starts reading 0, hold the channel (the game zeroes the ports at those moments).
+                    // 0.19.8 (Andre: "leaving the atmosphere it loses the signal"; log: channel 0 without "holding" = the SOURCE vanished, it didn't read 0): also holds
+                    // when the path to the source vanishes, and logs the path (trail) once to see what the game changed.
+                    bool sameSource = source.Index == r.channelSource.Index && source.Version == r.channelSource.Version;
+                    if ((!hasChannel || channel == 0) && r.channel != int.MinValue && r.channel != 0 && (sameSource || !hasChannel))
                     {
-                        canal = r.canal;
-                        if (!r.segurouLog) { r.segurouLog = true; Registro.Info("SC_LongRangeTransmitter " + r.bloco.Index + ": channel source " + (temCanal ? "read 0" : "LOST (path:" + trilha + ")") + " — holding channel " + r.canal + "; " + Diag(em, r)); }
+                        channel = r.channel;
+                        if (!r.heldLog) { r.heldLog = true; ModLog.Info("SC_LongRangeTransmitter " + r.block.Index + ": channel source " + (hasChannel ? "read 0" : "LOST (path:" + trail + ")") + " — holding channel " + r.channel + "; " + Diag(em, r)); }
                     }
-                    else if (temCanal && canal != 0) { r.fonteCanal = fonte; if (r.segurouLog) { r.segurouLog = false; Registro.Info("SC_LongRangeTransmitter " + r.bloco.Index + ": channel source is back (" + canal + ")"); } }
-                    if (r.canal == int.MinValue) { r.canal = canal; r.canalCand = canal; Registro.Info("SC_LongRangeTransmitter " + r.bloco.Index + ": channel " + canal); }
-                    else if (canal != r.canal)
+                    else if (hasChannel && channel != 0) { r.channelSource = source; if (r.heldLog) { r.heldLog = false; ModLog.Info("SC_LongRangeTransmitter " + r.block.Index + ": channel source is back (" + channel + ")"); } }
+                    if (r.channel == int.MinValue) { r.channel = channel; r.channelCand = channel; ModLog.Info("SC_LongRangeTransmitter " + r.block.Index + ": channel " + channel); }
+                    else if (channel != r.channel)
                     {
-                        if (canal != r.canalCand) { r.canalCand = canal; r.tCand = agora; }
-                        else if (agora - r.tCand >= 0.3f) { r.canal = canal; Registro.Info("SC_LongRangeTransmitter " + r.bloco.Index + ": channel " + canal); }
+                        if (channel != r.channelCand) { r.channelCand = channel; r.tCand = now; }
+                        else if (now - r.tCand >= 0.3f) { r.channel = channel; ModLog.Info("SC_LongRangeTransmitter " + r.block.Index + ": channel " + channel); }
                     }
-                    else r.canalCand = canal;
-                    byte tr = TipoRuntime(em, r.sinal);
-                    if (tr != r.tipoLog) { r.tipoLog = tr; Registro.Info("SC_LongRangeTransmitter " + r.bloco.Index + ": signal port is " + (tr == Ecs.PortaEntrada ? "SENDING (wired to an output)" : tr == Ecs.PortaSaida ? "RECEIVING (wired to an input)" : "not wired (type " + tr + ")") + " on channel " + r.canal); }
-                    float v = 0f; bool temVideo = tr == Ecs.PortaEntrada && LerCru(em, r.sinal, out v);
-                    if (tr == Ecs.PortaEntrada && !temVideo && !noTick) { if (!r.semFonteLog) { r.semFonteLog = true; Ecs.Fonte(em, r.sinal, out var tv); Registro.Aviso("SC_LongRangeTransmitter " + r.bloco.Index + ": SENDING but the signal source is gone (path:" + tv + "); " + Diag(em, r)); } }
-                    else if (temVideo && r.semFonteLog) { r.semFonteLog = false; Registro.Info("SC_LongRangeTransmitter " + r.bloco.Index + ": signal source is back"); }
-                    if (temVideo)
+                    else r.channelCand = channel;
+                    byte tr = RuntimeKind(em, r.signal);
+                    if (tr != r.kindLog) { r.kindLog = tr; ModLog.Info("SC_LongRangeTransmitter " + r.block.Index + ": signal port is " + (tr == Ecs.PortInput ? "SENDING (wired to an output)" : tr == Ecs.PortOutput ? "RECEIVING (wired to an input)" : "not wired (type " + tr + ")") + " on channel " + r.channel); }
+                    float v = 0f; bool hasVideo = tr == Ecs.PortInput && ReadRaw(em, r.signal, out v);
+                    if (tr == Ecs.PortInput && !hasVideo && !inTick) { if (!r.noSourceLog) { r.noSourceLog = true; Ecs.Source(em, r.signal, out var tv); ModLog.Warn("SC_LongRangeTransmitter " + r.block.Index + ": SENDING but the signal source is gone (path:" + tv + "); " + Diag(em, r)); } }
+                    else if (hasVideo && r.noSourceLog) { r.noSourceLog = false; ModLog.Info("SC_LongRangeTransmitter " + r.block.Index + ": signal source is back"); }
+                    if (hasVideo)
                     {
-                        if (quemEnvia.TryGetValue(r.canal, out var outro) && outro.Index < r.bloco.Index) { if (avisoDoisEnviam.Add(r.canal)) Registro.Aviso("long range channel " + r.canal + ": more than one transmitter is SENDING — the first one wins (block " + outro.Index + ")"); continue; }
-                        quemEnvia[r.canal] = r.bloco; valorCanal[r.canal] = v;
-                        if (!noTick) Congelado(em, r, v, agora);   // 0.19.8 (Andre: "sai da atmosfera e perdi o sinal"): video que para de mudar
+                        if (whoSends.TryGetValue(r.channel, out var other) && other.Index < r.block.Index) { if (twoSendWarn.Add(r.channel)) ModLog.Warn("long range channel " + r.channel + ": more than one transmitter is SENDING — the first one wins (block " + other.Index + ")"); continue; }
+                        whoSends[r.channel] = r.block; channelValue[r.channel] = v;
+                        if (!inTick) Frozen(em, r, v, now);   // 0.19.8 (Andre: "I left the atmosphere and lost the signal"): video that stops changing
                     }
                 }
-                catch (Exception ex) { if (r.avisos++ < 3) Registro.Aviso("SC_LongRangeTransmitter " + r.bloco.Index + ": " + ex.Message); }
+                catch (Exception ex) { if (r.warnings++ < 3) ModLog.Warn("SC_LongRangeTransmitter " + r.block.Index + ": " + ex.Message); }
             }
             foreach (var r in radios.Values)
             {
-                if (!r.portasOk || r.tipoLog != Ecs.PortaSaida) continue;
-                Ecs.EscreverPorta(em, r.sinal, valorCanal.TryGetValue(r.canal, out var v) ? v : 0f);
+                if (!r.portsOk || r.kindLog != Ecs.PortOutput) continue;
+                Ecs.WritePort(em, r.signal, channelValue.TryGetValue(r.channel, out var v) ? v : 0f);
             }
         }
-        /// <summary>0.19.8: o identificador do video muda todo tick; se parou de mudar por 2 s, a camera do outro veiculo nao esta sendo
-        /// simulada (fora da atmosfera / outro planeta o jogo tira o ActiveWormholeWorld dos blocos de la). So log, 1x por bloco.</summary>
-        static TypeIndex tiAtivo; static bool ativoOk;
-        /// <summary>0.19.8: estado do bloco pro log (ActiveWormholeWorld, part, portas vivas).</summary>
+        /// <summary>0.19.8: the video identifier changes every tick; if it stopped changing for 2 s, the other vehicle's camera isn't being
+        /// simulated (outside the atmosphere / another planet the game removes ActiveWormholeWorld from the blocks over there). Log only, once per block.</summary>
+        static TypeIndex tiActive; static bool activeOk;
+        /// <summary>0.19.8: block state for the log (ActiveWormholeWorld, part, live ports).</summary>
         static string Diag(EntityManager em, R r)
         {
-            string ativo = "?";
-            try { if (!ativoOk) { ativoOk = true; tiAtivo = TypeManager.GetTypeIndex(Il2CppType.Of<ActiveWormholeWorld>()); } ativo = Ecs.TemC(em, r.bloco, tiAtivo) ? "yes" : "NO"; } catch (Exception) { }
-            var pai = Ecs.Pai(em, r.bloco);
-            return "block ActiveWormholeWorld " + ativo + ", parent " + pai.Index + (Ecs.EhPart(em, pai) ? " (part)" : " (not a part)") + ", signal port " + (Ecs.Vivo(em, r.sinal) ? "alive" : "DEAD") + ", channel port " + (Ecs.Vivo(em, r.canalP) ? "alive" : "DEAD") + "; signal port raw: " + Ecs.SinalDiagnostico(em, r.bloco);
+            string isActive = "?";
+            try { if (!activeOk) { activeOk = true; tiActive = TypeManager.GetTypeIndex(Il2CppType.Of<ActiveWormholeWorld>()); } isActive = Ecs.HasC(em, r.block, tiActive) ? "yes" : "NO"; } catch (Exception) { }
+            var parent = Ecs.Parent(em, r.block);
+            return "block ActiveWormholeWorld " + isActive + ", parent " + parent.Index + (Ecs.IsPart(em, parent) ? " (part)" : " (not a part)") + ", signal port " + (Ecs.Alive(em, r.signal) ? "alive" : "DEAD") + ", channel port " + (Ecs.Alive(em, r.channelP) ? "alive" : "DEAD") + "; signal port raw: " + Ecs.SignalDiagnostic(em, r.block);
         }
-        static void Congelado(EntityManager em, R r, float v, float agora)
+        static void Frozen(EntityManager em, R r, float v, float now)
         {
-            if (Math.Abs(v) < 1e6f) { r.ultimoV = v; r.tUltimoV = agora; r.congeladoLog = false; return; }   // nao e' video
-            if (float.IsNaN(r.ultimoV) || v != r.ultimoV) { r.ultimoV = v; r.tUltimoV = agora; if (r.congeladoLog) { r.congeladoLog = false; Registro.Info("SC_LongRangeTransmitter " + r.bloco.Index + ": video source is changing again"); } return; }
-            if (r.congeladoLog || agora - r.tUltimoV < 2f) return;
-            r.congeladoLog = true;
-            string ativo = "?";
-            try { if (!ativoOk) { ativoOk = true; tiAtivo = TypeManager.GetTypeIndex(Il2CppType.Of<ActiveWormholeWorld>()); } ativo = Ecs.TemC(em, r.bloco, tiAtivo) ? "yes" : "NO"; } catch (Exception) { }
-            Registro.Aviso("SC_LongRangeTransmitter " + r.bloco.Index + ": the video it sends stopped changing 2 s ago (camera not simulated? block ActiveWormholeWorld: " + ativo + ") — the monitor on the other end shows static");
+            if (Math.Abs(v) < 1e6f) { r.latestV = v; r.tLastV = now; r.frozenLog = false; return; }   // not video
+            if (float.IsNaN(r.latestV) || v != r.latestV) { r.latestV = v; r.tLastV = now; if (r.frozenLog) { r.frozenLog = false; ModLog.Info("SC_LongRangeTransmitter " + r.block.Index + ": video source is changing again"); } return; }
+            if (r.frozenLog || now - r.tLastV < 2f) return;
+            r.frozenLog = true;
+            string isActive = "?";
+            try { if (!activeOk) { activeOk = true; tiActive = TypeManager.GetTypeIndex(Il2CppType.Of<ActiveWormholeWorld>()); } isActive = Ecs.HasC(em, r.block, tiActive) ? "yes" : "NO"; } catch (Exception) { }
+            ModLog.Warn("SC_LongRangeTransmitter " + r.block.Index + ": the video it sends stopped changing 2 s ago (camera not simulated? block ActiveWormholeWorld: " + isActive + ") — the monitor on the other end shows static");
         }
-        public static void Passo(EntityManager em)
+        public static void Step(EntityManager em)
         {
             if (radios.Count == 0) return;
-            var mortos = new List<long>();
-            valorCanal.Clear(); quemEnvia.Clear();
-            // 1) canais e quem envia
+            var deadSet = new List<long>();
+            channelValue.Clear(); whoSends.Clear();
+            // 1) channels and who sends
             foreach (var kv in radios)
             {
                 var r = kv.Value;
-                if (!Ecs.Vivo(em, r.bloco)) { mortos.Add(kv.Key); continue; }
+                if (!Ecs.Alive(em, r.block)) { deadSet.Add(kv.Key); continue; }
                 try
                 {
-                    if (r.portasOk && (!Ecs.Vivo(em, r.sinal) || !Ecs.Vivo(em, r.canalP))) { r.portasOk = false; r.sinal = Entity.Null; r.canalP = Entity.Null; r.tipoLog = 255; }   // 0.19.3: portas refeitas pelo jogo
-                    if (!r.portasOk)
+                    if (r.portsOk && (!Ecs.Alive(em, r.signal) || !Ecs.Alive(em, r.channelP))) { r.portsOk = false; r.signal = Entity.Null; r.channelP = Entity.Null; r.kindLog = 255; }   // 0.19.3: ports rebuilt by the game
+                    if (!r.portsOk)
                     {
-                        foreach (var p in Ecs.Portas(em, r.bloco))
+                        foreach (var p in Ecs.Ports(em, r.block))
                         {
-                            if (!Ecs.Porta(em, p, out var t, out _, out _)) continue;
-                            if (t == 3 && Ecs.Nulo(r.sinal)) r.sinal = p; else if (t == Ecs.PortaEntrada && Ecs.Nulo(r.canalP)) r.canalP = p;
+                            if (!Ecs.Port(em, p, out var t, out _, out _)) continue;
+                            if (t == 3 && Ecs.IsNull(r.signal)) r.signal = p; else if (t == Ecs.PortInput && Ecs.IsNull(r.channelP)) r.channelP = p;
                         }
-                        if (Ecs.Nulo(r.sinal) || Ecs.Nulo(r.canalP)) { if (r.avisos++ < 2) Registro.Aviso("SC_LongRangeTransmitter " + r.bloco.Index + ": ports not found (" + Ecs.Portas(em, r.bloco).Length + ")"); continue; }
-                        r.portasOk = true;
+                        if (Ecs.IsNull(r.signal) || Ecs.IsNull(r.channelP)) { if (r.warnings++ < 2) ModLog.Warn("SC_LongRangeTransmitter " + r.block.Index + ": ports not found (" + Ecs.Ports(em, r.block).Length + ")"); continue; }
+                        r.portsOk = true;
                     }
-                    if (!r.pintado && r.avisos == 0) { r.tPintura += UnityEngine.Time.deltaTime; if (r.tPintura > 1f) r.pintado = Pintura.Pintar(em, r.bloco); }   // 0.19.2: cor padrao (DarkGray) nos renderers
-                    Tela(em, r, UnityEngine.Time.deltaTime);
+                    if (!r.painted && r.warnings == 0) { r.tPaint += UnityEngine.Time.deltaTime; if (r.tPaint > 1f) r.painted = Painting.Paint(em, r.block); }   // 0.19.2: default colour (DarkGray) on the renderers
+                    ScreenSize(em, r, UnityEngine.Time.deltaTime);
                 }
-                catch (Exception ex) { if (r.avisos++ < 3) Registro.Aviso("SC_LongRangeTransmitter " + r.bloco.Index + ": " + ex.Message); }
+                catch (Exception ex) { if (r.warnings++ < 3) ModLog.Warn("SC_LongRangeTransmitter " + r.block.Index + ": " + ex.Message); }
             }
-            foreach (var k in mortos) radios.Remove(k);
-            // 2) canal + copia do sinal (0.19.6: tambem roda dentro do tick de fisica — ver Copiar)
-            Copiar(em, false);
-            // 3) LEDs (0.19.2): por canal, quantos ha e quantos enviam
-            var porCanal = new Dictionary<int, int>(); var emissores = new Dictionary<int, int>();
+            foreach (var k in deadSet) radios.Remove(k);
+            // 2) channel + signal copy (0.19.6: also runs inside the physics tick — see Copy)
+            Copy(em, false);
+            // 3) LEDs (0.19.2): per channel, how many there are and how many send
+            var byChannel = new Dictionary<int, int>(); var senders = new Dictionary<int, int>();
             foreach (var r in radios.Values)
             {
-                if (!r.portasOk) continue;
-                porCanal.TryGetValue(r.canal, out int c); porCanal[r.canal] = c + 1;
-                if (r.tipoLog == Ecs.PortaEntrada) { emissores.TryGetValue(r.canal, out int e2); emissores[r.canal] = e2 + 1; }
+                if (!r.portsOk) continue;
+                byChannel.TryGetValue(r.channel, out int c); byChannel[r.channel] = c + 1;
+                if (r.kindLog == Ecs.PortInput) { senders.TryGetValue(r.channel, out int e2); senders[r.channel] = e2 + 1; }
             }
             foreach (var r in radios.Values)
             {
                 try
                 {
                     r.tLed += UnityEngine.Time.deltaTime;
-                    if (!Ecs.Vivo(em, r.led) && r.tLed > 2f) { r.tLed = 0f; r.led = Led.Achar(em, r.bloco); r.ledEscrito = -1; }
-                    if (Ecs.Nulo(r.led)) continue;
-                    int estado;
-                    if (!r.portasOk || r.tipoLog == 255 || r.tipoLog > 1) estado = Led.Vermelho;
+                    if (!Ecs.Alive(em, r.led) && r.tLed > 2f) { r.tLed = 0f; r.led = Led.Find(em, r.block); r.ledWritten = -1; }
+                    if (Ecs.IsNull(r.led)) continue;
+                    int state;
+                    if (!r.portsOk || r.kindLog == 255 || r.kindLog > 1) state = Led.Red;
                     else
                     {
-                        porCanal.TryGetValue(r.canal, out int n); emissores.TryGetValue(r.canal, out int ne);
-                        estado = ne > 1 ? Led.Amarelo : (n > 1 && ne == 1) ? Led.Verde : Led.Vermelho;
+                        byChannel.TryGetValue(r.channel, out int n); senders.TryGetValue(r.channel, out int ne);
+                        state = ne > 1 ? Led.Yellow : (n > 1 && ne == 1) ? Led.Green : Led.Red;
                     }
-                    r.ledEscrito = Led.Pintar(em, r.led, estado, r.ledEscrito);
+                    r.ledWritten = Led.Paint(em, r.led, state, r.ledWritten);
                 }
                 catch (Exception) { }
             }
