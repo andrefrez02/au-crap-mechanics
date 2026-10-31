@@ -64,7 +64,7 @@ namespace CrapMechanics
         {
             // 0.19.3 (crash dump 01/10, 16:47: AV reading [port+21] — the cached port had been destroyed when the game rebuilt the BP in the
             // garage): only reads if the entity still exists and has the component
-            try { if (!Ecs.HasC(em, p, Ecs.tiPort)) return 255; var b = (byte*)em.GetComponentDataRawRO(p, Ecs.tiPort); return b == null ? (byte)255 : b[21]; } catch (Exception) { return 255; }
+            try { if (!Ecs.HasC(em, p, Ecs.tiPort)) return 255; var b = (byte*)em.GetComponentDataRawRO(p, Ecs.tiPort); return b == null ? (byte)255 : b[Layout.PortRuntime]; } catch (Exception) { return 255; }
         }
 
         /// <summary>0.19.0 (Andre: "the long transmitter isn't transmitting the camera's data"): the camera's video signal is a
@@ -75,7 +75,7 @@ namespace CrapMechanics
             v = 0f; var f = Ecs.Source(em, input, out _);
             if (Ecs.IsNull(f) || !Ecs.Alive(em, f) || !em.HasComponent(f, ComponentType.ReadOnly(Ecs.tiPort))) return false;
             var b = (byte*)em.GetComponentDataRawRO(f, Ecs.tiPort); if (b == null) return false;
-            v = *(float*)(b + 8);
+            v = *(float*)(b + Layout.PortValue);
             // no filter: the identifier may have any bit (copies the 4 bytes as they are)
             if (!rawLog && Math.Abs(v) > 1e6f) { rawLog = true; ModLog.Info("SC_LongRangeTransmitter: passing a large signal (" + v.ToString("G9") + " — camera video?) through the channel"); }
             return true;

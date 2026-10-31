@@ -72,7 +72,7 @@ namespace CrapMechanics
                     if (!Ecs.Alive(em, p) || !Ecs.HasC(em, p, Ecs.tiPort)) continue;
                     var b = (byte*)em.GetComponentDataRawRO(p, Ecs.tiPort); if (b == null) continue;
                     long k = Ecs.K(p);
-                    if (b[21] != DataInOut) { stuckSet.Remove(k); if (attempts.Remove(k)) gaveUp.Remove(k); continue; }   // resolved: forget it
+                    if (b[Layout.PortRuntime] != DataInOut) { stuckSet.Remove(k); if (attempts.Remove(k)) gaveUp.Remove(k); continue; }   // resolved: forget it
                     if (gaveUp.Contains(k)) continue;
                     // only acts after TWO consecutive passes stuck (1 s): lets the game's normal resolution happen by itself
                     stuckSet.TryGetValue(k, out int consecutive); consecutive++; stuckSet[k] = consecutive;
@@ -130,7 +130,7 @@ namespace CrapMechanics
                 else if (i >= begin + nl) { newVal = 0; role = "sender (the " + name + "'s output feeds its port)"; }
                 else return false;   // pass-through port: the direction depends on the other side, can't be stated
                 var w = (byte*)em.GetComponentDataRawRW(port, Ecs.tiPort); if (w == null) return false;
-                w[21] = newVal;
+                w[Layout.PortRuntime] = newVal;
                 ModLog.Info("Wireless Transmitter " + tr.Index + ": port " + port.Index + " had no direction because the cable ends on port " + f.Index
                     + " of " + name + " " + owner.Index + ", and this mod's ports are deliberately typeless — the game stops there. Setting it to "
                     + Name(newVal) + ": this transmitter is the " + role);
@@ -157,11 +157,11 @@ namespace CrapMechanics
                     onChannel++;
                     var ps = Ecs.Ports(em, o); if (ps.Length == 0 || !Ecs.HasC(em, ps[0], Ecs.tiPort)) continue;
                     var b = (byte*)em.GetComponentDataRawRO(ps[0], Ecs.tiPort); if (b == null) continue;
-                    if (b[21] == 0) sender = o;   // DataInput = sender
+                    if (b[Layout.PortRuntime] == 0) sender = o;   // DataInput = sender
                 }
                 if (Ecs.IsNull(sender)) return false;
                 var w = (byte*)em.GetComponentDataRawRW(port, Ecs.tiPort); if (w == null) return false;
-                w[21] = 1;   // DataOutput = receiver
+                w[Layout.PortRuntime] = 1;   // DataOutput = receiver
                 ModLog.Info("Wireless Transmitter " + tr.Index + ": port " + port.Index + " ends on a pass-through port of this mod (the direction depends on the other side of the ring, so the topology cannot say it)"
                     + " — but channel " + channel + " already has a sender (transmitter " + sender.Index + ") among its " + (onChannel + 1) + " transmitters, so this one can only be the receiver. Setting it to DataOutput");
                 return true;
@@ -205,7 +205,7 @@ namespace CrapMechanics
                     if (ps.Length > 0 && Ecs.HasC(em, ps[0], Ecs.tiPort))
                     {
                         var b = (byte*)em.GetComponentDataRawRO(ps[0], Ecs.tiPort);
-                        if (b != null) { rt = b[21]; v = *(float*)(b + 8); }
+                        if (b != null) { rt = b[Layout.PortRuntime]; v = *(float*)(b + Layout.PortValue); }
                     }
                     if (!byChannel.TryGetValue(c, out var sb)) { sb = new System.Text.StringBuilder(); byChannel[c] = sb; }
                     sb.Append(sb.Length > 0 ? ", " : "").Append(tr.Index).Append('=').Append(Name(rt))
@@ -229,7 +229,7 @@ namespace CrapMechanics
                 var sb = new System.Text.StringBuilder();
                 Ecs.RawPortPub(em, port, out var setup, out var val, out var end, out var persist);
                 sb.Append(" Port ").Append(port.Index).Append(" of block ").Append(Describe(em, tr)).Append(':');
-                sb.Append(" setup=").Append(Name(setup)).Append(" runtime=").Append(Name(b[21])).Append(" value=").Append(val.ToString("F3"));
+                sb.Append(" setup=").Append(Name(setup)).Append(" runtime=").Append(Name(b[Layout.PortRuntime])).Append(" value=").Append(val.ToString("F3"));
                 sb.Append("; connected to ").Append(Describe(em, persist));
                 sb.Append("; the game's end is ").Append(Describe(em, end));
                 var f = Ecs.Source(em, port, out var trail);

@@ -71,8 +71,8 @@ namespace CrapMechanics
             long k = Ecs.K(e);
             {
                 var p = (byte*)em.GetComponentDataRawRW(e, tiPaint); if (p == null) return false;
-                byte color = p[0], defaultValue = p[8];
-                if (color == 0 && defaultValue != 0) { for (int i = 0; i < 8; i++) p[i] = defaultValue; color = defaultValue; }
+                byte color = p[Layout.PaintPainted], defaultValue = p[Layout.PaintDefault];
+                if (color == 0 && defaultValue != 0) { for (int i = 0; i < 8; i++) p[Layout.PaintPainted + i] = defaultValue; color = defaultValue; }
                 SpaceshipComponentExtensions.GetProperties((SpaceshipComponentColor)color, out float4 c, out SpecularSetup s);
                 var mem = new CRPRendererMemory_Color(c, s);
                 int writtenSet = 0;

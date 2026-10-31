@@ -294,7 +294,7 @@ namespace CrapMechanics
                 if (!em.HasComponent(p, ComponentType.ReadOnly(tiPort))) { reason = "port " + p.Index + " has no SpaceshipElectricPort"; return false; }
                 var port = (Ecs.HasC(em, p, tiPort) ? (byte*)em.GetComponentDataRawRO(p, tiPort) : null);
                 if (port == null) { reason = "port GetComponentDataRawRO returned null"; return false; }
-                v = *(float*)(port + 8);
+                v = *(float*)(port + Layout.PortValue);
                 if (float.IsNaN(v) || float.IsInfinity(v) || v > 1e6f) v = 0f;
                 return true;
             }
@@ -315,7 +315,7 @@ namespace CrapMechanics
                     if (!Alive(em, p)) { sb.Append(" dead]"); continue; }
                     if (!em.HasComponent(p, ComponentType.ReadOnly(tiPort))) { sb.Append(" no SpaceshipElectricPort]"); continue; }
                     var port = (Ecs.HasC(em, p, tiPort) ? (byte*)em.GetComponentDataRawRO(p, tiPort) : null);
-                    sb.Append(" raw+8=").Append((*(float*)(port + 8)).ToString("F3")).Append(" bytes=");
+                    sb.Append(" value=").Append((*(float*)(port + Layout.PortValue)).ToString("F3")).Append(" bytes=");
                     for (int k = 0; k < 32; k++) sb.Append(port[k].ToString("x2"));
                     try { var sp = *(SpaceshipElectricPort*)port; sb.Append(" DataValue=").Append(sp.DataValue().ToString("F3")).Append(" DataValue01=").Append(sp.DataValue01().ToString("F3")); }
                     catch (Exception ex) { sb.Append(" DataValue failed: ").Append(ex.Message); }
@@ -343,7 +343,7 @@ namespace CrapMechanics
             {
                 if (!Alive(em, p) || !em.HasComponent(p, ComponentType.ReadOnly(tiPort))) return 255;
                 var b = (HasC(em, p, tiPort) ? (byte*)em.GetComponentDataRawRO(p, tiPort) : null); if (b == null) return 255;
-                byte setup = b[20], run = b[21];
+                byte setup = b[Layout.PortSetup], run = b[Layout.PortRuntime];
                 if ((setup == 3 || setup == 5) && (run == PortInput || run == PortOutput)) return run;
                 return setup;
             }
@@ -356,8 +356,8 @@ namespace CrapMechanics
             {
                 if (!Alive(em, p) || !em.HasComponent(p, ComponentType.ReadOnly(tiPort))) return false;
                 var b = (Ecs.HasC(em, p, tiPort) ? (byte*)em.GetComponentDataRawRO(p, tiPort) : null); if (b == null) return false;
-                val = *(float*)(b + 8); if (float.IsNaN(val) || float.IsInfinity(val) || val > 1e6f || val < -1e6f) val = 0f;
-                otherEnd = *(Entity*)(b + 12); kind = b[20];
+                val = *(float*)(b + Layout.PortValue); if (float.IsNaN(val) || float.IsInfinity(val) || val > 1e6f || val < -1e6f) val = 0f;
+                otherEnd = *(Entity*)(b + Layout.PortEnd); kind = b[Layout.PortSetup];
                 return true;
             }
             catch (Exception) { return false; }
@@ -404,7 +404,7 @@ namespace CrapMechanics
                 if (!seen.Add(K(cur))) return Entity.Null;
                 cells++;
                 var b = (byte*)em.GetComponentDataRawRO(cur, tiCable); if (b == null) return Entity.Null;
-                var fwd = *(Entity*)(b + 0x10); var bwd = *(Entity*)(b + 0x18);
+                var fwd = *(Entity*)(b + Layout.CellFwd); var bwd = *(Entity*)(b + Layout.CellBwd);
                 bool fwdIsPrev = fwd.Index == prev.Index && fwd.Version == prev.Version, bwdIsPrev = bwd.Index == prev.Index && bwd.Version == prev.Version;
                 Entity nxt = fwdIsPrev ? bwd : bwdIsPrev ? fwd : (!IsNull(fwd) && !seen.Contains(K(fwd)) ? fwd : bwd);
                 if (IsNull(nxt) || !Alive(em, nxt)) return Entity.Null;
@@ -463,7 +463,7 @@ namespace CrapMechanics
             {
                 if (!Alive(em, p) || !em.HasComponent(p, ComponentType.ReadOnly(tiPort))) return false;
                 var b = (Ecs.HasC(em, p, tiPort) ? (byte*)em.GetComponentDataRawRO(p, tiPort) : null); if (b == null) return false;
-                persist = *(Entity*)b; val = *(float*)(b + 8); end = *(Entity*)(b + 12); kind = b[20];
+                persist = *(Entity*)(b + Layout.PortPersist); val = *(float*)(b + Layout.PortValue); end = *(Entity*)(b + Layout.PortEnd); kind = b[Layout.PortSetup];
                 if (float.IsNaN(val) || float.IsInfinity(val)) val = 0f;
                 return true;
             }
@@ -472,12 +472,12 @@ namespace CrapMechanics
 
         public static unsafe void WritePort(EntityManager em, Entity p, float v)
         {
-            try { if (!Alive(em, p)) return; var b = (Ecs.HasC(em, p, tiPort) ? (byte*)em.GetComponentDataRawRW(p, tiPort) : null); if (b != null) *(float*)(b + 8) = v; } catch (Exception) { }
+            try { if (!Alive(em, p)) return; var b = (Ecs.HasC(em, p, tiPort) ? (byte*)em.GetComponentDataRawRW(p, tiPort) : null); if (b != null) *(float*)(b + Layout.PortValue) = v; } catch (Exception) { }
         }
-        /// <summary>0.11.0: _index of the port (+22): its position in the prefab's _electricPorts list.</summary>
+        /// <summary>0.11.0: _index of the port: its position in the prefab's _electricPorts list.</summary>
         public static unsafe int PortIndex(EntityManager em, Entity p)
         {
-            try { var b = (Ecs.HasC(em, p, tiPort) ? (byte*)em.GetComponentDataRawRO(p, tiPort) : null); return b == null ? -1 : b[22]; } catch (Exception) { return -1; }
+            try { var b = (Ecs.HasC(em, p, tiPort) ? (byte*)em.GetComponentDataRawRO(p, tiPort) : null); return b == null ? -1 : b[Layout.PortIndex]; } catch (Exception) { return -1; }
         }
         /// <summary>First port of the requested type (0 input, 1 output, 2 power), in the prefab's order.</summary>
         public static Entity PortOfType(EntityManager em, Entity block, byte kind)
@@ -487,7 +487,7 @@ namespace CrapMechanics
         }
 
         // ---- power (SCElectricPower, which the game puts on every component with a red port):
-        // +32 _consumptionPerSec, +36 _suppliedState (0 NonSupplied, 1 Deficiency, 2 Supplied), +37 _isElectricityInterrupted
+        // _consumptionPerSec, _suppliedState (0 NonSupplied, 1 Deficiency, 2 Supplied), _isElectricityInterrupted
         public static unsafe bool HasPower(EntityManager em, Entity block, out byte state)
         {
             state = 255;
@@ -495,13 +495,13 @@ namespace CrapMechanics
             {
                 if (!em.HasComponent(block, ComponentType.ReadOnly(tiPower))) return false;
                 var b = (Ecs.HasC(em, block, tiPower) ? (byte*)em.GetComponentDataRawRO(block, tiPower) : null); if (b == null) return false;
-                state = b[36]; return state == 2 && b[37] == 0;
+                state = b[Layout.PowerState]; return state == 2 && b[Layout.PowerCut] == 0;
             }
             catch (Exception) { return false; }
         }
         public static unsafe void SetConsumption(EntityManager em, Entity block, float pps)
         {
-            try { if (!em.HasComponent(block, ComponentType.ReadOnly(tiPower))) return; var b = (Ecs.HasC(em, block, tiPower) ? (byte*)em.GetComponentDataRawRW(block, tiPower) : null); if (b != null) *(float*)(b + 32) = pps; } catch (Exception) { }
+            try { if (!em.HasComponent(block, ComponentType.ReadOnly(tiPower))) return; var b = (Ecs.HasC(em, block, tiPower) ? (byte*)em.GetComponentDataRawRW(block, tiPower) : null); if (b != null) *(float*)(b + Layout.PowerCons) = pps; } catch (Exception) { }
         }
 
         // ---- the block's prefab (SCPrefab._prefab = hash of the name)

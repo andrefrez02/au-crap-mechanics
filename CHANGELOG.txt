@@ -1,3 +1,7 @@
+Version 0.28.3
+
+Fixed: the game crashed when starting a selection with G in design mode after the game update of 31 October. The update added four fields to the garage's data, and the mod read the garage at fixed byte offsets, so it took a selection coordinate for a pointer. Every game struct the mod reads or writes directly (ports, power, inventory maps, garage, fuel, cables, transmitter, network, radar, seat bindings, renderer, paint, camera, monitor, player camera) is now looked up by field name when the mod loads, so a game update that moves fields no longer breaks it. If an update removes a field the mod needs, it stays off and the log names the field, instead of crashing or corrupting the game.
+
 Version 0.28.2
 
 Fixed: ships and cars came apart at launch. In 0.28.1 the line that installs the mod's game hooks ended up inside a comment, so the joint of a piston or bearing was no longer created in the same physics tick in which the game splits the parts. The wheel friction, the hidden mirrored parts, the pause while a world unloads, the radar icon and the time rewind button came back too.
