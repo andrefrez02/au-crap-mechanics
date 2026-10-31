@@ -258,7 +258,7 @@ namespace CrapMechanics
         {
             if (!Ecs.HasC(em, input, Ecs.tiPort)) return false;
             var b = (byte*)em.GetComponentDataRawRW(input, Ecs.tiPort); if (b == null) return false;
-            var end = (Entity*)(b + 12);
+            var end = (Entity*)(b + Layout.PortEnd);
             if (end->Index == output.Index && end->Version == output.Version) return false;
             *end = output; return true;
         }
@@ -296,8 +296,8 @@ namespace CrapMechanics
                 for (int i = 0; i < 2048 && Ecs.IsCable(em, cur) && seen.Add(Ecs.K(cur)); i++)
                 {
                     var b = (byte*)em.GetComponentDataRawRO(cur, Ecs.tiCable); if (b == null) break;
-                    float mp = *(float*)(b + 12); if (mp > 0f && mp < m) m = mp;
-                    var fwd = *(Entity*)(b + 0x10); var bwd = *(Entity*)(b + 0x18);
+                    float mp = *(float*)(b + Layout.CellMaxPower); if (mp > 0f && mp < m) m = mp;
+                    var fwd = *(Entity*)(b + Layout.CellFwd); var bwd = *(Entity*)(b + Layout.CellBwd);
                     var nxt = (fwd.Index == prev.Index && fwd.Version == prev.Version) ? bwd : fwd; prev = cur; cur = nxt;
                     if (Ecs.IsNull(cur)) break;
                 }
@@ -318,7 +318,7 @@ namespace CrapMechanics
             if (Ecs.Alive(em, current) && Ecs.HasC(em, current, Ecs.tiPower)) return current;
             var kinds = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppStructArray<ComponentType>(1); kinds[0] = ComponentType.ReadWrite(Ecs.tiPower);
             var e = em.CreateEntity(kinds);
-            var b = (byte*)em.GetComponentDataRawRW(e, Ecs.tiPower); if (b != null) for (int i = 0; i < 44; i++) b[i] = 0;
+            var b = (byte*)em.GetComponentDataRawRW(e, Ecs.tiPower); if (b != null) for (int i = 0; i < Layout.PowerSize; i++) b[i] = 0;
             return e;
         }
         /// <summary>Makes sure the ghost is in the root's ElectricCircuitComponent buffer (BufferHeader: Pointer, Length, Capacity; elements inline
@@ -338,7 +338,7 @@ namespace CrapMechanics
         {
             if (!Ecs.Alive(em, ghostE) || !Ecs.HasC(em, ghostE, Ecs.tiPower)) return;
             var b = (byte*)em.GetComponentDataRawRW(ghostE, Ecs.tiPower); if (b == null) return;
-            *(float*)(b + 28) = generates; *(float*)(b + 32) = consumes;
+            *(float*)(b + Layout.PowerGen) = generates; *(float*)(b + Layout.PowerCons) = consumes;
         }
         /// <summary>Side J = joint, side A = ring. fJ / fA = power ports at the other ends of the cables. This only prepares (roots and
         /// ghosts in the circuit); how much goes through comes from Solve, which looks at all the bridges together.</summary>
@@ -376,7 +376,7 @@ namespace CrapMechanics
             {
                 if (ghosts.Contains(Ecs.K(c)) || !Ecs.HasC(em, c, Ecs.tiPower)) continue;
                 var b = (byte*)em.GetComponentDataRawRO(c, Ecs.tiPower); if (b == null) continue;
-                n.stored += (float)*(double*)b; n.gen += *(float*)(b + 28); n.cons += *(float*)(b + 32);
+                n.stored += (float)*(double*)(b + Layout.PowerStored); n.gen += *(float*)(b + Layout.PowerGen); n.cons += *(float*)(b + Layout.PowerCons);
             }
             return n;
         }
@@ -597,9 +597,9 @@ namespace CrapMechanics
                 var r = PortRenderer(em, it.block, it.port);
                 if (Ecs.IsNull(r)) { noRenderer++; meshWritten[it.k] = wants; continue; }
                 var p = (byte*)em.GetComponentDataRawRW(r, tiRendData); if (p == null) continue;
-                int current = *(int*)(p + 8);
+                int current = *(int*)(p + Layout.RendDraw0);
                 if (!idsLogged) { idsLogged = true; ModLog.Info("pass-through plugs: plug mesh ids — Unset " + idUnset + ", InOut " + idInOut + ", Power " + idPower + "; first plug renderer has " + current + (current == idUnset || current == idInOut || current == idPower ? " (matches)" : " (does NOT match — the swap may not show)")); }
-                if (current != wants) *(int*)(p + 8) = wants;
+                if (current != wants) *(int*)(p + Layout.RendDraw0) = wants;
                 meshWritten[it.k] = wants;
             }
             if (noRenderer > 0 && colorWarnings++ < 1) ModLog.Warn("pass-through plugs: " + noRenderer + " port(s) without a plug renderer found");
@@ -607,7 +607,7 @@ namespace CrapMechanics
         /// <summary>Cable type from the cell plugged into the port: SCTypeCableCell._type (+1, SpaceshipCableType: 0 Data, 1 Power, 2 PowerNano, 3 Plasma).</summary>
         static unsafe bool IsPowerCable(EntityManager em, Entity cell)
         {
-            try { var b = (byte*)em.GetComponentDataRawRO(cell, Ecs.tiCable); return b != null && (b[1] == 1 || b[1] == 2); } catch (Exception) { return false; }
+            try { var b = (byte*)em.GetComponentDataRawRO(cell, Ecs.tiCable); return b != null && (b[Layout.CellType] == 1 || b[Layout.CellType] == 2); } catch (Exception) { return false; }
         }
 
         /// <summary>Plugin exit / cleanup with the world alive: destroys the ghosts.</summary>

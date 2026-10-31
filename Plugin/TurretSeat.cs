@@ -854,7 +854,7 @@ namespace CrapMechanics
             {
                 var l = Ecs.QueryList(qMine); if (l.Count == 0) return Entity.Null;
                 var b = (Ecs.HasC(em, l[0], tiPCD) ? (byte*)em.GetComponentDataRawRO(l[0], tiPCD) : null); if (b == null) return Entity.Null;
-                return *(Entity*)(b + 0xE8);   // PlayerControllerData._cameraEntity
+                return *(Entity*)(b + Layout.PlayerCamera);   // PlayerControllerData._cameraEntity
             }
             catch (Exception) { return Entity.Null; }
         }
@@ -960,13 +960,13 @@ namespace CrapMechanics
                 if (qSeatSing.CalculateEntityCountWithoutFiltering() != 1) { Reason("no bindings singleton"); return; }
                 var eSing = qSeatSing.GetSingletonEntity(); if (!Ecs.HasC(em, eSing, tiSeatSing)) { Reason("singleton without data"); return; }
                 var b = (byte*)em.GetComponentDataRawRW(eSing, tiSeatSing); if (b == null) { Reason("null singleton"); return; }
-                var list = *(byte**)b; if (list == null) { Reason("no list"); return; }
+                var list = *(byte**)(b + Layout.SeatList); if (list == null) { Reason("no list"); return; }
                 var ptr = *(byte**)list; int n = *(int*)(list + 8);
                 if (ptr == null || n <= 0 || n > 4096) { Reason("this seat has no bound parts (" + n + ")"); return; }
                 int insideF = 0, insideJ = 0, inside = 0; float minF = 1e9f, minJ = 1e9f; var detail = new System.Text.StringBuilder();
                 for (int i = 0; i < n; i++)
                 {
-                    var el = ptr + i * 96; var e = *(Entity*)(el + 64);
+                    var el = ptr + i * Layout.BindSize; var e = *(Entity*)(el + Layout.BindTarget);
                     if (!Ecs.Alive(em, e) || !Ecs.HasC(em, e, Ecs.tiLTW)) continue;
                     var ltw = (LocalToWorld*)em.GetComponentDataRawRO(e, Ecs.tiLTW); if (ltw == null) continue;
                     var q = ltw->Value.c3;
@@ -976,7 +976,7 @@ namespace CrapMechanics
                     // 0.13.2: the game accepts up to 4.5 squared (~2.1 m); here up to BindsReach (default 4.5 m = the click distance for binding):
                     // scales the squared distance (keeps the order) so that "inside" = up to BindsReach
                     float scale = 4.5f / (BindsReach * BindsReach);
-                    *(float*)(el + 88) = d2 * scale;
+                    *(float*)(el + Layout.BindDistance) = d2 * scale;
                     if (dF <= 4.5f) insideF++; if (dF < minF) minF = dF; if (d2 * scale <= 4.5f) inside++;
                     if (!loggedBinds) detail.Append(" #").Append(i).Append(' ').Append(System.Math.Sqrt(d2).ToString("F2")).Append('m');
                 }
@@ -1004,21 +1004,21 @@ namespace CrapMechanics
                 if (qSeatSing.CalculateEntityCountWithoutFiltering() != 1) return;
                 var eSing = qSeatSing.GetSingletonEntity(); if (!Ecs.HasC(em, eSing, tiSeatSing)) return;
                 var b = (byte*)em.GetComponentDataRawRW(eSing, tiSeatSing); if (b == null) return;
-                var list = *(byte**)b; if (list == null) return;
+                var list = *(byte**)(b + Layout.SeatList); if (list == null) return;
                 var ptr = *(byte**)list; int n = *(int*)(list + 8);
                 if (ptr == null || n <= 0 || n > 4096) return;
                 float scale = 4.5f / (SeatBindsReach * SeatBindsReach);
                 int inside = 0, insideGame = 0; float minD = 1e9f;
                 for (int i = 0; i < n; i++)
                 {
-                    var el = ptr + i * 96; var e = *(Entity*)(el + 64);
+                    var el = ptr + i * Layout.BindSize; var e = *(Entity*)(el + Layout.BindTarget);
                     if (!Ecs.Alive(em, e) || !Ecs.HasC(em, e, Ecs.tiLTW)) continue;
                     var ltw = (LocalToWorld*)em.GetComponentDataRawRO(e, Ecs.tiLTW); if (ltw == null) continue;
                     var q = ltw->Value.c3;
                     float dx = q.x - GameEye.x, dy = q.y - GameEye.y, dz = q.z - GameEye.z; float d2 = dx * dx + dy * dy + dz * dz;
                     if (d2 <= 4.5f) insideGame++;
                     if (d2 < minD) minD = d2;
-                    *(float*)(el + 88) = d2 * scale;
+                    *(float*)(el + Layout.BindDistance) = d2 * scale;
                     if (d2 * scale <= 4.5f) inside++;
                 }
                 if (!loggedSeatBinds)

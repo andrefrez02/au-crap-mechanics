@@ -71,9 +71,9 @@ namespace CrapMechanics
                 if (!Ecs.HasC(em, cur, tiCell)) break;
                 hasCable = true;
                 var c = (byte*)em.GetComponentDataRawRO(cur, tiCell); if (c == null) break;
-                if (cableKind == 255) cableKind = c[1];
+                if (cableKind == 255) cableKind = c[Layout.CellType];
                 if (Ecs.Prefab(em, cur) != hCable) axisOnly = false;
-                var fwd = *(Entity*)(c + 16); var bwd = *(Entity*)(c + 24);
+                var fwd = *(Entity*)(c + Layout.CellFwd); var bwd = *(Entity*)(c + Layout.CellBwd);
                 var nxt = Same(fwd, prev) ? bwd : fwd;
                 if (Same(nxt, prev)) break;
                 prev = cur; cur = nxt;

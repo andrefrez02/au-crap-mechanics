@@ -145,12 +145,12 @@ namespace CrapMechanics
                 if (kind == "Camera")
                 {
                     var c = Ecs.HasC(em, e, tiCam) ? (byte*)em.GetComponentDataRawRO(e, tiCam) : null;
-                    if (c != null) { var ce = *(Entity*)c; sb.Append(" cameraEntity ").Append(ce.Index).Append(Ecs.Alive(em, ce) ? "" : "(DEAD)").Append(" slice ").Append(*(int*)(c + 0x30)).Append(" nextDraw ").Append((*(double*)(c + 0x28)).ToString("F2")); }
+                    if (c != null) { var ce = *(Entity*)(c + Layout.CamEntity); sb.Append(" cameraEntity ").Append(ce.Index).Append(Ecs.Alive(em, ce) ? "" : "(DEAD)").Append(" slice ").Append(*(int*)(c + Layout.CamSlice)).Append(" nextDraw ").Append((*(double*)(c + Layout.CamNextDraw)).ToString("F2")); }
                 }
                 if (kind == "Monitor")
                 {
                     var m = Ecs.HasC(em, e, tiMon) ? (byte*)em.GetComponentDataRawRO(e, tiMon) : null;
-                    if (m != null) { sb.Append(" slices (").Append(*(int*)(m + 0x28)).Append(',').Append(*(int*)(m + 0x2C)).Append(") lastSignals (").Append((*(float*)(m + 0x20)).ToString("G9")).Append(',').Append((*(float*)(m + 0x24)).ToString("G9")).Append(')'); }
+                    if (m != null) { sb.Append(" slices (").Append(*(int*)(m + Layout.MonSlices)).Append(',').Append(*(int*)(m + Layout.MonSlices + 4)).Append(") lastSignals (").Append((*(float*)(m + Layout.MonSignals)).ToString("G9")).Append(',').Append((*(float*)(m + Layout.MonSignals + 4)).ToString("G9")).Append(')'); }
                 }
             }
             catch (Exception ex) { sb.Append(" [").Append(ex.Message).Append(']'); }
@@ -161,7 +161,7 @@ namespace CrapMechanics
                 var p = ports[i]; sb.Append("\n      [").Append(i).Append("] ").Append(p.Index).Append(':').Append(p.Version);
                 if (!Ecs.Alive(em, p)) { sb.Append(" DEAD"); continue; }
                 if (!Ecs.RawPortPub(em, p, out var t, out var v, out var end, out var persist)) { sb.Append(" no SpaceshipElectricPort"); continue; }
-                byte rt = 255; try { var b = Ecs.HasC(em, p, tiPortAlt) ? (byte*)em.GetComponentDataRawRO(p, tiPortAlt) : null; if (b != null) rt = b[21]; } catch (Exception) { }
+                byte rt = 255; try { var b = Ecs.HasC(em, p, tiPortAlt) ? (byte*)em.GetComponentDataRawRO(p, tiPortAlt) : null; if (b != null) rt = b[Layout.PortRuntime]; } catch (Exception) { }
                 sb.Append(" setup ").Append(t).Append(" runtime ").Append(rt).Append(" value ").Append(v.ToString("G9"));
                 sb.Append(" persistent -> ").Append(Who(em, persist)).Append(" runtimeEnd -> ").Append(Who(em, end));
                 if (t == Ecs.PortInput || rt == Ecs.PortInput || t == 3)

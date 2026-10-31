@@ -463,7 +463,7 @@ namespace CrapMechanics
                 }
                 if (!em.HasComponent(m.block, ComponentType.ReadOnly(tiFuel))) { if (m.fuelLog != "no FuelData") { m.fuelLog = "no FuelData"; ModLog.Warn(m.name + " " + m.block.Index + ": block has no FuelData (the game didn't connect it to the pipes?)"); } return 0f; }
                 var fd = (Ecs.HasC(em, m.block, tiFuel) ? (byte*)em.GetComponentDataRawRW(m.block, tiFuel) : null);
-                double* cur = (double*)(fd + 24);
+                double* cur = (double*)(fd + Layout.FuelCurrent);
                 double sum = System.Math.Max(0.0, cur[0]) + System.Math.Max(0.0, cur[1]) + System.Math.Max(0.0, cur[2]);
                 m.fuelHas = (float)sum;
                 float abs = System.Math.Abs(s);

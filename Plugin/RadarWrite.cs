@@ -18,7 +18,7 @@ namespace CrapMechanics
     /// that matches is the one used (world w=1, world w=0, relative to the planet).</summary>
     internal static class RadarWrite
     {
-        const int T = 16;
+        static int T => Layout.GpuSize;   // RadarLocationGPUData stride
         static TypeIndex tiGPU, tiSing, tiStation; static EntityQuery qGPU, qSing, qStation; static bool ok, failed;
         static int variant = -1, frame = -1, writtenSet, logs, attempts; static float tLog = 9f; static string latest = "";
 
@@ -110,8 +110,8 @@ namespace CrapMechanics
             {
                 var sings = Ecs.QueryList(qSing); if (sings.Count == 0) return;
                 var sp = (byte*)em.GetComponentDataRawRO(sings[0], tiSing); if (sp == null) return;
-                if (sp[153] == 0) return;   // _anyActiveRadar
-                var view = *(float4x4*)(sp + 8); var proj = *(float4x4*)(sp + 72);
+                if (sp[Layout.RadarAny] == 0) return;   // _anyActiveRadar
+                var view = *(float4x4*)(sp + Layout.RadarView); var proj = *(float4x4*)(sp + Layout.RadarProj);
                 var w2p = math.mul(proj, view);
                 var owners = Ecs.QueryList(qGPU); if (owners.Count == 0) return;
                 var h = Header(em, owners[0]); if (h == null) return;
@@ -122,7 +122,7 @@ namespace CrapMechanics
                 int v = variant < 0 ? 0 : variant;
                 float3 planet = default;   // (only variant 2 uses it; without FrameData, planet = origin)
                 // no duplicates: if the game already placed an icon with our type (ghost picked up by the job), skip that one
-                var kindsInBuffer = new HashSet<uint>(); for (int i = 0; i < n; i++) kindsInBuffer.Add(*(uint*)(el + i * T + 8));
+                var kindsInBuffer = new HashSet<uint>(); for (int i = 0; i < n; i++) kindsInBuffer.Add(*(uint*)(el + i * T + Layout.GpuType));
                 int add = 0;
                 foreach (var (pos, icon) in icons) if (!kindsInBuffer.Contains(icon)) add++;
                 if (add == 0) return;
@@ -132,7 +132,8 @@ namespace CrapMechanics
                 {
                     if (kindsInBuffer.Contains(icon)) continue;
                     var uv = Uv(w2p, pos, planet, v);
-                    var q = el + k * T; *(float2*)q = uv; *(uint*)(q + 8) = icon; *(float*)(q + 12) = 0f; k++;
+                    var q = el + k * T; for (int b = 0; b < T; b++) q[b] = 0;
+                    *(float2*)(q + Layout.GpuUv) = uv; *(uint*)(q + Layout.GpuType) = icon; *(float*)(q + Layout.GpuTarget) = 0f; k++;
                 }
                 *(int*)(h + 8) = k; writtenSet++;
                 ownerWritten = owners[0]; nBefore = n; kAfter = k; written = new byte[(k - n) * T];
@@ -151,7 +152,7 @@ namespace CrapMechanics
             {
                 if (qStation.Equals(default(EntityQuery)) || tiStation.Value == 0) return 0;
                 var targets = new List<float2>();
-                for (int i = 0; i < n; i++) if (*(uint*)(el + i * T + 8) == 0) targets.Add(*(float2*)(el + i * T));
+                for (int i = 0; i < n; i++) if (*(uint*)(el + i * T + Layout.GpuType) == 0) targets.Add(*(float2*)(el + i * T + Layout.GpuUv));
                 if (targets.Count == 0) return -1;
                 var ests = Ecs.QueryList(qStation); if (ests.Count == 0) return -1;
                 int[] hits = new int[3]; float[] error = new float[3];

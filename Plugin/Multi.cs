@@ -78,7 +78,7 @@ namespace CrapMechanics
                 foreach (var e in Ecs.QueryList(qClients))
                 {
                     var c = (byte*)em.GetComponentDataRawRO(e, tiClient); if (c == null) continue;
-                    ulong id = *(ulong*)c;   // NetcoreClient._steamID (+0)
+                    ulong id = *(ulong*)(c + Layout.ClientSteam);   // NetcoreClient._steamID
                     if (id != 0 && id != me) n++;
                 }
             }
@@ -94,8 +94,8 @@ namespace CrapMechanics
                 foreach (var e in Ecs.QueryList(qNet))
                 {
                     var p = (byte*)em.GetComponentDataRawRO(e, tiNet); if (p == null) continue;
-                    server = p[0] != 0;   // Netcore.Singleton._isServer (+0)
-                    s = (Status)(*(int*)(p + 4));   // _networkStatus (+4)
+                    server = p[Layout.NetServer] != 0;   // Netcore.Singleton._isServer
+                    s = (Status)(*(int*)(p + Layout.NetStatus));   // _networkStatus
                     return;
                 }
             }

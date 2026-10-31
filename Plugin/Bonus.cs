@@ -49,7 +49,7 @@ namespace CrapMechanics
         {
             {
                 var cs = (Ecs.HasC(em, core, tiCore) ? (byte*)em.GetComponentDataRawRW(core, tiCore) : null); if (cs == null) return;
-                var m = *(Map**)(cs + 104); if (m == null || m->Keys == null || m->Ptr == null) return;
+                var m = *(Map**)(cs + Layout.CoreMax); if (m == null || m->Keys == null || m->Ptr == null) return;
                 if (!layoutLogged) { layoutLogged = true; ModLog.Info("bonus: availability map Count=" + m->Count + " Capacity=" + m->Capacity + " Buckets=" + m->BucketCapacity + " SizeOfTValue=" + m->SizeOfTValue); }
                 if (m->SizeOfTValue != 4 || m->Count <= 0 || m->Count > m->Capacity || m->BucketCapacity <= 0) { failed = true; ModLog.Warn("bonus: the map doesn't have the expected format — disabled"); return; }
 
@@ -66,7 +66,7 @@ namespace CrapMechanics
                 // 0.7.3: the garage does NOT use the map above to limit: GarageGrabber.SetUsedComponentsCountMapJob (Burst) reads
                 // Core.Singleton._standaloneComponentsAvailability (+96), adds up per group (SCPrefabData +0x3c) and subtracts what is used ->
                 // _remainingComponentsMapPtr. So the bonus goes into both maps (+104 is the one the inventory shows).
-                var sm = *(Map**)(cs + 96);
+                var sm = *(Map**)(cs + Layout.CoreStandalone);
                 if (sm != null && sm->Keys != null && sm->Ptr != null && sm->SizeOfTValue == 4 && sm->Count > 0 && sm->Count <= sm->Capacity && sm->BucketCapacity > 0)
                 {
                     if (!layoutSLogged) { layoutSLogged = true; ModLog.Info("bonus: standalone map Count=" + sm->Count + " Capacity=" + sm->Capacity + "; before bonus: Radar=" + Read(sm, Ecs.HashPrefab("SC_Radar"), out _) + " DataCable=" + Read(sm, Ecs.HashPrefab(CableData), out _) + " PowerCable=" + Read(sm, Ecs.HashPrefab(CablePower), out _)); }
@@ -90,8 +90,8 @@ namespace CrapMechanics
             }
         }
 
-        /// <summary>Radar diagnostics: the inventory/garage uses GarageGrabberSingleton._remainingComponentsMapPtr (+216,
-        /// "how many more I can place") and _isComponentsLimitOverflow (+129, "over the limit" -> won't let you fly). Logs when it changes:
+        /// <summary>Radar diagnostics: the inventory/garage uses GarageGrabberSingleton._remainingComponentsMapPtr
+        /// ("how many more I can place") and _isComponentsLimitOverflow ("over the limit" -> won't let you fly). Logs when it changes:
         /// maximum in the Core's map, remaining in the garage, how many radars exist in the world.</summary>
         static int maxRadar = -1, standRadar = -1; static bool layoutSLogged; static string radarLog; static TypeIndex tiGar; static EntityQuery qGar; static bool garOk;
         static unsafe void Garage(EntityManager em)
@@ -106,9 +106,8 @@ namespace CrapMechanics
                     var g = (Ecs.HasC(em, gs[0], tiGar) ? (byte*)em.GetComponentDataRawRO(gs[0], tiGar) : null);
                     if (g != null)
                     {
-                        if (offOver < 0) { offOver = GarOffset("_isComponentsLimitOverflow"); offMap = GarOffset("_remainingComponentsMapPtr"); }
-                        over = (*(g + offOver) != 0).ToString();
-                        var mr = *(Map**)(g + offMap);
+                        over = (*(g + Layout.GarOver) != 0).ToString();
+                        var mr = *(Map**)(g + Layout.GarRemaining);
                         if (mr == null) rest = "null map";
                         else if (mr->SizeOfTValue != 4 || mr->Count < 0 || mr->Count > mr->Capacity || mr->BucketCapacity <= 0) rest = "map with an odd format";
                         else { int v = Read(mr, Ecs.HashPrefab("SC_Radar"), out bool found); rest = found ? v.ToString() : "not in map"; }
@@ -120,14 +119,6 @@ namespace CrapMechanics
                 if (s != radarLog) { radarLog = s; ModLog.Info(s + ", radars in world=" + n); }   // (0.7.8: the count flickers between garage and flight — only logs when the remainder changes)
             }
             catch (Exception ex) { if (radarLog != "error") { radarLog = "error"; ModLog.Warn("bonus/radar diagnostics: " + ex.Message); } }
-        }
-
-        /// <summary>A GarageGrabberSingleton field's offset in the raw component, read from the game (game updates move the fields).</summary>
-        static int offOver = -1, offMap = -1;
-        static int GarOffset(string field)
-        {
-            var f = typeof(GarageGrabberSingleton).GetField("NativeFieldInfoPtr_" + field, System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
-            return (int)Il2CppInterop.Runtime.IL2CPP.il2cpp_field_get_offset((IntPtr)f.GetValue(null)) - 0x10;
         }
 
         static unsafe void Apply(Map* m, int mapId, string cable, int bonus, List<string> releasedSet)

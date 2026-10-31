@@ -36,6 +36,11 @@ namespace CrapMechanics
                              "This copy stays OFF — delete the folder BepInEx/plugins/" + OldNames.OldFolder + " (settings, knobs and blueprints are carried over by this version).");
                 return;
             }
+            if (!Layout.Init(out var layoutError))   // the game's struct fields this mod reads raw, looked up by name
+            {
+                ModLog.Error("this version of the game changed a struct this mod reads (" + layoutError + "). This copy stays OFF — update Crap Mechanics.");
+                return;
+            }
             OldNames.Carry(Config);   // 0.27.0: the .cfg and knobs.txt of the old plugin name ("Mecanica"), before any Bind
             // 0.13.0: .cfg sections/keys in English; CfgMigration.Of carries the value over from the old (Portuguese) entry to the new one
             var C = Config;

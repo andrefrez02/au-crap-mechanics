@@ -60,7 +60,7 @@ namespace CrapMechanics
             if (tiTransm.Value != 0 && Ecs.HasC(em, block, tiTransm))
             {
                 var p = (byte*)em.GetComponentDataRawRO(block, tiTransm);
-                if (p != null) { var ind = *(Entity*)(p + 24); if (Ecs.Alive(em, ind) && Ecs.HasC(em, ind, tiMem)) { foundOne = ind; how = "the transmitter's indicator entity"; } }
+                if (p != null) { var ind = *(Entity*)(p + Layout.TransmIndicator); if (Ecs.Alive(em, ind) && Ecs.HasC(em, ind, tiMem)) { foundOne = ind; how = "the transmitter's indicator entity"; } }
             }
             if (Ecs.IsNull(foundOne))
             {
@@ -90,7 +90,8 @@ namespace CrapMechanics
         static unsafe float Extension(EntityManager em, Entity e)
         {
             if (tiBounds.Value == 0 || !Ecs.HasC(em, e, tiBounds)) return float.MaxValue;
-            var p = (float*)em.GetComponentDataRawRO(e, tiBounds); if (p == null) return float.MaxValue;
+            var raw = (byte*)em.GetComponentDataRawRO(e, tiBounds); if (raw == null) return float.MaxValue;
+            var p = (float*)(raw + Layout.BoundsAabb);
             return Math.Max(Math.Abs(p[3]), Math.Max(Math.Abs(p[4]), Math.Abs(p[5])));
         }
         static unsafe uint MeshOf(EntityManager em, Entity e)
@@ -109,7 +110,7 @@ namespace CrapMechanics
                 {
                     if (!Ecs.HasC(em, t, tiTransm)) continue;
                     var p = (byte*)em.GetComponentDataRawRO(t, tiTransm); if (p == null) continue;
-                    var ind = *(Entity*)(p + 24); if (!Ecs.Alive(em, ind)) continue;
+                    var ind = *(Entity*)(p + Layout.TransmIndicator); if (!Ecs.Alive(em, ind)) continue;
                     uint m = MeshOf(em, ind); if (m == 0xffffffff) continue;
                     ledMesh = m; meshOk = true; ModLog.Info("led: indicator mesh learned from transmitter " + t.Index + " (mesh ref " + m + ")"); return;
                 }
