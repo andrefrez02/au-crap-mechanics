@@ -106,8 +106,9 @@ namespace CrapMechanics
                     var g = (Ecs.HasC(em, gs[0], tiGar) ? (byte*)em.GetComponentDataRawRO(gs[0], tiGar) : null);
                     if (g != null)
                     {
-                        over = (*(g + 129) != 0).ToString();
-                        var mr = *(Map**)(g + 216);
+                        if (offOver < 0) { offOver = GarOffset("_isComponentsLimitOverflow"); offMap = GarOffset("_remainingComponentsMapPtr"); }
+                        over = (*(g + offOver) != 0).ToString();
+                        var mr = *(Map**)(g + offMap);
                         if (mr == null) rest = "null map";
                         else if (mr->SizeOfTValue != 4 || mr->Count < 0 || mr->Count > mr->Capacity || mr->BucketCapacity <= 0) rest = "map with an odd format";
                         else { int v = Read(mr, Ecs.HashPrefab("SC_Radar"), out bool found); rest = found ? v.ToString() : "not in map"; }
@@ -119,6 +120,14 @@ namespace CrapMechanics
                 if (s != radarLog) { radarLog = s; ModLog.Info(s + ", radars in world=" + n); }   // (0.7.8: the count flickers between garage and flight — only logs when the remainder changes)
             }
             catch (Exception ex) { if (radarLog != "error") { radarLog = "error"; ModLog.Warn("bonus/radar diagnostics: " + ex.Message); } }
+        }
+
+        /// <summary>A GarageGrabberSingleton field's offset in the raw component, read from the game (game updates move the fields).</summary>
+        static int offOver = -1, offMap = -1;
+        static int GarOffset(string field)
+        {
+            var f = typeof(GarageGrabberSingleton).GetField("NativeFieldInfoPtr_" + field, System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+            return (int)Il2CppInterop.Runtime.IL2CPP.il2cpp_field_get_offset((IntPtr)f.GetValue(null)) - 0x10;
         }
 
         static unsafe void Apply(Map* m, int mapId, string cable, int bonus, List<string> releasedSet)
