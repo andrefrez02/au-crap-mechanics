@@ -15,7 +15,7 @@ namespace CrapMechanics
     /// (the force the mod's sliders leave in it), at full throttle. Reads only; changes nothing.</summary>
     internal static class ThrustBalance
     {
-        public static bool Enabled = true;   // [Debug] thrust_balance_on_h
+        public static bool Enabled = false;   // [Debug] thrust_balance_on_h (off by default)
         static TypeIndex tiMass, tiGT; static bool ok, failed; static float t = 9f; static int warnings;
         static int offM = -1, offC = -1;
         static string[] lines;   // what OnGUI draws (built in the mod cycle: OnGUI never touches the ECS)

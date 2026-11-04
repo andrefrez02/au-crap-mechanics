@@ -21,7 +21,7 @@ namespace CrapMechanics
     /// [Debug] flight_trace turns it off.</summary>
     internal static class FlightTrace
     {
-        public static bool Enabled = true;
+        public static bool Enabled = false;   // [Debug] flight_trace (off by default)
         static TypeIndex tiGT, tiElec; static bool ok, failed, hasElec;
         static long vehicleKey; static float tSince, tNext; static int warnings;
         static Entity refBlock;
