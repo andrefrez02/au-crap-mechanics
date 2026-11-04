@@ -16,16 +16,21 @@ namespace CrapMechanics
         public static CrapMechanicsPlugin Instance;
         public static ConfigEntry<float> PistonSpeed, PistonImpulse, PistonConsumption, MotorRamp, ServoImpulse, ServoDegrees, BearingSupport, WheelFriction, WheelFrictionOffroad;
         public static ConfigEntry<string> BonusExtras;   // 0.24.0
+        public static ConfigEntry<float> ThrusterForce;   // 0.30.0
+        public static ConfigEntry<bool> ThrusterJoints;   // 0.31.4
+        public static ConfigEntry<bool> RingGrowList;     // 0.31.6
+        public static ConfigEntry<bool> FlightTraceCfg;   // 0.31.8
+        public static ConfigEntry<bool> ThrustBalanceCfg; // 0.31.9
         public static ConfigEntry<bool> MpOwnerOnly, MpFakeClient, MpBreakClient, MpRingClient, MpNetLog, MpLoopback;   // 0.24.0-mp; 0.28.0: + net_log, test_loopback
         public static ConfigEntry<float>[] MotorSpeed = new ConfigEntry<float>[3], MotorImpulse = new ConfigEntry<float>[3], MotorConsumption = new ConfigEntry<float>[3];
         public static ConfigEntry<bool> DetailedLog, IsActive, ServoInvert; public static ConfigEntry<float> ServoSpeed, ServoTipSpeed;   // 0.26.14
         public static ConfigEntry<bool> Stiffness; public static ConfigEntry<bool> ZeroGravLaunch; public static ConfigEntry<bool> IterationsAlways;   // 0.26.12
         public static ConfigEntry<int> SolverIterations, IconBeacon, IconSlot; public static ConfigEntry<float> StartTime, StartPause, NoCollision, PistonRails, PistonRailsPerMeter, RecouplerAngle; public static ConfigEntry<float> RecouplerSlack, BeaconHide, RecouplerPull, BeaconConsumption; public static ConfigEntry<bool> RecouplerMerge, BeaconOwn, BeaconFar;
         public static ConfigEntry<float> BaseReinforce, FuelConsumption, FuelPower, BrakeFactor, ForceReserve;
-        public static ConfigEntry<float> SeatReach, FitWait, ServoGain, PistonTilt; public static ConfigEntry<bool> SnapBack; public static ConfigEntry<bool> PistonCollides, WholeUntilMoved, TurretWhole; public static ConfigEntry<float> MassRatio; public static ConfigEntry<bool> SignalRelink; public static ConfigEntry<float> TurretReach, TurretSens, TurretGain, TurretMaxSpeed, TurretLinkAccel; public static ConfigEntry<bool> TurretInertia, TurretCamera, TurretViewRotates; public static ConfigEntry<string> TurretSeatMode, TurretSeatAdjust, TurretPlayerB, TurretViewA; public static ConfigEntry<string> TurretCursorKey;
+        public static ConfigEntry<float> SeatReach, FitWait, ServoGain, PistonTilt; public static ConfigEntry<bool> SnapBack; public static ConfigEntry<bool> PistonCollides, WholeUntilMoved, TurretWhole; public static ConfigEntry<float> MassRatio, MassFactorMax, TurretMassFactor; public static ConfigEntry<bool> SignalRelink; public static ConfigEntry<float> TurretReach, TurretSens, TurretGain, TurretMaxSpeed, TurretLinkAccel; public static ConfigEntry<bool> TurretInertia, TurretCamera, TurretViewRotates; public static ConfigEntry<string> TurretSeatMode, TurretSeatAdjust, TurretPlayerB, TurretViewA; public static ConfigEntry<string> TurretCursorKey;
         public static ConfigEntry<float>[] FuelMotorSpeed = new ConfigEntry<float>[3], FuelMotorImpulse = new ConfigEntry<float>[3];
 
-        public static ConfigEntry<string> MarkKey; public static ConfigEntry<bool> TurretAdjust, TraceCfg;
+        public static ConfigEntry<string> MarkKey; public static ConfigEntry<bool> MarkWindow; public static ConfigEntry<bool> TurretAdjust, TraceCfg;
         public override void Load()
         {
             Instance = this; ModLog.Source = Log;
@@ -63,7 +68,11 @@ namespace CrapMechanics
             PistonCollides = C.Bind("Piston", "collide_with_load", true, "Let the piston's part and the part it carries collide with each other. On = the load can't sink into the piston (the rod stops inside a damper, pieces don't pass through each other) and there is a hard floor at retracted. Off = they ignore each other. Safe with rigid_joints");
             WholeUntilMoved = C.Bind("Piston", "whole_until_moved", true, "With rigid_joints: at launch a piston stays ONE part with what it carries (the way the garage builds it) until it gets a target, instead of splitting right away. Nothing sags or breaks at the start of the simulation");
             TurretWhole = C.Bind("Turret Seat", "whole_until_aimed", true, "At launch the turret seat stays ONE part with what is on its plates (the way the garage builds it) and only releases them the first time someone sits and moves the aim. Nothing on the plates falls or breaks at the start of the simulation");
+            // 0.31.2: the turret pieces' own cap for [Piston] mass_ratio_max (they counted as 10 t each on a 103 t ship and the turret tore itself apart)
+            TurretMassFactor = C.Bind("Turret Seat", "mass_factor_max", 4f, new ConfigDescription("What is on the turret's plates is counted heavier for the physics so the pivot holds it (see [Piston] mass_ratio_max), but never more than this many times its real mass. Higher holds the pivot better and loads the turret's blocks more when the ship turns. 0 = no cap", new AcceptableValueRange<float>(0f, 50f)));
             MassRatio = C.Bind("Piston", "mass_ratio_max", 10f, "With rigid_joints: while two parts are held by a piston weld, the lighter one counts as at least 1/N of the heavier one FOR THE PHYSICS (the blueprint does not change, nothing falls faster). This is what keeps the weld from sagging: the physics solver can't hold a joint between 71 t and 65 kg, but holds 10:1 fine. 0 = off");
+            // 0.31.0: a cap per piece (Andre's 125 t ship had 24 pieces of 100-500 kg counted as 8.6-9.7 t each)
+            MassFactorMax = C.Bind("Piston", "mass_factor_max", 25f, new ConfigDescription("With mass_ratio_max: a piece is never counted as more than this many times its real mass (its turning inertia: this number squared). A piece jointed to a single part and more than 50 times lighter than it is not counted heavier at all (it only carries its own weight). The kilograms added are given back by the heaviest part of the vehicle. 0 = no cap", new AcceptableValueRange<float>(0f, 200f)));
             SnapBack = C.Bind("Piston", "snap_back", true, "When the piece on top of the piston has drifted since the garage (it fell while the game was still rebuilding the ship), create the joint at the GARAGE pose and let the motor and rails pull it back, instead of welding it where it landed. Only right after leaving the garage");
             PistonRailsPerMeter = C.Bind("Piston", "rails_per_meter", 0.4f, "The 4 rails move apart with the piston: this many meters of spread per meter of the piston's full reach (8 m piston = 3.2 m). A long rod is a lever — a fixed, close spread lets it tilt and the tip ends up meters off. Never closer than rails (0 = fixed at rails)");
             if (PistonRails.Value == 0.5f) PistonRails.Value = 0.75f;   // 0.12.3: rails farther apart = firmer sideways
@@ -184,13 +193,38 @@ namespace CrapMechanics
 
             // ---- [Bonus] ----
             // 0.24.0 (Andre: "+2000 of each micro frame"): extra amount of any block, including another mod's.
-            BonusExtras = C.Bind("Bonus", "extra_blocks", "", "Extra amount of any block in the inventory, as SC_Name=amount separated by commas (works for other mods' blocks too; a block that is not unlocked yet is skipped). Empty = none");
+            // 0.29.0: an entry can name a whole category, and the bonuses that used to be fixed in the code (cables per motor, the car kit's
+            // Radar) are entries of this default value now — so every extra amount is in this one line.
+            BonusExtras = C.Bind("Bonus", "extra_blocks", "SC_DataCable=600, SC_PowerCable=300, SC_Radar=1",
+                "Extra amount of blocks in the inventory, separated by commas. Each entry is name=amount and the amount is ADDED to what the game gives. "
+                + "The name can be a block (SC_FrameAA=400), the name the inventory shows (Power Router=5), a group of the game (Frame=400 or group:Frame=400 "
+                + "gives it to EVERY frame; also Glass, Pipe, Nanopipe, Nanoframe, Label, MathBlock, DigitalOrAnalogMeter, BasicControllers) or an inventory tab "
+                + "with the tab: prefix (tab:Electronics=50). A group and a tab with the same name are NOT the same list: group Frame is the normal frames, tab "
+                + "Frame also has the nanoframes and the micro frames. A later entry wins over an earlier one. config/CrapMechanics/blocks.txt lists every name "
+                + "that works, with the group of each block. Works for other mods' blocks too; a block that is not unlocked yet is skipped. Empty = none");
+
+            // 0.30.0 (Andre: "my ship got absurdly heavy"): more force for every thruster, fan and RCS block
+            ThrusterForce = C.Bind("Thrusters", "force_multiplier", 1f, new ConfigDescription("Multiplies the force of EVERY thruster, fan and RCS block of the game, on top of each block's own slider below (electric, fuel, maneuvering, atmospheric, ducted fans, flat fans...). 1 = the game's own force, 3 = three times as much. It is applied to the blocks of the ship right away, also in the middle of the simulation. Electric power and fuel use are NOT multiplied: more force costs the same", new AcceptableValueRange<float>(0.1f, 100f)));
+            // 0.31.4: a nave pesada com thrusters a x2,96 se despedacou — as juntas do jogo passavam de 3x o limite
+            ThrusterJoints = C.Bind("Thrusters", "reinforce_joints", true, "While any thruster has a multiplier above 1, every game joint (between blocks) is as strong as the game made it times the largest multiplier in use, so a ship pushed x3 harder also holds x3 more (it gets that much tougher in crashes too). Back to 1 (or off) = the game's own strength again. Off = the game's own strength always");
+            // 0.30.0: one slider per block type, on top of the global one (name in the inventory in the description). SC_DamagedLargeFuelThruster is a wreck, left out.
+            foreach (var (prefab, key, shown) in new[] {
+                ("SC_SmallElectricThruster", "small_electric_thruster", "Small Electric Thruster"), ("SC_MediumElectricThruster", "medium_electric_thruster", "Medium Electric Thruster"), ("SC_LargeElectricThruster", "large_electric_thruster", "Large Electric Thruster"),
+                ("SC_SmallFuelThruster", "small_fuel_thruster", "Small Fuel Thruster"), ("SC_MediumFuelThruster", "medium_fuel_thruster", "Medium Fuel Thruster"), ("SC_LargeFuelThruster", "large_fuel_thruster", "Large Fuel Thruster"),
+                ("SC_SmallManeuveringThruster", "small_maneuvering_thruster", "Small Maneuvering Thruster"), ("SC_MediumManeuveringThruster", "medium_maneuvering_thruster", "Medium Maneuvering Thruster"), ("SC_LargeManeuveringThruster", "large_maneuvering_thruster", "Large Maneuvering Thruster"),
+                ("SC_BidirectionalElectricManeuveringThruster", "bidirectional_maneuvering_thruster", "Bidirectional Maneuvering Thruster"), ("SC_SmallSolidFuelThruster", "small_solid_fuel_thruster", "Small Solid Fuel Thruster"),
+                ("SC_AtmosphericThruster", "atmospheric_thruster", "Atmospheric Thruster"), ("SC_AtmosphericFan", "atmospheric_fan", "Atmospheric Fan"), ("SC_AtmosphericLiftFan", "atmospheric_flat_fan", "Atmospheric Flat Fan"),
+                ("SC_DuctedFan", "ducted_fan", "Ducted Fan"), ("SC_ElectricLiftThruster", "electric_flat_thruster", "Electric Flat Thruster"), ("SC_GimbalThruster", "rcs_thruster", "RCS Thruster"),
+                ("SC_MiniElectricThruster", "mini_electric_thruster", "Mini Electric Thruster") })
+                Thrusters.PerBlock[prefab] = C.Bind("Thrusters", key, 1f, new ConfigDescription("Force of the " + shown + " (multiplies force_multiplier). 1 = the game's own force", new AcceptableValueRange<float>(0.01f, 100f)));
 
             // ---- [Multiplayer] ----
             // 0.24.0-mp (multiplayer): the game isn't lockstep — the logic runs on every machine and the server rules the pose
             // of the parts (see Multi.cs). In a solo game (NetworkStatus.Off) none of this changes the behaviour.
             MpOwnerOnly = C.Bind("Multiplayer", "host_only", true, "The server runs the mod's physics (joints, motors, pistons, brake, turret, recoupler, knob restore); a client only draws the mod's parts from the poses the server sends, and sends the turret seat aim of whoever sits there. Off = every machine simulates its own copy (not recommended)");
             MpBreakClient = C.Bind("Multiplayer", "break_on_client", false, "(debug) Let a client break the game's joints at launch too. Off (default) = the server splits the parts and the game sends the split to everyone");
+            // 0.31.6: [Slip Ring] grow_circuit_list — a circuit with no room left for the power bridge's entity gets a bigger list
+            RingGrowList = C.Bind("Slip Ring", "grow_circuit_list", true, "The power bridge of a slip ring adds one invisible entity to the game's list of components of each circuit it touches (one per circuit, shared by every slip ring of that circuit). That list has a fixed size; when it is already full of the game's own parts, on = make it bigger the same way the game does when it adds a part, off = leave it and that circuit's slip rings carry no power (the log says which)");
             MpRingClient = C.Bind("Multiplayer", "ring_on_client", true, "Run the Slip Ring data/power bridge on clients too (the game already syncs port values and electric power). Turn off if a client shows double power use across a slip ring");
             MpFakeClient = C.Bind("Multiplayer", "fake_client", false, "(debug) Pretend this machine is a client, with no network at all: nothing of the mod moves, but the client's drawing code runs — to see what a client gets");
             MpNetLog = C.Bind("Multiplayer", "net_log", false, "(debug) Log every message of the mod's own network channel (hello, turret seat aim)");
@@ -199,6 +233,9 @@ namespace CrapMechanics
             // ---- [Debug] ----
             TraceCfg = C.Bind("Debug", "trace", false, "(debug) Writes one line per step of the mod cycle and per patched call, every frame. Use it to find where a native crash happens: the log is flushed line by line, so the LAST line is the last step that ran. It makes the log huge — turn it on only to reproduce a crash");
             MarkKey = CfgMigration.Of(C, C.Bind("Debug", "mark_error_key", "", "(debug) Key that marks an error: log line + screenshot + note window. Empty = off (default). E.g.: F8"), "Debug", "tecla_marcar_erro");
+            FlightTraceCfg = C.Bind("Debug", "flight_trace", true, "(log only) Every 2 s for the first 3 minutes of each launch (then every 10 s) one 'trace:' line: which way the ship is turning (in the hull's axes), the centre of mass with the real masses and with the physics masses, the thrust of the thrusters that are pushing and the torque it makes around the real centre of mass, the same with every thruster at its garage pose, and the thrusters off the hull that moved from it. Changes nothing in the game");
+            ThrustBalanceCfg = C.Bind("Debug", "thrust_balance_on_h", true, "In the garage, while the game's H display is on: a panel in the top right corner with the ship's mass and, for each group of thrusters pushing the same way (up, forward...), how far from the centre of mass its thrust line passes, which way it turns the ship and how far to move them. Reads only");
+            MarkWindow = C.Bind("Debug", "mark_note_window", false, "true = the mark key (F8) also opens a small window to type what you saw (the game loses focus). false = it only takes the screenshot and writes the black box snapshot to the log, and the game keeps running");
             TurretAdjust = CfgMigration.Of(C, C.Bind("Debug", "turret_adjust_numpad", false, "(debug) Numpad / toggles the turret seat adjust mode (the numpad moves the seat/view). Off by default"), "Debug", "ajuste_turret_numpad");
 
             // 0.24.0: removes from the .cfg the keys that no version of the mod reads anymore (old Portuguese sections and keys
@@ -238,10 +275,15 @@ namespace CrapMechanics
         public static void Apply()
         {
             JointSystem.PistonSpeed = PistonSpeed.Value; JointSystem.PistonImpulse = PistonImpulse.Value;
-            JointSystem.PistonConsumptionPerM = PistonConsumption.Value; JointSystem.MotorRamp = MotorRamp.Value; JointSystem.ForceReserve = ForceReserve.Value; JointSystem.ServoImpulse = ServoImpulse.Value; JointSystem.ServoDegrees = ServoDegrees.Value; JointSystem.ServoSpeed = ServoSpeed.Value; JointSystem.ServoTipSpeed = ServoTipSpeed.Value; JointSystem.ServoGain = ServoGain.Value; JointSystem.SnapBack = SnapBack.Value; JointSystem.PistonCollides = PistonCollides.Value; JointSystem.WholeUntilMoved = WholeUntilMoved.Value; JointSystem.TurretWholeUntilAimed = TurretWhole.Value; JointSystem.MassRatio = MassRatio.Value; JointSystem.PistonTiltMax = PistonTilt.Value; ModLog.Tracing = TraceCfg != null && TraceCfg.Value;   // 0.24.0: Apply runs on every change in the menu — without this, turning on the trace in Mod Menu did nothing
+            JointSystem.PistonConsumptionPerM = PistonConsumption.Value; JointSystem.MotorRamp = MotorRamp.Value; JointSystem.ForceReserve = ForceReserve.Value; JointSystem.ServoImpulse = ServoImpulse.Value; JointSystem.ServoDegrees = ServoDegrees.Value; JointSystem.ServoSpeed = ServoSpeed.Value; JointSystem.ServoTipSpeed = ServoTipSpeed.Value; JointSystem.ServoGain = ServoGain.Value; JointSystem.SnapBack = SnapBack.Value; JointSystem.PistonCollides = PistonCollides.Value; JointSystem.WholeUntilMoved = WholeUntilMoved.Value; JointSystem.TurretWholeUntilAimed = TurretWhole.Value; JointSystem.MassRatio = MassRatio.Value; Marker.NoteWindow = MarkWindow != null && MarkWindow.Value; JointSystem.MassFactorMax = MassFactorMax.Value; JointSystem.TurretMassFactor = TurretMassFactor.Value; JointSystem.PistonTiltMax = PistonTilt.Value; ModLog.Tracing = TraceCfg != null && TraceCfg.Value;   // 0.24.0: Apply runs on every change in the menu — without this, turning on the trace in Mod Menu did nothing
             // 0.24.1: this remainder was INSIDE the comment above since 0.24.0 (solver, reinforcement, rails, servo... went back to the code's defaults)
             JointSystem.ServoInvert = ServoInvert.Value; JointSystem.BearingSupport = BearingSupport.Value; Wheels.SportsFriction = WheelFriction.Value; Wheels.OffroadFriction = WheelFrictionOffroad.Value; JointSystem.SolverIterations = SolverIterations.Value; JointSystem.IterationsAlways = IterationsAlways.Value; JointSystem.Rigid = Stiffness.Value; JointSystem.ZeroGravLaunch = ZeroGravLaunch.Value; JointSystem.FitWait = FitWait.Value; JointSystem.BaseReinforce = BaseReinforce.Value; RadarIcon.Request = IconBeacon.Value; RadarIcon.Slot = IconSlot.Value; JointSystem.StartTime = StartTime.Value; JointSystem.StartPause = StartPause.Value; JointSystem.NoCollisionAtStart = NoCollision.Value; JointSystem.PistonRails = PistonRails.Value; JointSystem.PistonRailsPerMeter = PistonRailsPerMeter.Value; Couplers.MaxAngle = RecouplerAngle.Value; Couplers.Tolerance = RecouplerSlack.Value; Couplers.Join = RecouplerMerge.Value; Couplers.PullTime = RecouplerPull.Value; Couplers.HideNear = BeaconHide.Value; Couplers.HideOwn = BeaconOwn == null || BeaconOwn.Value; Couplers.BeaconPowerUse = BeaconConsumption.Value;
             if (BonusExtras != null) Bonus.ExtrasCfg = BonusExtras.Value;
+            if (ThrusterForce != null) Thrusters.Multiplier = ThrusterForce.Value;
+            if (ThrusterJoints != null) JointBoost.Enabled = ThrusterJoints.Value;
+            if (RingGrowList != null) SlipRings.GrowList = RingGrowList.Value;
+            if (FlightTraceCfg != null) FlightTrace.Enabled = FlightTraceCfg.Value;
+            if (ThrustBalanceCfg != null) ThrustBalance.Enabled = ThrustBalanceCfg.Value;
             if (MpOwnerOnly != null) { Multi.OwnerOnly = MpOwnerOnly.Value; Multi.FakeClient = MpFakeClient.Value; Multi.BreakOnClient = MpBreakClient.Value; Multi.RingOnClient = MpRingClient.Value; ModNet.Log = MpNetLog.Value; ModNet.Loopback = MpLoopback.Value; }   // 0.24.0-mp; 0.28.0
             JointSystem.FuelConsumption = FuelConsumption.Value; JointSystem.FuelPower = FuelPower.Value; JointSystem.BrakeFactor = BrakeFactor.Value;
             JointSystem.TurretSens = TurretSens.Value; JointSystem.TurretGain = TurretGain.Value; JointSystem.TurretMaxSpeed = TurretMaxSpeed.Value; JointSystem.TurretLinkAccel = System.Math.Max(10f, TurretLinkAccel.Value);
@@ -352,6 +394,7 @@ namespace CrapMechanics
                 InventoryTab.Step();
                 float dt = UnityEngine.Time.deltaTime;
                 try { Props.Step(dt); } catch (Exception ex) { if (errors++ < 3) ModLog.Warn("properties: " + ex.Message); }   // 0.23.2
+                try { BlockIndex.Step(dt); } catch (Exception ex) { if (errors++ < 3) ModLog.Warn("blocks: " + ex.Message); }   // 0.29.0
                 if (world == null || !world.IsCreated)
                 {
                     tWorld += dt; if (tWorld < 1f) return; tWorld = 0f;
@@ -371,6 +414,8 @@ namespace CrapMechanics
                 if (MenuBP()) return;
                 Ecs.PreparePointers();
                 var sw = System.Diagnostics.Stopwatch.StartNew();
+                try { BlackBox.Step(world.EntityManager, dt); } catch (Exception ex) { if (errors++ < 3) ModLog.Warn("black box: " + ex.Message); }   // 0.31.1
+                try { Thrusters.Step(world.EntityManager, dt); } catch (Exception ex) { if (errors++ < 3) ModLog.Warn("thrusters: " + ex.Message); }   // 0.30.0
                 JointSystem.Step(world.EntityManager, dt);
                 Measure(sw.Elapsed.TotalMilliseconds, dt);
                 RadarIcon.Step(dt); JointSystem.T("radar icons — cycle end"); if (JointSystem.Trail > 0) JointSystem.Trail--;
@@ -419,7 +464,7 @@ namespace CrapMechanics
             }
             return menuOpen;
         }
-        void OnGUI() { try { JointSystem.DrawAdjust(); } catch (Exception ex) { if (errors++ < 5) ModLog.Error("OnGUI: " + ex); } }
+        void OnGUI() { try { JointSystem.DrawAdjust(); } catch (Exception ex) { if (errors++ < 5) ModLog.Error("OnGUI: " + ex); } try { ThrustBalance.Draw(); } catch (Exception ex) { if (errors++ < 5) ModLog.Error("OnGUI (thrust balance): " + ex); } }
         void LateUpdate() { try { if (JointSystem.SeatedTurret != null) JointSystem.TurretCameraLTW(false); } catch (Exception ex) { if (errors++ < 5) ModLog.Error("LateUpdate: " + ex); } }
         void OnApplicationQuit() { try { if (world != null && world.IsCreated) JointSystem.Clean(world.EntityManager); } catch (Exception) { } }
     }

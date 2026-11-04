@@ -337,6 +337,9 @@ namespace CrapMechanics
         /// it and the runtime one is what rules when passing values. On a DataInOut (3) or Unset (5) port the setup doesn't give the direction —
         /// if the runtime one is already resolved to input or output, it's that one. (Without this SlipRings saw "no output on either side" on a
         /// receiving Wireless Transmitter, which is DataInOut in the prefab and DataOutput at run time, and didn't bridge.)</summary>
+        /// <summary>0.31.11: in/out ports the game left without a direction because their cable ends at a pass-through port of a mod joint, with the
+        /// direction the mod found on the other side of the joint (Radio). Read only by the mod (EffectiveType); the game's port is not touched.</summary>
+        public static readonly Dictionary<long, byte> ResolvedTypes = new Dictionary<long, byte>();
         public static unsafe byte EffectiveType(EntityManager em, Entity p)
         {
             try
@@ -345,6 +348,7 @@ namespace CrapMechanics
                 var b = (HasC(em, p, tiPort) ? (byte*)em.GetComponentDataRawRO(p, tiPort) : null); if (b == null) return 255;
                 byte setup = b[20], run = b[21];
                 if ((setup == 3 || setup == 5) && (run == PortInput || run == PortOutput)) return run;
+                if (setup == 3 && ResolvedTypes.TryGetValue(K(p), out var rt)) return rt;   // 0.31.11: direction the mod found across one of its joints
                 return setup;
             }
             catch (Exception) { return 255; }

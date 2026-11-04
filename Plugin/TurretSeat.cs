@@ -45,6 +45,7 @@ namespace CrapMechanics
         public quaternion Qvis = quaternion.identity;       // rotation of the drawing (in the block's space)
         public float tLog, errLog = 999f; public string name = "SC_TurretSeat";
         public bool isSeated;
+        public float tStuck, errStart, holdOff;   // 0.31.2: pieces that stopped following the aim (blocked) -> the mod stops forcing them for a while
         public bool release; public bool wholeLog; public Dictionary<string, HashSet<long>> faceStructure = new Dictionary<string, HashSet<long>>();   // 0.26.8: whole until aimed
         public Entity[] movables; public float tMovables = 9f;  // child renderers that turn
         public LocalTransform[] saved; public bool rotated;
@@ -548,6 +549,17 @@ namespace CrapMechanics
             }
             LimitAim(t);
             if (t.wholeShip) { WholeShipTurns(em, t, dt); return; }
+            // 0.31.2 (Andre: "I turned the turret seat and it broke and blew up the whole ship"; log 31/10 13:41:09: yaw at the -20 limit, error
+            // 17 -> 66 -> 102 -> 135 degrees and it stayed there for 7 s while the plate pieces crumbled block by block). The pieces have no
+            // turning inertia while aimed (TurretInertia) and the mod sets their spin every frame: once they are blocked by something they get
+            // pushed through it with no limit. Blocked = an error above 45 degrees that does not shrink by 10 degrees in 0.8 s: the mod lets go
+            // (inertia back, no forced spin) for 2 s and then tries again.
+            if (t.holdOff > 0f)
+            {
+                t.holdOff -= dt;
+                foreach (var m in t.movs) if (m.savedInertia) RestoreInertia(em, m);
+                return;
+            }
             var QTarget = Ecs.QMul(QuatAxis(Ecs.UY, t.yaw * (float)(System.Math.PI / 180.0)), QuatAxis(Ecs.UX, -t.pitch * (float)(System.Math.PI / 180.0)));
             Ecs.Pose(em, t.block, out _, out var rotB);
             var worldTarget = Ecs.QMul(rotB, QTarget);
@@ -597,6 +609,21 @@ namespace CrapMechanics
                 if (firstOne) { firstOne = false; t.Qvis = Ecs.QMul(Ecs.QMul(Ecs.Inv(rotB), rotV), Ecs.Inv(m.Rn0)); }
             }
             if (firstOne) t.Qvis = QTarget;   // nothing on the plates: the drawing goes straight to the aim
+            const float Blocked = 45f * (float)(System.Math.PI / 180.0), Progress = 10f * (float)(System.Math.PI / 180.0);
+            if (maxError > Blocked)
+            {
+                if (t.tStuck <= 0f) t.errStart = maxError;
+                t.tStuck += dt;
+                if (t.errStart - maxError > Progress) t.tStuck = 0f;   // it is getting there (a big swing of the mouse): not blocked
+                else if (t.tStuck > 0.8f)
+                {
+                    t.tStuck = 0f; t.holdOff = 2f;
+                    foreach (var m in t.movs) if (m.savedInertia) RestoreInertia(em, m);
+                    ModLog.Warn(t.name + " " + t.block.Index + ": the plate pieces stopped following the aim (error " + (maxError * 57.2958f).ToString("F0") + " degrees for 0.8 s, aim yaw " + t.yaw.ToString("F0") + " pitch " + t.pitch.ToString("F0") + ") — blocked by something: not forcing them for 2 s");
+                    try { BlackBox.Capture(em, "turret seat " + t.block.Index + ": pieces blocked (error " + (maxError * 57.2958f).ToString("F0") + " degrees)"); } catch (Exception) { }
+                }
+            }
+            else t.tStuck = 0f;
             t.tLog += dt;
             if (DetailedLog && t.tLog >= 0.5f && System.Math.Abs(maxError * 57.2958f - t.errLog) >= 5f)
             {
@@ -1046,17 +1073,44 @@ namespace CrapMechanics
         {
             foreach (var t in turrets.Values) if (t.state == 2) foreach (var m in t.movs) if (!Ecs.IsNull(m.part) && !Ecs.IsNull(t.partBase)) yield return (m.part, t.partBase);
         }
+        /// <summary>0.29.1 (Andre: "if it breaks and I rewind with the game, it doesn't come back in the rewound state, it comes back broken"):
+        /// until 0.29.0 only a turret SEPARATED and still holding its pieces (state 2 with movs) was rebuilt, and one that was separating
+        /// (state 1) went back to the start. A turret WHOLE until aimed (state 5), one in the cooldown (3) and one that had LOST its pieces
+        /// (state 2 with no movs — what happens when it breaks) kept their state while the game put the blocks back where they were, so the
+        /// mod never rebuilt them and the seat stayed broken. Now every state ends consistent: rebuilt at the rewound pose when the pieces
+        /// are still there, otherwise back to the start, and the next step works it out again from the blocks the rewind restored.</summary>
         static void RewindTurrets(EntityManager em)
         {
+            int again = 0, restart = 0;
             foreach (var t in turrets.Values)
             {
-                if (t.state == 1) { t.broken.Clear(); t.state = 0; t.tState = 0f; continue; }
-                if (t.state != 2 || t.movs.Count == 0) continue;
-                t.partBase = Ecs.Parent(em, t.block);
-                if (!CreateMovs(em, t, true)) { UndoTurret(em, t, "time rewind"); t.state = 0; t.tState = 0f; }
+                if (t.state == 2 && t.movs.Count > 0)
+                {
+                    t.partBase = Ecs.Parent(em, t.block);
+                    if (CreateMovs(em, t, true)) { again++; continue; }
+                    UndoTurret(em, t, "time rewind");                     // the pieces are no longer where they were: give it up and start over
+                }
+                else if (t.state == 2 || t.state == 3) UndoTurret(em, t, "time rewind (it had separated)");
+                if (t.state != 0) restart++;
+                RestoreBreakForceTurret(em, t);                      // only state 1 still holds any: puts the game's _breakForce back
+                t.movs.Clear(); t.state = 0; t.tState = 0f;
             }
+            if (again + restart > 0) ModLog.Info("time rewind: turret seats — " + again + " rebuilt at the rewound pose, " + restart + " back to the start");
         }
         static void ForgetTurrets() { turrets.Clear(); SeatedTurret = null; }
+        /// <summary>0.31.1 (black box): each turret seat in one line.</summary>
+        internal static string TurretSummary(EntityManager em)
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (var t in turrets.Values)
+            {
+                sb.Append("  ").Append(t.name).Append(' ').Append(t.block.Index).Append(": ").Append(TurretName(t)).Append(t == SeatedTurret ? ", SEATED" : "")
+                  .Append(", aim yaw ").Append(t.yaw.ToString("F0")).Append(" pitch ").Append(t.pitch.ToString("F0")).Append(", ").Append(t.movs.Count).Append(" piece(s):");
+                foreach (var m in t.movs) sb.Append(" part ").Append(m.part.Index).Append(Ecs.Alive(em, m.part) ? " " + Ecs.Mass(em, m.part).ToString("F0") + " kg" : " GONE");
+                sb.Append('\n');
+            }
+            return sb.Length == 0 ? "  none\n" : sb.ToString();
+        }
         static void CleanTurrets(EntityManager em)
         {
             foreach (var t in turrets.Values) UndoTurret(em, t, "cleaning up");

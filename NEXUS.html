@@ -1,4 +1,5 @@
 <h2>Crap Mechanics <em>- Physics Objects / Cars and more!</em></h2>
+<p><strong>Game update 1.0.300 / 1.0.301 (31 October 2026): update to 0.31.11.</strong> With any older version, pressing <strong>G</strong> in the garage closes the game after this update. The update moved some of the game&#x27;s data that the mod read at fixed places; the mod now finds them by name, and if one ever disappears, the feature that needs it turns itself off and says so in the log instead of crashing the game.</p>
 <p><strong>Updating from 0.25.0 or older?</strong> The mod&#x27;s files now have English names: <strong>delete the old BepInEx/plugins/Mecanica folder</strong> and install the new BepInEx/plugins/CrapMechanics folder. While the old folder is still there the new version stays off (the BepInEx log says so). Nothing you made is lost: your settings and knob values are copied from the old files on the first launch, and the blueprints in the game&#x27;s blueprint folder are converted to the new part names when the game starts (a .bak-0.27 copy of each changed file is kept). For a blueprint kept somewhere else, close the game and run <strong>bp_convert.py</strong> from the plugin folder (instructions inside it). In multiplayer, everyone needs the same version.</p>
 <p><strong>Updating from 0.19.13?</strong> The old <strong>Piston 2</strong>, <strong>Piston 4</strong> and <strong>Piston 8</strong> are no longer in the mod: they were replaced by a single Piston (up to 8 m) and the Piston End block, so blueprints that use the old pistons need them replaced with the new Piston. Motors now glue only by the bottom of their base and the small fuel tanks only by their brackets (like the game&#x27;s tanks): in old blueprints, anything glued to their other faces needs to be glued again.</p>
 <h3>Description</h3>
@@ -24,6 +25,7 @@
 <li><strong>Wheels</strong>: Sports and Offroad, 1 / 1.5 / 2 m; they only attach by the inner (flange) side.</li>
 <li><strong>Pedals</strong> and <strong>steering wheel</strong> for driving; <strong>turret seat</strong> that aims with the mouse and turns everything glued to its plates, with pass-through ports on its base for each plate. Three knobs on the front of its base limit how far it turns: left and right, up, and down.</li>
 <li><strong>Recoupler</strong>: re-attaches a part that a decoupler released, even in flight. <strong>Beacon</strong>: shows on every radar with its own icon (signal waves, car or ship, picked with its knob), and keeps a loose part simulated beyond 100 km from you (the game normally switches far parts off): a probe with a powered Beacon keeps its physics, camera, transmitter and thrusters working out there.</li>
+<li><strong>Thrusters</strong>: a force slider for every thruster type (plus a global one) in the settings. With the game&#x27;s H display on in the garage, a panel shows how far each group of thrusters pushes from the centre of mass, which way that turns the ship and how many cm to move them so it flies straight.</li>
 <li><strong>Single Cell Battery</strong>, <strong>Mini Solar Panel</strong>, <strong>Mini Electric Thruster</strong> and a <strong>Long Range Transmitter</strong> (no distance limit, channel set by a data input; carries camera video too).</li>
 <li><strong>Small blue / green fuel tanks</strong> (1x2x1, 500 fuel).</li>
 <li>Wheels, motors, small tanks and the turret seat take only the space of their shape (like the game&#x27;s curved frames), so other parts and cables fit around them.</li>
@@ -37,7 +39,7 @@
 <li>Components Framework (by CohoJET, on Nexus Mods)</li>
 <li>Mod Menu (optional: rebind this mod&#x27;s keys and change its settings in the game&#x27;s options menu)</li>
 </ul>
-<p>Tested on the Steam version of Approximately Up from 08 October 2026 (update 1.0.214).</p>
+<p>Tested on the Steam version of Approximately Up from 31 October 2026 (update 1.0.301).</p>
 <h3>Modding practice</h3>
 <p>No game files are redistributed. The archive contains only the mod&#x27;s own code (and, for Crap Mechanics, its own meshes, icons and the asset bundle built with the official Modkit). Meshes, materials and fonts from the game are linked at run time by name; nothing is copied out of the game.</p>
 <p>Install and uninstall by adding or removing the mod&#x27;s folder under BepInEx/plugins. Settings live in BepInEx/config and in the folder itself; blueprints and saves are never modified by the mod.</p>

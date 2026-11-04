@@ -54,8 +54,34 @@ namespace CrapMechanics
             Mark(em, game);
         }
 
+        public static bool NoteWindow;   // 0.31.1: [Debug] mark_note_window
+
+        /// <summary>0.31.1 (black box): screenshot of the game window + a .txt with the snapshot, in logs/marks. Returns "marks/name.png",
+        /// or null when the game is not the window in front (nothing is captured then).</summary>
+        public static string Shot(string baseName, string text, string why)
+        {
+            IntPtr game = GetForegroundWindow(); GetWindowThreadProcessId(game, out uint pid);
+            string folder = Path.Combine(LogsFolder ?? ".", "marks"); try { Directory.CreateDirectory(folder); } catch (Exception) { }
+            try { File.WriteAllText(Path.Combine(folder, baseName + ".txt"), DateTime.Now.ToString("HH:mm:ss.fff") + " — " + why + "\n\n" + text); } catch (Exception) { }
+            if (pid != (uint)Environment.ProcessId) return null;
+            try
+            {
+                if (!GetClientRect(game, out var r) || r.right <= r.left || r.bottom <= r.top) return null;
+                var p = new POINT { x = 0, y = 0 }; ClientToScreen(game, ref p);
+                int w = r.right - r.left, h = r.bottom - r.top;
+                var px = Capture(p.x, p.y, w, h); if (px == null) return null;
+                string dest = Path.Combine(folder, baseName + ".png");
+                new Thread(() => { try { File.WriteAllBytes(dest, Png(px, w, h)); } catch (Exception ex) { main.Enqueue(() => ModLog.Warn("black box: saving the screenshot failed: " + ex.Message)); } }) { IsBackground = true }.Start();
+                return "screenshot marks/" + baseName + ".png";
+            }
+            catch (Exception ex) { ModLog.Warn("black box: screenshot failed: " + ex.Message); return null; }
+        }
+
         static void Mark(EntityManager em, IntPtr game)
         {
+            // 0.31.1 (Andre: "I can't keep writing down times while I test"): F8 = black box capture, the game keeps running; the note
+            // window only with [Debug] mark_note_window = true
+            if (!NoteWindow) { BlackBox.Capture(em, "F8 pressed", true); return; }
             int n = ++number; var now = DateTime.Now; string instant = now.ToString("HH:mm:ss.fff");
             string baseName = "mark-" + now.ToString("yyyyMMdd-HHmmss") + "-" + n;
             string folder = Path.Combine(LogsFolder ?? ".", "marks"); try { Directory.CreateDirectory(folder); } catch (Exception) { }
@@ -194,6 +220,9 @@ namespace CrapMechanics
         [StructLayout(LayoutKind.Sequential)] struct POINT { public int x, y; }
         [StructLayout(LayoutKind.Sequential)] struct BITMAPINFOHEADER { public uint biSize; public int biWidth, biHeight; public ushort biPlanes, biBitCount; public uint biCompression, biSizeImage; public int biXPelsPerMeter, biYPelsPerMeter; public uint biClrUsed, biClrImportant; }
         [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vk);
+        [DllImport("user32.dll")] static extern bool MessageBeep(uint type);
+        /// <summary>0.31.1: the F8 capture has no window any more — a short Windows beep says it was taken.</summary>
+        public static void Beep() { try { MessageBeep(0); } catch (Exception) { } }
         [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
         [DllImport("user32.dll")] static extern bool GetClientRect(IntPtr h, out RECTANGLE r);

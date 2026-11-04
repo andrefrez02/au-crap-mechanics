@@ -30,6 +30,8 @@ namespace CrapMechanics
         static readonly Dictionary<long, Entity> exemptSet = new Dictionary<long, Entity>();   // part -> powered beacon
         static readonly Dictionary<long, byte> situation = new Dictionary<long, byte>();       // part -> 0 near, 1 far and off, 2 far and kept
         static int errors; static bool netNoted;
+        /// <summary>0.31.1 (black box): the block still has SCActive (the game ticks it). True when unknown.</summary>
+        public static bool Active(EntityManager em, Entity block) => !tiOk || Ecs.HasC(em, block, tiSCActive);
 
         static bool Prepare(EntityManager em)
         {

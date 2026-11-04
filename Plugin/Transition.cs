@@ -131,7 +131,7 @@ namespace CrapMechanics
             catch (Exception) { return "?"; }
         }
 
-        static unsafe void Block(EntityManager em, StringBuilder sb, string kind, Entity e)
+        internal static unsafe void Block(EntityManager em, StringBuilder sb, string kind, Entity e)
         {
             sb.Append("\n  ").Append(kind).Append(' ').Append(e.Index).Append(':').Append(e.Version);
             if (!Ecs.Alive(em, e)) { sb.Append(" DEAD"); return; }
@@ -145,12 +145,16 @@ namespace CrapMechanics
                 if (kind == "Camera")
                 {
                     var c = Ecs.HasC(em, e, tiCam) ? (byte*)em.GetComponentDataRawRO(e, tiCam) : null;
-                    if (c != null) { var ce = *(Entity*)c; sb.Append(" cameraEntity ").Append(ce.Index).Append(Ecs.Alive(em, ce) ? "" : "(DEAD)").Append(" slice ").Append(*(int*)(c + 0x30)).Append(" nextDraw ").Append((*(double*)(c + 0x28)).ToString("F2")); }
+                    // 0.31.3: offsets pelo nome do campo (eram 0x00/0x28/0x30 fixos)
+                    int oCe = GameFields.Of(typeof(SCTypeCamera), "_cameraEntity", 0), oSl = GameFields.Of(typeof(SCTypeCamera), "_renderingSlice", 0x30), oNd = GameFields.Of(typeof(SCTypeCamera), "_nextDrawTime", 0x28);
+                    if (c != null && oCe >= 0) { var ce = *(Entity*)(c + oCe); sb.Append(" cameraEntity ").Append(ce.Index).Append(Ecs.Alive(em, ce) ? "" : "(DEAD)"); if (oSl >= 0) sb.Append(" slice ").Append(*(int*)(c + oSl)); if (oNd >= 0) sb.Append(" nextDraw ").Append((*(double*)(c + oNd)).ToString("F2")); }
                 }
                 if (kind == "Monitor")
                 {
                     var m = Ecs.HasC(em, e, tiMon) ? (byte*)em.GetComponentDataRawRO(e, tiMon) : null;
-                    if (m != null) { sb.Append(" slices (").Append(*(int*)(m + 0x28)).Append(',').Append(*(int*)(m + 0x2C)).Append(") lastSignals (").Append((*(float*)(m + 0x20)).ToString("G9")).Append(',').Append((*(float*)(m + 0x24)).ToString("G9")).Append(')'); }
+                    // 0.31.3: pelo nome (eram 0x20..0x2C fixos)
+                    int oSlc = GameFields.Of(typeof(SCTypeMonitor), "_assignedRenderingSlices", 0x28), oSig = GameFields.Of(typeof(SCTypeMonitor), "_lastReceivedSignals", 0x20);
+                    if (m != null) { if (oSlc >= 0) sb.Append(" slices (").Append(*(int*)(m + oSlc)).Append(',').Append(*(int*)(m + oSlc + 4)).Append(')'); if (oSig >= 0) sb.Append(" lastSignals (").Append((*(float*)(m + oSig)).ToString("G9")).Append(',').Append((*(float*)(m + oSig + 4)).ToString("G9")).Append(')'); }
                 }
             }
             catch (Exception ex) { sb.Append(" [").Append(ex.Message).Append(']'); }

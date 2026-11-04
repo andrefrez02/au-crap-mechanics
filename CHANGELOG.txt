@@ -1,3 +1,88 @@
+Version 0.31.11
+
+Fixed: a Long Range Transmitter whose signal cable went straight into a pass-through port of a mod joint (an SC_Bearing M in Andre's ship) stayed red and "not wired": the game gives an in/out port its direction only from the port at the other end of the cable, and a joint's pass-through port has none. Now, when the game leaves it without a direction, the mod looks across the joint (following a chain of joints): an input over there (a monitor) makes the transmitter RECEIVE, an output (a camera) makes it SEND, and the slip ring bridges the data across. With no slip ring on that port (Andre's case: the channel 1 receiver drives the bearing's servo directly), the port is the joint's own signal input, so the transmitter RECEIVES and the bearing reads the channel. The log says which. The game's port is not changed.
+
+Version 0.31.10
+
+Log: when a Long Range Transmitter's signal port gets no direction from the game (red LED; "signal port is not wired"), the same log line now shows where its cable goes: each port on the way (block, port number, the type set on the block and the type the game gave it), the cable (data/power, cells), through Frame With Ports as the game does, and where it ends (another port, nothing, or a cable whose other end isn't plugged in).
+
+Version 0.31.9
+
+New: thrust balance panel in the garage, only while the game's H display is on ([Debug] thrust_balance_on_h, on by default; reads only). Top right corner: the ship's mass, and for each group of thrusters pushing the same way (UP, FORWARD, ...): which blocks and how much force at full throttle, how far from the centre of mass the group's thrust line passes (cm in front/behind, above/below, right/left), which way that turns the ship (nose up/down, nose left/right, roll) with the torque, and how many cm to move the group to balance it. Then the same for all of them at once. "Front" is where the strongest forward-pushing group pushes. Mass and centre of mass come from each block's own mass, the thrust from the force the thruster sliders leave in each block.
+
+Version 0.31.8
+
+New: flight trace ([Debug] flight_trace, on by default, log only — changes nothing in the game). A ship that climbed with only its lift and main thrusters on turned 1.2 to 2.1 degrees per second the whole flight with no input, and fell once it reached space. To tell whether that torque comes from the ship's design or from the mod's joints bending, every 2 s for the first 3 minutes of each launch (then every 10 s) the log gets one "trace:" line: the spin axis in the hull's own axes; the vehicle's centre of mass with the real masses and with the masses the physics sees (the mass balance must keep them equal); the thrust of every thruster that is pushing and the torque it makes around the real centre of mass, with where the thrust line passes; the same torque with every thruster exactly at its garage pose relative to the hull (the difference is what the bending joints add); and the thrusters off the hull that moved from their garage pose (degrees and cm).
+
+Version 0.31.7
+
+New: [Slip Ring] grow_circuit_list (on by default). Since 0.31.6 each circuit needs room for one bridge entity in the game's list of its components; when that list is already full of the game's own parts, it is now made bigger with Unity's own code (the same that runs when the game adds a part to a full list), and the log says so ("made room for the bridge"). Off = leave the list alone; that circuit's slip rings carry no power and the log says which. If making room ever fails, it turns itself off for the rest of the session and says so.
+
+Version 0.31.6
+
+Fixed: with several slip rings fed from the same circuit, only one worked at a time (log: "the circuit's component buffer is full (16/16)"). The power bridge adds an invisible entity of its own to the game's component list of each circuit it touches, one per bridge, and that list has a fixed size: on a car with two rockets on two mini pistons, 15 parts of the game left room for one bridge, and which rocket got it changed from one launch to the next. Now each circuit has a single bridge entity that adds up everything that goes in and out through all the bridges touching it. A circuit whose list is full even before any bridge is still reported in the log.
+
+Version 0.31.5
+
+Fixed: power still stopped inside a chain of joints (ship -> piston -> slip ring -> bearing -> slip ring -> wing). The cable from one joint's slip ring to the next joint's pass-through port has no circuit in the game (both ends are untyped ports), so each bridge of the chain had a circuit on one side only and was dropped. The bridges now follow the chain joint by joint until they reach a real circuit and carry the power end to end (log: "power bridge: chain of N joints ..."). If a chain doesn't reach a circuit, the log says where it stops.
+Fixed: a slip ring wired crosswise (power on ring port 1 and joint port 3, the other cables on ring port 3 and joint port 1) is matched now: the two channels swap ring ports, power meets power and data meets data. Before, the swap was refused because each side "gave up" a cable.
+
+Version 0.31.4
+
+Fixed: power didn't cross a chain of joints (piston -> bearing -> bearing -> camera). The slip ring only took a cable as a power cable when the port at its far end was a power port; inside a chain that far end is the next joint's pass-through port, which has no type, so the bridge said "nothing passes" and the parts past it lived on their own solar panels. The cable plugged into the port now counts too.
+New: [Thrusters] reinforce_joints (on by default). With thrusters pushed above the game's force the ship tore itself apart in flight: the black box showed the game's joints at 2 to 3 times their limit at 3 g and 330 m/s. While any thruster multiplier above 1 is in use, every game joint of a launched ship is that much stronger (x3 thrust = x3 strength); back to 1 or off = the game's own strength again. A ship made stronger this way is also tougher in crashes.
+
+Version 0.31.3
+
+Fixed: pressing G in the garage closed the game since its 1.0.300 update. The update moved a field of the game's garage data (the remaining-blocks map) and the mod still read it at the old place, so in edit mode it followed a value that is not a pointer. The fields the mod reads straight from the game's memory are now found by name in the game's own definitions, which BepInEx rebuilds on every game update, so an update that moves them no longer breaks the mod.
+
+Version 0.31.2
+
+Fixed: a slip ring only ever joined port N of the joint with port N of the ring, so a power cable on another port of the ring never got across (a Mini Piston has 1 pass-through port, the ring 4). A power cable now meets a power cable on whichever port it is, as long as nothing else is plugged into the port given up.
+Fixed: turret seat — the plate pieces counted as up to 1/10 of the ship for the physics (10 t each on a 103 t ship) and, with the pieces blocked at the aim limit while the ship turned, the mod kept forcing them through, tearing the turret and then the ship apart. The pieces now have their own cap ([Turret Seat] mass_factor_max = 4 times their real mass), and when they stop following the aim the mod lets them go for 2 s.
+Fixed: the black box logged a universe shift every second (the game keeps your vehicle at the origin all the time).
+
+Version 0.31.1
+
+New: flight recorder ("black box"), log only — it changes nothing in the game. A 'flight:' line every 5 s in the simulation (speed, spin, air density, parts, mass balance). A screenshot (logs/marks) plus a full snapshot in the log — every part with its real and physics mass, the game joints closest to breaking, the thrusters, every camera and monitor with ports and power, the turret seats and the mod joints — taken by itself when something comes off in flight or a camera or monitor changes state, and whenever the mark key (F8) is pressed. It also logs each time the game moves the universe back to the player.
+Changed: the mark key (F8) no longer opens the note window by default ([Debug] mark_note_window), so the game keeps running.
+
+Version 0.31.0
+
+Changed: [Piston] mass_ratio_max only adds physics-only mass where it is needed. A piece jointed to one single part and more than 50 times lighter than it (landing legs, dampers, flat fans) keeps its real mass, and no piece counts as more than the new [Piston] mass_factor_max (25) times its real mass (its turning inertia: 25 squared). On a 125 t ship with 24 pistons this went from +113 t (each 100-500 kg piece counted as 8.6-9.7 t) to a few tonnes. The game's structural stress follows those kilograms, which is the likely reason the hull came apart in flight.
+Fixed: turret seat — standing up while 3P View (F5) was in 3rd person left the seat on the invisible layer for good; a seat nobody sits on now gets its layer back within a second.
+New: the log lists each thruster type's efficiency in space, in atmosphere and in water.
+
+Version 0.30.3
+
+Fixed: the physics-only mass that [Piston] mass_ratio_max gives light pieces held by piston welds or the turret pivot was real for the whole vehicle (+27 t on a 103 t ship, sitting on the turret plates and piston heads), so the ship flew heavier and off its centre of mass. The same kilograms are now taken back from the vehicle's heaviest part, and that part's centre of mass is moved so the vehicle's total mass and centre of mass are the real ones. The welds and the turret pivot still get their 10:1.
+
+Version 0.30.2
+
+Fixed: a thruster mirrored with V is another block for the game and had no slider of its own, so it stayed at 1 while its twin got the slider — a mirrored pair pushed unevenly and turned the ship.
+Fixed: the thruster sliders wrote the whole force vector every frame, freezing the direction the game gives it (RCS gimbal, fans). Now only the magnitude is set.
+Changed: a multiplier within 0.5% of 1 counts as 1 (the menu slider stops at 1.0000004), so the block is left alone.
+New: the log sums up the physics-only mass that [Piston] mass_ratio_max adds to the ship and how far it moves the centre of mass.
+
+Version 0.30.1
+
+New: [Thrusters] a force slider for each thruster type, fan and RCS block, on top of the global force_multiplier.
+Fixed: the multiplier compounded on every launch (the garage copy carried the already multiplied force), so even 0.1 was far too strong. The game's own force is now read once per block type.
+
+Version 0.29.1
+
+New: [Bonus] extra_blocks also takes the group: prefix (group:Frame=400 is the same as Frame=400), so a group reads like an inventory tab (tab:Frame=400). A group and a tab with the same name are NOT the same list: group Frame is the 37 normal frames, tab Frame also has the nanoframes and the micro frames.
+Fixed: turret seat — a time rewind left the seat broken. Only a seat that had already separated and still held its pieces was rebuilt at the rewound pose; one whole until aimed, one in the cooldown and one that had lost its pieces kept a state the rewind had undone, so the mod never put it back together. Now every state ends consistent and the seat works again after the rewind.
+Fixed: turret seat — in the garage the 16 pass-through plugs on its base did not take the colour of the cable plugged into the slip ring on the other side (the piston and the bearing have done that since 0.23.1). The seat was left out of that pairing, so there was no way to see which of the 4 ports of a set goes with which port of the ring, and power did not get to what is glued to the plates.
+Changed: when a slip ring channel has a power cable on one side and a data cable (or nothing) on the other, the log now says which side has the power cable and that both have to be power, at the same port number.
+
+Version 0.29.0
+
+New: [Bonus] extra_blocks takes a whole category, not just one block at a time. A name can be a block (SC_FrameAA=400), the name the inventory shows (Power Router=5), a group of the game that gives the amount to every block in it (Frame=400, and the same for Glass, Pipe, Nanopipe, Nanoframe, Label, MathBlock, DigitalOrAnalogMeter and BasicControllers, which is buttons, switches, knobs and joysticks) or an inventory tab with the tab: prefix (tab:Electronics=50). A later entry wins over an earlier one.
+New: config/CrapMechanics/blocks.txt, written at every start, lists every block the game registered with its group, its inventory tabs and the amount the game gives. It is where to read the names to put in extra_blocks.
+Changed: the two bonuses that were fixed in the code (extra cables per unlocked motor, +1 Radar for the complete car kit) are entries of extra_blocks' default value now, so every extra amount is in one place and can be edited. They no longer depend on having those blocks unlocked. A config file from 0.28.x or older keeps exactly the extra_blocks it had.
+Fixed: the search in the game's availability map scanned the whole table once per block, which a category of hundreds of blocks would have made slow; now one pass notes where every block is.
+
 Version 0.28.2
 
 Fixed: ships and cars came apart at launch. In 0.28.1 the line that installs the mod's game hooks ended up inside a comment, so the joint of a piston or bearing was no longer created in the same physics tick in which the game splits the parts. The wheel friction, the hidden mirrored parts, the pause while a world unloads, the radar icon and the time rewind button came back too.

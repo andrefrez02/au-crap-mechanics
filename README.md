@@ -2,6 +2,8 @@
 
 > Pistons, bearings, electric and fuel motors, drive shafts, slip rings, wheels, pedals, a steering wheel, a turret seat, a recoupler, a beacon and small fuel tanks: build working cars, rovers, cranes and turrets in Approximately Up.
 
+**Game update 1.0.300 / 1.0.301 (31 October 2026): update to 0.31.11.** With any older version, pressing **G** in the garage closes the game after this update. The update moved some of the game's data that the mod read at fixed places; the mod now finds them by name, and if one ever disappears, the feature that needs it turns itself off and says so in the log instead of crashing the game.
+
 **Updating from 0.25.0 or older?** The mod's files now have English names: **delete the old BepInEx/plugins/Mecanica folder** and install the new BepInEx/plugins/CrapMechanics folder. While the old folder is still there the new version stays off (the BepInEx log says so). Nothing you made is lost: your settings and knob values are copied from the old files on the first launch, and the blueprints in the game's blueprint folder are converted to the new part names when the game starts (a .bak-0.27 copy of each changed file is kept). For a blueprint kept somewhere else, close the game and run **bp_convert.py** from the plugin folder (instructions inside it). In multiplayer, everyone needs the same version.
 
 **Updating from 0.19.13?** The old **Piston 2**, **Piston 4** and **Piston 8** are no longer in the mod: they were replaced by a single Piston (up to 8 m) and the Piston End block, so blueprints that use the old pistons need them replaced with the new Piston. Motors now glue only by the bottom of their base and the small fuel tanks only by their brackets (like the game's tanks): in old blueprints, anything glued to their other faces needs to be glued again.
@@ -33,6 +35,7 @@ This mod was vibe-coded, I designed it and tested but didn't write the code.
 - **Wheels**: Sports and Offroad, 1 / 1.5 / 2 m; they only attach by the inner (flange) side.
 - **Pedals** and **steering wheel** for driving; **turret seat** that aims with the mouse and turns everything glued to its plates, with pass-through ports on its base for each plate. Three knobs on the front of its base limit how far it turns: left and right, up, and down.
 - **Recoupler**: re-attaches a part that a decoupler released, even in flight. **Beacon**: shows on every radar with its own icon (signal waves, car or ship, picked with its knob), and keeps a loose part simulated beyond 100 km from you (the game normally switches far parts off): a probe with a powered Beacon keeps its physics, camera, transmitter and thrusters working out there.
+- **Thrusters**: a force slider for every thruster type (plus a global one) in the settings. With the game's H display on in the garage, a panel shows how far each group of thrusters pushes from the centre of mass, which way that turns the ship and how many cm to move them so it flies straight.
 - **Single Cell Battery**, **Mini Solar Panel**, **Mini Electric Thruster** and a **Long Range Transmitter** (no distance limit, channel set by a data input; carries camera video too).
 - **Small blue / green fuel tanks** (1x2x1, 500 fuel).
 - Wheels, motors, small tanks and the turret seat take only the space of their shape (like the game's curved frames), so other parts and cables fit around them.
@@ -46,7 +49,7 @@ This mod was vibe-coded, I designed it and tested but didn't write the code.
 - Components Framework (by CohoJET, on Nexus Mods)
 - Mod Menu (optional: rebind this mod's keys and change its settings in the game's options menu)
 
-Tested on the Steam version of Approximately Up from 08 October 2026 (update 1.0.214).
+Tested on the Steam version of Approximately Up from 31 October 2026 (update 1.0.301).
 
 ## Modding practice
 
@@ -78,6 +81,7 @@ A few parts (the small fuel tanks, the turret seat, the Shaft Transmitter, the L
 
 ```html
 <h2>Crap Mechanics <em>- Physics Objects / Cars and more!</em></h2>
+<p><strong>Game update 1.0.300 / 1.0.301 (31 October 2026): update to 0.31.11.</strong> With any older version, pressing <strong>G</strong> in the garage closes the game after this update. The update moved some of the game&#x27;s data that the mod read at fixed places; the mod now finds them by name, and if one ever disappears, the feature that needs it turns itself off and says so in the log instead of crashing the game.</p>
 <p><strong>Updating from 0.25.0 or older?</strong> The mod&#x27;s files now have English names: <strong>delete the old BepInEx/plugins/Mecanica folder</strong> and install the new BepInEx/plugins/CrapMechanics folder. While the old folder is still there the new version stays off (the BepInEx log says so). Nothing you made is lost: your settings and knob values are copied from the old files on the first launch, and the blueprints in the game&#x27;s blueprint folder are converted to the new part names when the game starts (a .bak-0.27 copy of each changed file is kept). For a blueprint kept somewhere else, close the game and run <strong>bp_convert.py</strong> from the plugin folder (instructions inside it). In multiplayer, everyone needs the same version.</p>
 <p><strong>Updating from 0.19.13?</strong> The old <strong>Piston 2</strong>, <strong>Piston 4</strong> and <strong>Piston 8</strong> are no longer in the mod: they were replaced by a single Piston (up to 8 m) and the Piston End block, so blueprints that use the old pistons need them replaced with the new Piston. Motors now glue only by the bottom of their base and the small fuel tanks only by their brackets (like the game&#x27;s tanks): in old blueprints, anything glued to their other faces needs to be glued again.</p>
 <h3>Description</h3>
@@ -103,6 +107,7 @@ A few parts (the small fuel tanks, the turret seat, the Shaft Transmitter, the L
 <li><strong>Wheels</strong>: Sports and Offroad, 1 / 1.5 / 2 m; they only attach by the inner (flange) side.</li>
 <li><strong>Pedals</strong> and <strong>steering wheel</strong> for driving; <strong>turret seat</strong> that aims with the mouse and turns everything glued to its plates, with pass-through ports on its base for each plate. Three knobs on the front of its base limit how far it turns: left and right, up, and down.</li>
 <li><strong>Recoupler</strong>: re-attaches a part that a decoupler released, even in flight. <strong>Beacon</strong>: shows on every radar with its own icon (signal waves, car or ship, picked with its knob), and keeps a loose part simulated beyond 100 km from you (the game normally switches far parts off): a probe with a powered Beacon keeps its physics, camera, transmitter and thrusters working out there.</li>
+<li><strong>Thrusters</strong>: a force slider for every thruster type (plus a global one) in the settings. With the game&#x27;s H display on in the garage, a panel shows how far each group of thrusters pushes from the centre of mass, which way that turns the ship and how many cm to move them so it flies straight.</li>
 <li><strong>Single Cell Battery</strong>, <strong>Mini Solar Panel</strong>, <strong>Mini Electric Thruster</strong> and a <strong>Long Range Transmitter</strong> (no distance limit, channel set by a data input; carries camera video too).</li>
 <li><strong>Small blue / green fuel tanks</strong> (1x2x1, 500 fuel).</li>
 <li>Wheels, motors, small tanks and the turret seat take only the space of their shape (like the game&#x27;s curved frames), so other parts and cables fit around them.</li>
@@ -116,7 +121,7 @@ A few parts (the small fuel tanks, the turret seat, the Shaft Transmitter, the L
 <li>Components Framework (by CohoJET, on Nexus Mods)</li>
 <li>Mod Menu (optional: rebind this mod&#x27;s keys and change its settings in the game&#x27;s options menu)</li>
 </ul>
-<p>Tested on the Steam version of Approximately Up from 08 October 2026 (update 1.0.214).</p>
+<p>Tested on the Steam version of Approximately Up from 31 October 2026 (update 1.0.301).</p>
 <h3>Modding practice</h3>
 <p>No game files are redistributed. The archive contains only the mod&#x27;s own code (and, for Crap Mechanics, its own meshes, icons and the asset bundle built with the official Modkit). Meshes, materials and fonts from the game are linked at run time by name; nothing is copied out of the game.</p>
 <p>Install and uninstall by adding or removing the mod&#x27;s folder under BepInEx/plugins. Settings live in BepInEx/config and in the folder itself; blueprints and saves are never modified by the mod.</p>
@@ -145,7 +150,7 @@ A few parts (the small fuel tanks, the turret seat, the Shaft Transmitter, the L
 # Details
 A mod for **Approximately Up** (BepInEx 6 IL2CPP) that adds pistons, bearings, electric and fuel motors, wheels, pedals, a steering
 wheel, a turret seat, a recoupler, a beacon and fuel tanks: everything you need to build working cars, rovers, cranes and turrets.
-All blocks live in the **Mechanics** tab of the inventory and are always unlocked. Version **0.28.2**, by Andre + Claude.
+All blocks live in the **Mechanics** tab of the inventory and are always unlocked. Version **0.31.11**, by Andre + Claude.
 
 
 
@@ -174,7 +179,7 @@ All blocks live in the **Mechanics** tab of the inventory and are always unlocke
 | **Turret Seat** | Sit down and aim with the mouse: everything glued to its 4 plates turns with your view (up to a full circle sideways and 135° up or down; the 3 knobs on the front of the base set each limit, by default free / 135° up / 30° down, also when the whole ship turns), no bearings needed. The cursor key (Left Ctrl by default) shows/hides the cursor. |
 | **Recoupler** | The opposite of the decoupler: with signal ≥ 0.5, if it is touching (within 0.5 m and 30°) the face of a Decoupler that has already fired, it pulls the piece into place and merges both parts again (the decoupler works again afterwards). |
 | **Beacon** | Shows on every Radar with its own icon, in real time, while powered (5 P/s). Its knob picks the icon — signal waves, car or ship — and the small display shows it. Hides from the radar of its own vehicle. |
-| (bonus) | Each unlocked motor gives extra cables; Recoupler/Beacon/Bearings/motor/wheels unlock +1 Radar. |
+| (bonus) | `[Bonus] extra_blocks` gives an extra inventory amount to any block, by name or by whole category. |
 
 Most blocks have a mirrored version (press **V** in the garage), so the left and right wheels of a mirrored car both push forward.
 
@@ -232,11 +237,25 @@ first launch. Up to 0.26.x the file was `com.approximatelyup.mods.mecanica.cfg` 
   `keep_simulated_far`.
 - `Seat`: `bindings_reach` (how far the key bindings of the game's normal seat reach).
 - `Signal`: `fix_stuck_ports`.
-- `Bonus`: `extra_blocks` (`SC_Name=amount, ...`: extra inventory amount of any block, other mods' too; the pre-0.27.0 names of this mod's
-  blocks are accepted too).
+- `Bonus`: `extra_blocks` — extra inventory amount of any block, as `name=amount` separated by commas. The amount is **added** to what the
+  game gives. A name can be:
+  - a block: `SC_FrameAA=400` (other mods' blocks too; the pre-0.27.0 names of this mod's blocks are accepted)
+  - the name the inventory shows: `Power Router=5`
+  - a **group of the game**, which gives the amount to *every* block in it: `Frame=400` (or `group:Frame=400`), and the same for `Glass`,
+    `Pipe`, `Nanopipe`, `Nanoframe`, `Label`, `MathBlock`, `DigitalOrAnalogMeter`, `BasicControllers` (buttons, switches, knobs and joysticks)
+  - an inventory tab, with the `tab:` prefix: `tab:Electronics=50`
+
+  A group and an inventory tab with the same name are **not** the same list: group `Frame` is the 37 normal frames (and `Glass` the 23
+  normal glasses), while tab `Frame` also holds the nanoframes and the micro frames, and tab `Glass` the nano glasses.
+
+  A later entry wins over an earlier one, so `Frame=400, SC_FrameAA=5000` gives 400 to every frame and 5000 to that one. A block that is
+  still locked is skipped (the log says so). **`config/CrapMechanics/blocks.txt`**, written at every start, lists every block the game
+  registered with its group, its tabs and the amount the game gives — that file is where to read the names for this setting.
+- `Slip Ring`: `grow_circuit_list` (on: a circuit whose list of components is already full gets room for the power bridge, the way the
+  game makes room when it adds a part; off: that circuit's slip rings carry no power and the log says which).
 - `Multiplayer`: `host_only` (the server runs the mod's physics; clients only draw), `break_on_client`, `ring_on_client`,
   `fake_client`, `net_log` (debug), `test_loopback` (test the turret seat's network path in a solo game). See *Multiplayer*.
-- `Debug`: `mark_error_key`, `turret_adjust_numpad`, `trace`.
+- `Debug`: `mark_error_key`, `turret_adjust_numpad`, `trace`, `flight_trace` (log only: the `trace:` lines described in *Logs*), `thrust_balance_on_h` (the thrust balance panel in the garage).
 
 Changes made in the options menu ("Mod settings", with Mod Menu) apply immediately.
 
@@ -303,6 +322,34 @@ Offline converter, for blueprints kept somewhere else (a copy, a download) or to
    Each changed file is copied to `<name>.bp.bak-0.27` first, and a file it doesn't fully understand is left alone.
 
 ## Changelog
+- 0.31.11: a Long Range Transmitter whose signal cable goes straight into a joint's pass-through port (bearing, piston, turret) works: the game gives that port no direction, so the mod looks across the joint — a monitor over there makes it receive, a camera makes it send — and the slip ring carries the data across; with no slip ring, that port is the joint's own signal input (a servo bearing, a motor, a piston), so the transmitter receives and drives it.
+- 0.31.10: a Long Range Transmitter whose signal port gets no direction from the game (red LED, "not wired" in the log) now logs the whole path of its cable: each port, block and type, and where it ends.
+- 0.31.9: thrust balance in the garage: with the game's H display on, a panel in the top right corner shows the ship's mass and, for each group of thrusters pushing the same way (up, forward...), how far from the centre of mass its thrust line passes, which way it turns the ship (nose up/down, left/right, roll) and how many cm to move them. `[Debug] thrust_balance_on_h` turns it off.
+- 0.31.8: flight trace (`[Debug] flight_trace`, on, log only): every 2 s for the first 3 minutes of each launch, which way the ship turns, the centre of mass with the real and with the physics masses, the thrust and the torque it makes around the real centre of mass, the same with every thruster at its garage pose, and the thrusters off the hull that moved from it.
+- 0.31.7: new `[Slip Ring] grow_circuit_list` (on): a circuit whose list of components was full even before the power bridge's one entity now gets a bigger list (with the game's own code, the same that runs when it adds a part), so its slip rings carry power too.
+- 0.31.6: several slip rings fed from the same circuit all work at once: each bridge used to add its own entity to the game's component list of the circuit, and that list has a fixed size — with 15 parts of the game in it only one bridge fit, so only one of two rockets on two pistons worked. Now each circuit gets one bridge entity that carries every bridge touching it.
+- 0.31.5: power reaches the end of a chain of joints (ship -> piston -> slip ring -> bearing -> slip ring -> ...): the cable between two joints has no circuit of its own in the game, so each bridge in the middle stopped there. The bridge now follows the chain from joint to joint and carries the power from the first real circuit to the last one. A slip ring wired crosswise (power on ring port 1 and joint port 3, the other cables on the other two) now swaps the two ports so both match.
+- 0.31.4: power now crosses a chain of joints (piston -> bearing -> bearing ...): the slip ring only took a cable as power when the port at its far end was a power port, and inside a chain that far end is the next joint's pass-through port, so the wings' cameras lived on their solar panels alone. New `[Thrusters] reinforce_joints` (on): while a thruster multiplier above 1 is in use, the game's joints are that much stronger (x3 thrust = x3 strength), so a ship pushed harder doesn't tear itself apart; off = the game's own strength.
+- 0.31.3: pressing G in the garage closed the game since its 1.0.300 update. The update moved a field of the game's garage data and the mod still read it at the old place, so in edit mode it followed a value that is not a pointer. The mod now finds the fields it reads by name in the game's own definitions, so a game update that moves them doesn't break it.
+- 0.31.2: slip rings match a power cable with a power cable even when it is on a different port number (a Mini Piston has 1 pass-through port and the ring 4, so a power cable on the ring's other ports never got across). Turret seat: the plate pieces have their own cap for the physics-only mass (`[Turret Seat] mass_factor_max`, 4), and when they stop following the aim (blocked) the mod stops forcing them for 2 s instead of pushing them through whatever blocks them. The black box no longer reports a universe shift every second.
+- 0.31.1: flight recorder ("black box"), log only: a `flight:` line every 5 s (speed, spin, air density, parts, mass balance); a screenshot plus a full snapshot (parts and their real/physics mass, game joints closest to breaking, thrusters, cameras and monitors with ports and power, turret seats, mod joints) by itself when something comes off in flight or a camera/monitor changes state, and whenever the mark key (F8) is pressed — without the note window now (`[Debug] mark_note_window`). It also logs every time the game moves the universe back to the player.
+- 0.31.0: the physics-only mass of `[Piston] mass_ratio_max` is spent only where it is needed: a piece jointed to one single part and more than 50 times lighter than it (landing legs, dampers, flat fans) keeps its real mass, and no piece counts as more than `[Piston] mass_factor_max` (25) times its real mass — on a 125 t ship this went from +113 t to a few tonnes, and the game's structural stress follows those kilograms. Turret seat: a seat left invisible by 3P View's F5 (standing up while in 3rd person) gets its layer back. The log lists each thruster type's efficiency in space, atmosphere and water.
+- 0.30.3: the physics-only mass that `[Piston] mass_ratio_max` gives the light pieces (so the welds and the turret pivot hold) is now taken back from the vehicle's heaviest part, whose centre of mass is moved to match: the solver still sees 10:1 at every weld, but the vehicle's total mass and centre of mass are the real ones (before, a 103 t ship flew as 130 t with its centre of mass pulled toward the turret).
+- 0.30.2: a thruster mirrored with V now follows the slider of its normal version (it stayed at 1, so a mirrored pair pushed unevenly and turned the ship); the thruster sliders only set the force's magnitude and leave its direction to the game (RCS gimbal, fans); a multiplier within 0.5% of 1 leaves the block alone. The log sums up the physics-only mass that `[Piston] mass_ratio_max` puts on the ship and how far it moves the centre of mass.
+- 0.30.1: `[Thrusters]` has a force slider for each thruster type (small/medium/large electric, fuel and maneuvering, atmospheric, fans, ducted, flat, RCS...) on top of the global `force_multiplier`. Fixed the multiplier compounding on every launch. Power and fuel use are not multiplied.
+- 0.29.1: `[Bonus] extra_blocks` also takes the `group:` prefix (`group:Frame=400` = `Frame=400`), to read symmetrically with `tab:` — a
+  group and a tab with the same name do not hold the same blocks. Turret seat: a **time rewind** left the seat broken (only a seat that
+  had already separated and still had its pieces was rebuilt; one whole until aimed, one in the cooldown and one that had lost its pieces
+  kept a state the rewind had undone), and in the **garage** the 16 pass-through plugs on its base now take the colour of the cable
+  plugged into the slip ring on the other side, like the piston's and the bearing's do since 0.23.1 — without it there was no way to see
+  which of the 4 ports of a set goes with which port of the ring, so power never got across. The log also says which side of a channel has
+  the power cable.
+- 0.29.0: `[Bonus] extra_blocks` takes a whole category instead of one block at a time — a group of the game (`Frame=400` for every frame,
+  `Glass`, `BasicControllers` for buttons/switches/knobs/joysticks, …), an inventory tab (`tab:Electronics=50`) or the name the inventory
+  shows (`Power Router=5`); the new `config/CrapMechanics/blocks.txt` lists every block with its group, so the names don't have to be
+  guessed. The two bonuses that were fixed in the code (extra cables per unlocked motor, +1 Radar for the complete car kit) are entries of
+  this setting's default value now, so every extra amount is in one place and editable: they no longer depend on having those blocks
+  unlocked, and a config from 0.28.x or older keeps exactly what it had.
 - 0.28.2: ships and cars came apart at launch: in 0.28.1 a comment swallowed the line that installs the mod's game hooks, so the joint
   was no longer created in the same physics tick in which the game splits the parts (and the wheel friction, the hidden mirrored parts,
   the world unload pause, the radar icon and the time rewind button were off too). Also: a solo game counted as a network game (the

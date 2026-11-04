@@ -1,5 +1,7 @@
 [size=6][b]Crap Mechanics [i]- Physics Objects / Cars and more![/i][/b][/size]
 
+[b]Game update 1.0.300 / 1.0.301 (31 October 2026): update to 0.31.11.[/b] With any older version, pressing [b]G[/b] in the garage closes the game after this update. The update moved some of the game's data that the mod read at fixed places; the mod now finds them by name, and if one ever disappears, the feature that needs it turns itself off and says so in the log instead of crashing the game.
+
 [b]Updating from 0.25.0 or older?[/b] The mod's files now have English names: [b]delete the old BepInEx/plugins/Mecanica folder[/b] and install the new BepInEx/plugins/CrapMechanics folder. While the old folder is still there the new version stays off (the BepInEx log says so). Nothing you made is lost: your settings and knob values are copied from the old files on the first launch, and the blueprints in the game's blueprint folder are converted to the new part names when the game starts (a .bak-0.27 copy of each changed file is kept). For a blueprint kept somewhere else, close the game and run [b]bp_convert.py[/b] from the plugin folder (instructions inside it). In multiplayer, everyone needs the same version.
 
 [b]Updating from 0.19.13?[/b] The old [b]Piston 2[/b], [b]Piston 4[/b] and [b]Piston 8[/b] are no longer in the mod: they were replaced by a single Piston (up to 8 m) and the Piston End block, so blueprints that use the old pistons need them replaced with the new Piston. Motors now glue only by the bottom of their base and the small fuel tanks only by their brackets (like the game's tanks): in old blueprints, anything glued to their other faces needs to be glued again.
@@ -34,6 +36,7 @@ This mod was vibe-coded, I designed it and tested but didn't write the code.
 [*][b]Wheels[/b]: Sports and Offroad, 1 / 1.5 / 2 m; they only attach by the inner (flange) side.[/*]
 [*][b]Pedals[/b] and [b]steering wheel[/b] for driving; [b]turret seat[/b] that aims with the mouse and turns everything glued to its plates, with pass-through ports on its base for each plate. Three knobs on the front of its base limit how far it turns: left and right, up, and down.[/*]
 [*][b]Recoupler[/b]: re-attaches a part that a decoupler released, even in flight. [b]Beacon[/b]: shows on every radar with its own icon (signal waves, car or ship, picked with its knob), and keeps a loose part simulated beyond 100 km from you (the game normally switches far parts off): a probe with a powered Beacon keeps its physics, camera, transmitter and thrusters working out there.[/*]
+[*][b]Thrusters[/b]: a force slider for every thruster type (plus a global one) in the settings. With the game's H display on in the garage, a panel shows how far each group of thrusters pushes from the centre of mass, which way that turns the ship and how many cm to move them so it flies straight.[/*]
 [*][b]Single Cell Battery[/b], [b]Mini Solar Panel[/b], [b]Mini Electric Thruster[/b] and a [b]Long Range Transmitter[/b] (no distance limit, channel set by a data input; carries camera video too).[/*]
 [*][b]Small blue / green fuel tanks[/b] (1x2x1, 500 fuel).[/*]
 [*]Wheels, motors, small tanks and the turret seat take only the space of their shape (like the game's curved frames), so other parts and cables fit around them.[/*]
@@ -49,7 +52,7 @@ This mod was vibe-coded, I designed it and tested but didn't write the code.
 [*]Components Framework (by CohoJET, on Nexus Mods)[/*]
 [*]Mod Menu (optional: rebind this mod's keys and change its settings in the game's options menu)[/*]
 [/list]
-Tested on the Steam version of Approximately Up from 08 October 2026 (update 1.0.214).
+Tested on the Steam version of Approximately Up from 31 October 2026 (update 1.0.301).
 
 [size=5][b]Modding practice[/b][/size]
 

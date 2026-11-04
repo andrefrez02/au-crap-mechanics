@@ -225,6 +225,7 @@ namespace CrapMechanics
             T("pistons with end done"); tKnobs += dt;
             if (tKnobs >= 0.1f) { tKnobs = 0f; T("knobs (garage)..."); try { Knobs.GarageStep(em); } catch (Exception ex) { WarnLimited("knobs (garage): " + ex.Message); } }   // 0.19.15
             T("knobs (garage) done"); try { Garage.Step(em, dt); } catch (Exception ex) { WarnLimited("garage: " + ex.Message); }
+            try { ThrustBalance.Step(em, dt); } catch (Exception ex) { WarnLimited("thrust balance: " + ex.Message); }   // 0.31.9
             T("garage pass done"); Knobs.Store(dt);
             T("knobs saved"); try { Painting.Step(em, dt); } catch (Exception ex) { WarnLimited("paint: " + ex.Message); }   // 0.17.1
             T("paint done");
@@ -2348,6 +2349,8 @@ namespace CrapMechanics
             try { SlipRings.Forget(); } catch (Exception) { }   // 0.22.0
             try { Multi.Forget(); ModNet.Forget(); } catch (Exception) { }   // 0.28.0
             try { ForgetTurrets(); } catch (Exception) { }
+            try { Thrusters.Forget(); } catch (Exception) { }   // 0.30.0
+            try { BlackBox.Forget(); } catch (Exception) { }   // 0.31.1
             ModLog.Info("after world unload: mod state cleared (joints, motors, beacons, radios, levers, turrets)");
         }
         public static void Clean(EntityManager em)

@@ -28,6 +28,8 @@ namespace CrapMechanics
         public static float3 SeatOff, PlayerB, ViewA = DefaultView;
         static TypeIndex tiLayer, tiActSeat; static bool layerOk, layerFailed;
         static readonly Dictionary<long, int> originalLayer = new Dictionary<long, int>();
+        static readonly Dictionary<long, int> givenBack = new Dictionary<long, int>();   // 0.31.0: layer each seat renderer had before the mod hid it
+        static float tRepair;
         static readonly Dictionary<long, float3> originalPlayer = new Dictionary<long, float3>();
         static Entity hiddenBlock; static bool hiddenActive;
 
@@ -85,6 +87,7 @@ namespace CrapMechanics
             bool wantsHide = t != null && SeatInvisible && Ecs.Alive(em, t.block);
             if (wantsHide && (!hiddenActive || hiddenBlock != t.block)) { if (hiddenActive) Layer(em, hiddenBlock, false); Layer(em, t.block, true); hiddenBlock = t.block; hiddenActive = true; }
             else if (!wantsHide && hiddenActive) { Layer(em, hiddenBlock, false); hiddenActive = false; }
+            tRepair += UnityEngine.Time.unscaledDeltaTime; if (tRepair >= 1f) { tRepair = 0f; RepairLayers(em); }
             if (t == null) { if (Adjust) { Adjust = false; ModLog.Info("turret adjust: off (stood up)"); } return; }
             // ---- keys
             if (CrapMechanicsPlugin.TurretAdjust == null || !CrapMechanicsPlugin.TurretAdjust.Value) { if (Adjust) Adjust = false; return; }   // 0.12.14: debug, off by default
@@ -129,11 +132,40 @@ namespace CrapMechanics
                     if (!Ecs.HasC(em, e, tiLayer)) continue;
                     var b = (int*)em.GetComponentDataRawRW(e, tiLayer); long k = Ecs.K(e);
                     if (hideIt) { if (!originalLayer.ContainsKey(k)) originalLayer[k] = *b; *b = 4; n++; }
-                    else if (originalLayer.TryGetValue(k, out var orig)) { *b = orig; originalLayer.Remove(k); n++; }
+                    else if (originalLayer.TryGetValue(k, out var orig)) { *b = orig; givenBack[k] = orig; originalLayer.Remove(k); n++; }
                 }
                 ModLog.Info("turret seat " + block.Index + ": seat " + (hideIt ? "INVISIBLE to you (MyPlayer layer)" : "visible again") + " — " + n + " renderer(s)");
             }
             catch (Exception ex) { ModLog.Warn("turret seat: seat layer: " + ex.Message); }
+        }
+
+        /// <summary>0.31.0 (Andre: "the seat model goes invisible between one simulation and the next" + "some conflict between F5 and the turret
+        /// seat"): seated, the mod hides the seat by putting its renderers on the MyPlayer layer. 3P View's F5 shows the character by switching
+        /// EVERY MyPlayer renderer to AlwaysVisible — the seat's too — and on the way back puts every AlwaysVisible one it touched on MyPlayer.
+        /// Stand up while in 3rd person and the mod gives the seat its layer back first, then 3P View hides it again: the seat stays
+        /// invisible for good. Every second, a seat nobody is sitting on that is on the MyPlayer layer gets its layer back.</summary>
+        static unsafe void RepairLayers(EntityManager em)
+        {
+            try
+            {
+                if (!PrepareLayer(em) || !scSeatOk) return;
+                foreach (var t in turrets.Values)
+                {
+                    if (hiddenActive && t.block == hiddenBlock) continue;
+                    if (!Ecs.Alive(em, t.block) || !Ecs.HasC(em, t.block, tiSCSeat)) continue;
+                    var sc = (Entity*)em.GetComponentDataRawRO(t.block, tiSCSeat);
+                    var list = new List<Entity> { sc[0], sc[1] }; list.AddRange(Ecs.Children(em, sc[0]));
+                    int n = 0;
+                    foreach (var e in list)
+                    {
+                        if (!Ecs.HasC(em, e, tiLayer)) continue;
+                        var b = (int*)em.GetComponentDataRawRW(e, tiLayer); if (*b != 4) continue;
+                        *b = givenBack.TryGetValue(Ecs.K(e), out var orig) && orig != 4 ? orig : 0; n++;
+                    }
+                    if (n > 0) ModLog.Info("turret seat " + t.block.Index + ": " + n + " seat renderer(s) were left on the MyPlayer layer (invisible) with nobody seated — visible again (3P View / F5 hid them on the way back)");
+                }
+            }
+            catch (Exception ex) { ModLog.Warn("turret seat: seat layer check: " + ex.Message); }
         }
 
         /// <summary>In the TransformSystemGroup prefix (SeatHeights): version B = where the player sits (relative to Upper) = PlayerB - Upper;

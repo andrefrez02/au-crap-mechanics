@@ -213,6 +213,8 @@ namespace CrapMechanics
             if (h != hBefore) { hBefore = h; if (DetailedLog) ModLog.Info("garage: H display " + (h ? "on" : "off") + (hSource == 2 ? " (H key)" : " (game's garage bot)") + " — " + pst.Count + " piston(s), " + ends.Count + " Piston End(s)"); }
         }
         static bool hBefore;
+        /// <summary>0.31.9 (ThrustBalance): the game's H display is on (as of the last garage pass).</summary>
+        public static bool HIsOn => hBefore;
 
         static readonly float4 Green = new float4(0.25f, 0.95f, 0.35f, 1f), Red = new float4(0.98f, 0.12f, 0.08f, 1f);
         static unsafe void Paint(EntityManager em, Entity rail, int color)
