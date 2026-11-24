@@ -19,6 +19,7 @@ namespace CrapMechanics
         public const uint Reserve = 2;          // RadarIconID.PlanetPackage, if our own fails
         static readonly System.Collections.Generic.HashSet<IntPtr> doneSet = new System.Collections.Generic.HashSet<IntPtr>(); static Texture2DArray mine; static IntPtr myPtr; static int myIdx; static IntPtr hNew; static float t = 9f, wait = 1f; static bool failed; static int attempts; static string step = "";
 
+        static System.Collections.Generic.List<GameFeature> feats; static float featsAt;
         public static void Step(float dt)
         {
             if (Request >= 0) { Couplers.IconBeacon = (uint)Request; return; }
@@ -26,13 +27,20 @@ namespace CrapMechanics
             t += dt; if (t < wait) return; t = 0f;
             try
             {
-                step = "find GameFeature";
-                var objs = Resources.FindObjectsOfTypeAll(Il2CppInterop.Runtime.Il2CppType.Of<GameFeature>());
-                if (objs == null) return;
-                foreach (var o in objs)
+                // 0.31.15: Resources.FindObjectsOfTypeAll goes through every object the game has loaded — it ran once a second (a hitch per
+                // second on a big ship). The GameFeature objects found are kept and only their icon array is checked; they are looked for
+                // again every 30 s, or at once if one of them is gone.
+                if (feats == null || Ecs.Now - featsAt > 30f)
                 {
-                    step = "TryCast GameFeature";
-                    var gf = o.TryCast<GameFeature>(); if (gf == null) continue;
+                    step = "find GameFeature";
+                    var objs = Resources.FindObjectsOfTypeAll(Il2CppInterop.Runtime.Il2CppType.Of<GameFeature>());
+                    if (objs == null) return;
+                    var found = new System.Collections.Generic.List<GameFeature>();
+                    foreach (var o in objs) { step = "TryCast GameFeature"; var g = o.TryCast<GameFeature>(); if (g != null) found.Add(g); }
+                    feats = found; featsAt = Ecs.Now;
+                }
+                foreach (var gf in feats)
+                {
                     step = "read _radarIconsT2A";
                     var old = gf._radarIconsT2A; if (old == null) continue;
                     step = "compare with mine";
@@ -44,6 +52,7 @@ namespace CrapMechanics
             {
                 // 0.7.2 gave up on the 1st failure ("Object was garbage collected in IL2CPP domain", while loading the world).
                 // Now it tries 5x, every 5 s; if my array was collected, forget it and build it again.
+                feats = null;
                 attempts++; wait = 5f; mine = null; myPtr = IntPtr.Zero; Couplers.IconBeacon = Reserve;
                 ModLog.Warn("radar: custom beacon icon failed (attempt " + attempts + "/5, step '" + step + "'): " + (attempts == 1 ? ex.ToString() : ex.Message));
                 if (attempts >= 5) { failed = true; ModLog.Warn("radar: gave up on the custom icon, the beacon keeps icon " + Reserve + " (config Beacon.icon picks a game icon)"); }
@@ -145,11 +154,14 @@ namespace CrapMechanics
             try
             {
                 if (!qOk) { tiIc = TypeManager.GetTypeIndex(Il2CppInterop.Runtime.Il2CppType.Of<RadarAppearanceIcon>()); var a = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppStructArray<ComponentType>(1); a[0] = ComponentType.ReadOnly(tiIc); qIc = em.CreateEntityQuery(a); qOk = true; }
-                var usedSet = new HashSet<int>();
+                // 0.31.26 (item 47): icons 0 (PlanetStationVisited) and 1 (PlanetStationUnknown) are always the game's: FindPlanetStationsJob
+                // writes them from UniverseLocationData, with no RadarAppearanceIcon to find [recon/EPC_SCRadar.cs:674-678] — the scan below never
+                // saw them, and the beacon could paint over the stations' icon once 8 other slices were taken
+                var usedSet = new HashSet<int> { 0, 1 };
                 foreach (var e in Ecs.QueryList(qIc))
                 {
                     if (ghosts.Contains(e.Index)) continue;
-                    var p = (uint*)em.GetComponentDataRawRO(e, tiIc); if (p != null && *p < (uint)painted.Length) usedSet.Add((int)*p);
+                    var p = (uint*)Ecs.RO(em, e, tiIc); if (p != null && *p < (uint)painted.Length) usedSet.Add((int)*p);
                 }
                 var newVal = new int[] { -1, -1, -1 }; var occupied = new HashSet<int>();
                 for (int k = 0; k < 3; k++)   // whoever already had a free slice stays on it (doesn't blink)

@@ -19,7 +19,10 @@ import models_v2
 BLACK, DARK, MEDIUM, LIGHT, PAINT, LIGHT_COL = models_v2.BLACK, models_v2.DARK, models_v2.MEDIUM, models_v2.LIGHT, models_v2.PAINT, models_v2.LIGHT_COL
 
 
-def guid(name): return hashlib.md5(("crapmechanics|" + name).encode()).hexdigest()
+def guid(name):
+    # 0.31.28 seal redo: the redone Rubber Seal pieces get GUIDs of their own (the first five were never released, and the corner kept its name)
+    salt = "seal2|" if name.startswith(("SC_RubberSeal", "SC_MiniRubberSeal")) else ""
+    return hashlib.md5(("crapmechanics|" + salt + name).encode()).hexdigest()
 
 
 def models(ports_per_block=None):
@@ -174,6 +177,82 @@ def asset(name, mesh):
     return t
 
 
+def _tri_set(text):
+    """0.31.28: the triangles of a mesh .asset as a sorted list (positions rounded to 0.01 mm, normals to 1e-4, color), each one turned so
+    its smallest corner comes first (the winding stays). Two files with the same list are the same mesh, whatever the triangle order."""
+    import re
+    m = re.search(r"_typelessdata: ([0-9a-f]*)", text)
+    if not m: return None
+    raw = bytes.fromhex(m.group(1))
+    if len(raw) % 84: return None
+    out = []
+    for k in range(0, len(raw), 84):
+        vs = []
+        for j in range(3):
+            v = struct.unpack_from("<6f4B", raw, k + 28 * j)
+            vs.append((tuple(round(x, 5) + 0.0 for x in v[:3]), tuple(round(x, 4) + 0.0 for x in v[3:6]), v[6:]))
+        i0 = min(range(3), key=lambda i: vs[i])
+        out.append(tuple(vs[(i0 + j) % 3] for j in range(3)))
+    out.sort()
+    return out
+
+
+def _surface(text):
+    """0.31.28: the same surface split into other triangles (qhull splits a flat face of a hull along the other diagonal): corner set,
+    and area per (normal, color). Equal = same shape and same look."""
+    import re
+    m = re.search(r"_typelessdata: ([0-9a-f]*)", text)
+    if not m: return None
+    raw = bytes.fromhex(m.group(1))
+    if len(raw) % 84: return None
+    corners, area = set(), {}
+    for k in range(0, len(raw), 84):
+        vs = [struct.unpack_from("<6f4B", raw, k + 28 * j) for j in range(3)]
+        p = [np.array(v[:3], float) for v in vs]
+        for q in p: corners.add(tuple(round(x, 5) + 0.0 for x in q))
+        key = (tuple(round(x, 3) + 0.0 for x in vs[0][3:6]), vs[0][6:])
+        area[key] = area.get(key, 0.0) + 0.5 * float(np.linalg.norm(np.cross(p[1] - p[0], p[2] - p[0])))
+    return corners, {k: round(v, 6) for k, v in area.items()}
+
+
+def _surface_key(text):
+    s = _surface(text)
+    return None if s is None else (tuple(sorted(s[0])), tuple(sorted(s[1].items())))
+
+
+def _same_hull_set(content, name, hl):
+    """0.31.28: do the existing <name>_Col0..N files hold exactly these hulls (in any order)?"""
+    try:
+        olds = []
+        for k in range(len(hl)):
+            path = os.path.join(content, "Meshes", name + "_Col%d.asset" % k)
+            if not os.path.exists(path): return False
+            olds.append(_surface_key(open(path, encoding="utf-8").read()))
+        if os.path.exists(os.path.join(content, "Meshes", name + "_Col%d.asset" % len(hl))): return False
+        news = [_surface_key(asset(name + "_Col%d" % k, m)) for k, m in enumerate(hl)]
+        if any(x is None for x in olds + news): return False
+        return sorted(olds) == sorted(news)
+    except Exception:
+        return False
+
+
+def write_mesh(path, name, mesh):
+    """0.31.28: writes the mesh .asset — unless the file already holds the same mesh. Another numpy/scipy gives the same model with
+    float noise in the normals (1e-15) and the convex hulls with the triangles in another order: the file would change with nothing
+    changed (and the bundle would be rebuilt for nothing). Same triangles = the old file stays as it is."""
+    text = asset(name, mesh)
+    if os.path.exists(path):
+        try:
+            old = open(path, encoding="utf-8").read()
+            if old == text: return
+            a, b = _tri_set(old), _tri_set(text)
+            if a is not None and a == b: return
+            a, b = _surface(old), _surface(text)
+            if a is not None and a == b: return
+        except Exception: pass
+    open(path, "w", newline="\n").write(text)
+
+
 META_MESH = "fileFormatVersion: 2\nguid: %s\nNativeFormatImporter:\n  externalObjects: {}\n  mainObjectFileID: 4300000\n  userData: \n  assetBundleName: \n  assetBundleVariant: \n"
 
 # ------------------------------------------------------------------ icon (simple rasterizer, orthographic, 4x supersample)
@@ -269,7 +348,7 @@ def generate_markers(content):
     for name in list(GAME_MESHES.values()) + ["DriveShaftCable"] + SHAFT_PORT_COLORS:   # 0.15.0: CaboPlasma = Drive Shaft meshes (copied from the plasma cable at runtime)
         m = Mesh(); m.tri((0, 0, 0), (0.001, 0, 0), (0, 0.001, 0), (17, 17, 17, 0))
         n = "Game_" + name
-        open(os.path.join(content, "Meshes", n + ".asset"), "w", newline="\n").write(asset(n, m))
+        write_mesh(os.path.join(content, "Meshes", n + ".asset"), n, m)
         open(os.path.join(content, "Meshes", n + ".asset.meta"), "w", newline="\n").write(META_MESH % marker_guid(name))
 
 
@@ -278,7 +357,11 @@ def generate_markers(content):
 # slice becomes a convex hull (scipy). Compounds: the base stays a box, the round body leaves the corners free for cables.
 HULL_BLOCKS = ["SC_Bearing", "SC_GyroBearing", "SC_MotorSmall", "SC_MotorMedium", "SC_MotorLarge", "SC_MotorFuelSmall", "SC_MotorFuelMedium", "SC_MotorFuelLarge", "SC_Recoupler",
                "SC_Differential", "SC_ShaftReverser", "SC_Piston", "SC_MiniPiston", "SC_MiniBearing", "SC_MiniGyroBearing", "SC_SlipRing", "SC_MiniSlipRing", "SC_PistonEnd", "SC_MiniPistonEnd",   # 0.20.0; 0.22.0/0.22.4: rings and tips
-               "SC_Pedal", "SC_SteeringWheel", "SC_SingleCellBattery"]   # 0.19.3
+               "SC_Pedal", "SC_SteeringWheel", "SC_SingleCellBattery",   # 0.19.3
+               "SC_BearingRing"]   # 0.31.36: Bearing with Slip Ring (base, track, short disc and the still core inside the ring plate; the plate turns: no hull)
+# 0.31.36: extras that are PAINTABLE renderers (gen_prefabs paint_extras) and should look it in the inventory picture: drawn in the
+# paintable's light tone instead of the body's. Only the blocks listed here; every other icon is drawn exactly as before.
+ICON_PAINT_EXTRAS = {"SC_BearingRing": ("RingPaint",)}
 def _components(T):
     """T (n,3,3) -> list of index arrays of triangles connected by shared vertices (rounded to 0.01 mm)."""
     n = len(T)
@@ -375,33 +458,69 @@ def generate(content, ports_per_block=None, game_mesh=None):
     generate_markers(content)
     meta_icon = open(META_ICON_TEMPLATE, encoding="utf-8").read()
     ref = {}
-    for name, mod in models(ports_per_block).items():
+    all_models = models(ports_per_block)
+    for name, mod in all_models.items():
         body, paint_ = mod[0], mod[1]
         extras_ = mod[2] if len(mod) > 2 else []   # 0.11.0: extra renderers (suffix, mesh, pos, scale) — piston rod/head
-        for sfx, m in [("_Body", body), ("_Paintable", paint_)] + [("_" + x[0], x[1]) for x in extras_]:
+        # 0.31.36: a model named "<block> M" is a mirrored version with a model of its own (Remote Computer: the case is mirrored, the
+        # painted digits and the controls are not). Its body / paintable meshes are "<block>M_Body" / "<block>M_Paintable"; its extras
+        # use the BASE block's meshes (the same shapes: checked here) and it has no icon of its own (the base's: an M never shows in
+        # the inventory). Nothing changes for the other models.
+        base = name[:-2] if name.endswith(" M") else None
+        if base is not None:
+            mn = name.replace(" ", "")
+            for sfx, m in [("_Body", body), ("_Paintable", paint_)]:
+                if not m.tris: continue
+                write_mesh(os.path.join(content, "Meshes", mn + sfx + ".asset"), mn + sfx, m)
+                open(os.path.join(content, "Meshes", mn + sfx + ".asset.meta"), "w", newline="\n").write(META_MESH % guid(mn + sfx))
+            shared = {}
+            for x in (all_models[base][2] if len(all_models[base]) > 2 else []): shared.setdefault(x[5] if len(x) > 5 else x[0], x[1])
+            for x in extras_:
+                k = x[5] if len(x) > 5 else x[0]
+                assert k in shared, "%s: extra %s has no mesh in %s" % (name, k, base)
+                A = np.array([t[:3] for t in x[1].tris], float); Bm = np.array([t[:3] for t in shared[k].tris], float)
+                assert A.shape == Bm.shape and np.allclose(A, Bm, atol=1e-9), "%s: extra %s is not the same shape as in %s" % (name, k, base)
+            ref[name] = (guid(mn + "_Body") if body.tris else None, guid(mn + "_Paintable") if paint_.tris else None, guid(base + "_Icon"),
+                         [(ex[2], ex[4] if len(ex) > 4 else (0, 0, 0), ex[3], guid(base + "_" + (ex[5] if len(ex) > 5 else ex[0])), ex[0]) for ex in extras_], [])
+            continue
+        for sfx, m in [("_Body", body), ("_Paintable", paint_)] + [("_" + (x[5] if len(x) > 5 else x[0]), x[1]) for x in extras_]:
             if not m.tris: continue
             n = name + sfx
-            open(os.path.join(content, "Meshes", n + ".asset"), "w", newline="\n").write(asset(n, m))
+            write_mesh(os.path.join(content, "Meshes", n + ".asset"), n, m)
             open(os.path.join(content, "Meshes", n + ".asset.meta"), "w", newline="\n").write(META_MESH % guid(n))
         pl = (ports_per_block or {}).get(name, [])
         # icon: body + paintable + extras at the rest position/scale
         from models_v2 import with_extras
         ci = with_extras(mod)
         if len(mod) > 3 and mod[3] is not None: ci = Mesh(); ci.tris = list(with_extras(mod).tris) + list(mod[3].tris)   # 0.12.0: preview (the game's meshes, only in the picture)
-        im = icon(ci, paint_, pl, plugs_=plug_list(pl, game_mesh), VIEW=VIEW_PER_BLOCK.get(name, VIEW))
-        im.save(os.path.join(content, "Icons", name + ".png"))
+        icon_paint = paint_
+        if name in ICON_PAINT_EXTRAS:   # 0.31.36: the listed extras go to the picture's paintable side (at their rest pose), not to its body side
+            pe = [x for x in extras_ if x[0] in ICON_PAINT_EXTRAS[name]]
+            ci = with_extras((body, paint_, [x for x in extras_ if x[0] not in ICON_PAINT_EXTRAS[name]]))
+            icon_paint = Mesh(); icon_paint.tris = list(paint_.tris) + list(with_extras((Mesh(), paint_, pe)).tris)
+        icon_file = os.path.join(content, "Icons", name + ".png")
+        # 0.31.28: without the game's Mesh folder the plugs and the previews are missing (discs, or nothing at all) — an icon that already
+        # exists is kept as it is instead of being redrawn worse; a new block (or a run with the game's meshes) is drawn as always
+        if (not game_mesh or not os.path.isdir(game_mesh)) and os.path.exists(icon_file): pass
+        else:
+            im = icon(ci, icon_paint, pl, plugs_=plug_list(pl, game_mesh), VIEW=VIEW_PER_BLOCK.get(name, VIEW))
+            im.save(icon_file)
         import re
         open(os.path.join(content, "Icons", name + ".png.meta"), "w", newline="\n").write(re.sub(r"^guid: [0-9a-f]+", "guid: " + guid(name + "_Icon"), meta_icon, flags=re.M))
         cols = []
         if name in HULL_BLOCKS:   # 0.19.2: convex hulls of the model (only body + paintable: the extras move)
-            for k, cm in enumerate(hulls([body, paint_])):
+            hl = hulls([body, paint_])
+            # 0.31.28: two hulls of the same volume can swap places between runs (float noise in the sort): the prefab lists every
+            # _Col file anyway, so when the files already hold the same set of hulls they are all kept
+            same_set = _same_hull_set(content, name, hl)
+            for k, cm in enumerate(hl):
                 n = name + "_Col%d" % k
-                open(os.path.join(content, "Meshes", n + ".asset"), "w", newline="\n").write(asset(n, cm))
+                if not same_set: write_mesh(os.path.join(content, "Meshes", n + ".asset"), n, cm)
                 open(os.path.join(content, "Meshes", n + ".asset.meta"), "w", newline="\n").write(META_MESH % guid(n))
                 cols.append(guid(n))
             print("  %s: %d convex collider(s)" % (name, len(cols)))
-        ref[name] = (guid(name + "_Body"), guid(name + "_Paintable") if paint_.tris else None, guid(name + "_Icon"),
-                     [(ex[2], ex[4] if len(ex) > 4 else (0, 0, 0), ex[3], guid(name + "_" + ex[0]), ex[0]) for ex in extras_],   # 0.11.1: + suffix (levers); 0.11.2: rest rotation
+        ref[name] = (guid(name + "_Body") if body.tris else None, guid(name + "_Paintable") if paint_.tris else None, guid(name + "_Icon"),
+                     [(ex[2], ex[4] if len(ex) > 4 else (0, 0, 0), ex[3], guid(name + "_" + (ex[5] if len(ex) > 5 else ex[0])), ex[0]) for ex in extras_],   # 0.11.1: + suffix (levers); 0.11.2: rest rotation
                      cols)   # 0.19.2: meshes of the convex colliders
     return ref
 

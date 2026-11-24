@@ -36,13 +36,16 @@ namespace CrapMechanics
                     found = true;
                     ModLog.Info("Mod Menu found: keys and settings can be changed in the options menu");
                     foreach (var a in pend) { try { a(); } catch (Exception) { } }
+                    pend.Clear();   // 0.31.26: replayed once; nothing is queued after the library is found
                     return;
                 }
                 if (tries == 12) ModLog.Info("Mod Menu not installed: keys and settings come from this mod's .cfg");
             }
             catch (Exception ex) { ModLog.Warn("Mod Menu link failed: " + ex.Message); reg = null; get = null; found = false; tries = 99; }
         }
-        static void Call(Action a) { pend.Add(a); Look(); if (found) { try { a(); } catch (Exception) { } } }
+        // 0.31.26 (review p2_torre, verdict f): queued only while the library is not found. Before, Call queued the action and then, if that
+        // same Look found the library, the replay of the queue ran it AND Call ran it again (Register/SetModName/HideSetting twice).
+        static void Call(Action a) { Look(); if (found) { try { a(); } catch (Exception) { } } else pend.Add(a); }
 
         public static void Register(string mod, string id, string label, string defaultKey) => Call(() => reg?.Invoke(mod, id, label, defaultKey ?? ""));
         /// <summary>Display name of this mod in the "Mod settings" section.</summary>

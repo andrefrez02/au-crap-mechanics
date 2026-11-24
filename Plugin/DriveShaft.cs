@@ -70,7 +70,7 @@ namespace CrapMechanics
                 if (Ecs.HasC(em, cur, Ecs.tiPort)) { lastPort = cur; break; }
                 if (!Ecs.HasC(em, cur, tiCell)) break;
                 hasCable = true;
-                var c = (byte*)em.GetComponentDataRawRO(cur, tiCell); if (c == null) break;
+                var c = (byte*)Ecs.RO(em, cur, tiCell); if (c == null) break;
                 if (cableKind == 255) cableKind = c[1];
                 if (Ecs.Prefab(em, cur) != hCable) axisOnly = false;
                 var fwd = *(Entity*)(c + 16); var bwd = *(Entity*)(c + 24);
@@ -150,7 +150,11 @@ namespace CrapMechanics
                 if (!Ecs.Alive(em, l.led) && l.t > 2f) { l.t = 0f; l.led = Led.Find(em, t); l.written = -1; }
                 if (Ecs.IsNull(l.led)) continue;
                 int c = Ecs.Channel(em, t); byChannel.TryGetValue(c, out int n); tx.TryGetValue(c, out int ne);
-                int state = ne > 1 ? Led.Yellow : (n > 1 && ne == 1) ? Led.Green : Led.Red;
+                // 0.31.26 (item 21): the game transmitter's meaning [recon/EPC_SCWirelessTransmitter.cs:226-240, 266-277]. A Shaft Transmitter
+                // that takes a motor's shaft is the sender: red = another sender on the channel, green = some other transmitter receives,
+                // orange (Yellow) = none does. The others receive: green = exactly 1 sender, red = 2+, off = no sender.
+                int state = shaftSenders.Contains(k) ? (ne > 1 ? Led.Red : n - ne > 0 ? Led.Green : Led.Yellow)
+                                                     : (ne == 1 ? Led.Green : ne >= 2 ? Led.Red : Led.Unlit);
                 l.written = Led.Paint(em, l.led, state, l.written);
             }
         }
@@ -225,7 +229,7 @@ namespace CrapMechanics
             string name = BlockName(em, owner);
             path += via;
             if (hasCable && !axisOnly) { WarnLimited(m.name + " " + m.block.Index + ": a game cable (not a Drive Shaft) is in the way to " + (name.Length > 0 ? name : "block " + owner.Index) + " — it does not transmit"); return; }
-            if (name == "SC_Bearing" || name == "SC_GyroBearing" || name == "SC_MiniBearing" || name == "SC_MiniGyroBearing")   // 0.20.4 (Andre: "the mini bearing isn't accepting a shaft"): only SC_Bearing was recognised
+            if (name == "SC_Bearing" || name == "SC_GyroBearing" || name == "SC_MiniBearing" || name == "SC_MiniGyroBearing" || name == "SC_BearingRing")   // 0.31.36: + Bearing with Slip Ring   // 0.20.4 (Andre: "the mini bearing isn't accepting a shaft"): only SC_Bearing was recognised
             {
                 if (SlipRings.IsPassThrough(em, owner, end, name)) { WarnLimited(m.name + " " + m.block.Index + ": its shaft goes into a PASS-THROUGH port (slip ring) of the " + name + " " + owner.Index + " — connect it to one of the ports underneath"); return; }   // 0.22.0
                 long kb = Ecs.K(owner);
@@ -312,26 +316,53 @@ namespace CrapMechanics
                 var mine = epc.TryCast<EPC_SCCable>(); var game = core != null ? core._prefabCablePlasma : null;
                 if (mine == null || game == null) { ModLog.Warn("drive shaft: " + (mine == null ? "the prefab is not a cable" : "the game's plasma cable was not found") + " — it will be invisible"); return; }
                 int n = 0;
+                int c = 0, taken = 0;
+                // 0.31.37: the colliders are taken by name too, like the meshes. The game update of 23/11 replaced _cableColliderStraight /
+                // _cableColliderCurved by one collider per pair of cable ends (…Straight00/01/10/11, …Curved00/01/10/11); whatever the game
+                // has, every DOTSCollider of a cable is handled, so this works on the old and on the new game.
+                // A collider the mod's own prefab does not have (it was built in the Modkit with the game of the day: the fields the update
+                // added are empty, and the game crashes on a null collider while it creates the cable) is pointed at the game's own collider.
+                // That is safe: DOTSCollider has no state of its own (only GetShapeType / GetHash128 / CreateBAR), and the game caches the
+                // collider it builds by hash, so sharing it changes nothing for the game's cable
                 foreach (var pi in typeof(EPC_SCCable).GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
                 {
-                    if (pi.PropertyType != typeof(Mesh) || !pi.CanWrite || !pi.CanRead) continue;
-                    try { pi.SetValue(mine, pi.GetValue(game)); n++; } catch (Exception) { }
+                    if (!pi.CanWrite || !pi.CanRead) continue;
+                    if (pi.PropertyType == typeof(Mesh)) { try { pi.SetValue(mine, pi.GetValue(game)); n++; } catch (Exception) { } continue; }
+                    if (pi.PropertyType != typeof(DOTSCollider)) continue;
+                    try
+                    {
+                        var gc = pi.GetValue(game) as DOTSCollider; if (Gone(gc)) continue;
+                        var mc = pi.GetValue(mine) as DOTSCollider;
+                        if (Gone(mc)) { pi.SetValue(mine, gc); taken++; c++; }
+                        else if (CopyCollider(mc, gc)) c++;
+                    }
+                    catch (Exception) { }
                 }
                 if (mine._renderer != null && game._renderer != null) mine._renderer._mesh = game._renderer._mesh;
                 if (mine._cableHolderRenderer != null && game._cableHolderRenderer != null) mine._cableHolderRenderer._mesh = game._cableHolderRenderer._mesh;
-                CopyCollider(mine._cableColliderStraight, game._cableColliderStraight); CopyCollider(mine._cableColliderCurved, game._cableColliderCurved);
-                ModLog.Info("drive shaft: " + n + " cable meshes copied from the game's plasma cable (type " + mine._type + ", color " + mine._defaultPaintableColor + ")");
+                if (n == 0 || c == 0) ModLog.Warn("drive shaft: the game's plasma cable gave " + n + " mesh(es) and " + c + " collider(s) — the shaft may be invisible, go through things or stop the game from creating it (the game may have changed its cables again)");
+                ModLog.Info("drive shaft: " + n + " cable mesh(es) and " + c + " collider(s) taken from the game's plasma cable"
+                          + (taken > 0 ? " (" + taken + " of them the game's own collider, missing from this mod's cable since the game update)" : "")
+                          + " (type " + mine._type + ", color " + mine._defaultPaintableColor + ")");
             }
             catch (Exception ex) { ModLog.Warn("drive shaft: could not copy the plasma cable meshes: " + ex.Message); }
         }
-        static void CopyCollider(DOTSCollider mine, DOTSCollider game)
+        /// <summary>A reference the game gave us that is not usable: C# null, a null IL2CPP pointer, or a destroyed Unity object.</summary>
+        static bool Gone(UnityEngine.Object o)
+        {
+            if (o == null) return true;
+            try { if (o.Pointer == IntPtr.Zero) return true; } catch (Exception) { return true; }
+            try { return o.GetInstanceID() == 0; } catch (Exception) { return false; }
+        }
+        static bool CopyCollider(DOTSCollider mine, DOTSCollider game)
         {
             try
             {
                 var a = mine != null ? mine.TryCast<DOTSColliderConvex>() : null; var b = game != null ? game.TryCast<DOTSColliderConvex>() : null;
-                if (a != null && b != null) a._mesh = b._mesh;
+                if (a != null && b != null) { a._mesh = b._mesh; return true; }
             }
             catch (Exception) { }
+            return false;
         }
     }
 }

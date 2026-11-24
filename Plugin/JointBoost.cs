@@ -14,7 +14,11 @@ namespace CrapMechanics
     {
         public static bool Enabled = true;   // [Thrusters] reinforce_joints
         const float Cap = 1e7f;              // mesmo teto do reforco da base dos pistoes
-        class Rec { public float orig, written; }
+        // 0.31.26 (item 11): orig stays fixed for the whole simulation and every value this class wrote is remembered. The time rewind memcpy's
+        // _joints back exactly as saved [recon/TimeRewindSystem__05_rewind_02.cs:486-490], so after a rewind a joint can read the original or an
+        // older reinforced value: both are ours (keep orig). Until 0.31.25 any value it had not JUST written became the new original, so each
+        // rewind multiplied the reinforcement again (k>1) or left it reinforced until the recall (k==1).
+        class Rec { public float orig, written; public readonly List<float> mine = new List<float>(2); public bool Ours(float bf) => bf == orig || bf == written || mine.Contains(bf); }
         static readonly Dictionary<(long, long), Rec> recs = new Dictionary<(long, long), Rec>();
         static float tStep = 9f, applied = 1f; static int lastCount = -1;
 
@@ -25,31 +29,32 @@ namespace CrapMechanics
         {
             tStep += dt; if (tStep < 0.5f) return; tStep = 0f;
             float k = Enabled && maxMultiplier > 1.005f ? maxMultiplier : 1f;
-            if (k == 1f && recs.Count == 0) { applied = 1f; return; }
+            if (k == 1f && recs.Count == 0) { applied = 1f; return; }   // with recs it does not stop early: a rewind may bring reinforced values back
             var joints = Ecs.Joints(em, out int n); if (joints == null) return;
             int boosted = 0, restored = 0;
             for (int i = 0; i < n; i++)
             {
                 var sj = &joints[i];
                 float bf = sj->_breakForce;
-                if (bf <= 0f) continue;   // quebrada pelo mod (-1) ou sem limite: nao mexe
+                if (bf <= 0f) continue;   // no limit: left alone
                 var key = (Ecs.K(sj->_a), Ecs.K(sj->_b));
                 recs.TryGetValue(key, out var r);
-                // so nave LANCADA (o bloco esta numa part): o jogo copia a garagem pra simulacao com o que estiver escrito nela, e um
-                // reforco na garagem viraria o "original" da proxima simulacao e acumularia a cada lancamento
-                if (r == null && k != 1f && !Ecs.IsPart(em, Ecs.Parent(em, sj->_a))) continue;
-                if (r != null && bf != r.written) { r = null; recs.Remove(key); }   // outro sistema (jogo ou mod) escreveu: esse e' o novo original
+                // 0.31.26 (item 26): no IsPart filter any more — in the garage there is no SpaceshipSingleton (Ecs.Joints = null) and every launch
+                // recomputes _breakForce from the materials [recon_managed/SpaceshipSystem.cs:429], so nothing can pile up between launches
+                if (r != null && !r.Ours(bf)) { r = null; recs.Remove(key); }   // someone else wrote it (game, Reinforce, PistonMerge): new original
                 if (k == 1f)
                 {
-                    if (r != null) { sj->_breakForce = r.orig; recs.Remove(key); restored++; }
+                    // back to the original, but the record is kept until the recall: a rewind can bring a reinforced value back
+                    if (r != null && bf != r.orig) { sj->_breakForce = r.orig; restored++; }
+                    if (r != null) r.written = r.orig;
                     continue;
                 }
                 if (r == null) { r = new Rec { orig = bf }; recs[key] = r; }
                 float want = Math.Min(r.orig * k, Math.Max(r.orig, Cap));
                 if (sj->_breakForce != want) sj->_breakForce = want;
-                r.written = want; boosted++;
+                r.written = want; if (want != r.orig && !r.mine.Contains(want)) { if (r.mine.Count >= 16) r.mine.RemoveAt(0); r.mine.Add(want); } boosted++;
             }
-            if (k == 1f) { if (restored > 0 || applied != 1f) ModLog.Info("thrusters: game joints back to their own strength (" + restored + " joint(s))"); recs.Clear(); applied = 1f; lastCount = -1; return; }
+            if (k == 1f) { if (restored > 0 || applied != 1f) ModLog.Info("thrusters: game joints back to their own strength (" + restored + " joint(s))"); applied = 1f; lastCount = -1; return; }
             if (Math.Abs(k - applied) > 0.001f || Math.Abs(boosted - lastCount) > Math.Max(20, lastCount / 10))
             {
                 ModLog.Info("thrusters: game joints reinforced x" + k.ToString("0.##") + " (" + boosted + " joint(s)) — the strongest thruster multiplier in use; [Thrusters] reinforce_joints turns this off");

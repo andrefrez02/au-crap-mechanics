@@ -27,7 +27,7 @@ namespace CrapMechanics
                     if (!stepOk) { tiStep = TypeManager.GetTypeIndex(Il2CppInterop.Runtime.Il2CppType.Of<PhysicsStep>()); var a = new Il2CppStructArray<ComponentType>(1); a[0] = ComponentType.ReadOnly(tiStep); qStep = em.CreateEntityQuery(a); stepOk = true; }
                     foreach (var e in Ecs.QueryList(qStep))
                     {
-                        var ps = (Ecs.HasC(em, e, tiStep) ? (PhysicsStep*)em.GetComponentDataRawRO(e, tiStep) : null); if (ps == null) continue;
+                        var ps = (Ecs.HasC(em, e, tiStep) ? (PhysicsStep*)Ecs.RO(em, e, tiStep) : null); if (ps == null) continue;
                         gravity = ps->Gravity; gravOk = true; break;
                     }
                 }

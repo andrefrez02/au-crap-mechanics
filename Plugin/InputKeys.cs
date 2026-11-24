@@ -86,6 +86,9 @@ namespace CrapMechanics
                 case Key.F7: return 0x76; case Key.F8: return 0x77; case Key.F9: return 0x78; case Key.F10: return 0x79; case Key.F11: return 0x7A; case Key.F12: return 0x7B;
                 case Key.RightCtrl: return 0xA3; case Key.NumpadPlus: return 0x6B; case Key.NumpadMinus: return 0x6D; case Key.NumpadPeriod: return 0x6E; case Key.NumpadMultiply: return 0x6A; case Key.NumpadDivide: return 0x6F;
                 case Key.Comma: return 0xBC; case Key.Period: return 0xBE; case Key.LeftBracket: return 0xDB; case Key.RightBracket: return 0xDD;
+                // delivery 2: the key left of 1 (the game's "empty hand", Backquote; "'" on a Brazilian keyboard): its VK depends on the layout, so
+                // it comes from the scan code (0x29), like the Input System's physical key
+                case Key.Backquote: try { return (int)MapVirtualKey(0x29, 1); } catch (Exception) { return 0xC0; }
                 default:
                     if (k >= Key.A && k <= Key.Z) return 0x41 + (k - Key.A);
                     if (k >= Key.Digit1 && k <= Key.Digit9) return 0x31 + (k - Key.Digit1);
@@ -96,6 +99,7 @@ namespace CrapMechanics
         }
 
         [DllImport("user32.dll")] static extern short GetAsyncKeyState(int vk);
+        [DllImport("user32.dll")] static extern uint MapVirtualKey(uint code, uint mapType);
         [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
     }

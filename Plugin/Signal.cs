@@ -7,6 +7,14 @@ namespace CrapMechanics
 {
     /// <summary>0.24.0 (Andre: "the wireless transmitter doesn't always work on a separated joint... it sort of stays without signal (yellow led)").
     ///
+    /// 0.31.26 (item 45), what the game really shows: a port with no direction (DataInOut) leaves the LED OFF; amber/orange is a SENDER
+    /// with nobody listening within range [recon/EPC_SCWirelessTransmitter.cs:266-277]. So the amber LED seen was the sending side, and the
+    /// stuck port was the receiver. And there is no race in the game's own splits: the new Parent and the ports' tag go in the same command
+    /// buffer, played back before SpaceshipPostUpdatePortsRuntimeEndEntities in the same tick [recon/Spaceship__part_a.cs:221-222;
+    /// recon/Spaceship__part_b.cs:89-91], so asking again gives the same answer. Re-tagging only helps after a raw re-parent by the mod
+    /// itself (Couplers / PistonMerge), so it is tried ONCE, then the mod goes straight to Aim / ByChannel (3 s sooner than before).
+    /// (The text below is the 0.24.0 reasoning, kept for the history.)
+    ///
     /// The amber LED does NOT come from the wireless pairing: SCTick_WirelessTransmitter redoes the pairing from SCRATCH every tick (scan per
     /// channel, range of 2000 units, no cache, no filter per ship or per part), so two transmitters on different parts see
     /// each other normally and there is no "initialisation" that could lose the race.
@@ -29,7 +37,7 @@ namespace CrapMechanics
     internal static class Signal
     {
         public static bool Relink = true;        // [Signal] fix_stuck_ports
-        public static int MaxAttempts = 3;
+        public static int MaxAttempts = 1;   // 0.31.26 (item 45): one re-tag (the mod's raw re-parents), then Aim / ByChannel — it was 3
         /// <summary>UIManager.OnSpaceshipLaunch (RadarIcon.OnLaunch). Only touches things with the simulation running: IN THE GARAGE the ports are
         /// unresolved by nature (the block isn't even in a part), so the mod would mark everything again and make a structural change in the middle
         /// of the frame — that's what froze the game in 0.24.0 on 10/10.</summary>
@@ -66,11 +74,11 @@ namespace CrapMechanics
                 try
                 {
                     if (!Ecs.Alive(em, tr)) continue;
-                    if (tiPrefabTag.Value != 0 && em.HasComponent(tr, ComponentType.ReadOnly(tiPrefabTag))) continue;   // a prefab entity, not a world one
+                    if (tiPrefabTag.Value != 0 && Ecs.Has(em, tr, tiPrefabTag)) continue;   // a prefab entity, not a world one
                     var ports = Ecs.Ports(em, tr); if (ports.Length == 0) continue;
                     var p = ports[0];   // the game's job only uses port [0]
                     if (!Ecs.Alive(em, p) || !Ecs.HasC(em, p, Ecs.tiPort)) continue;
-                    var b = (byte*)em.GetComponentDataRawRO(p, Ecs.tiPort); if (b == null) continue;
+                    var b = (byte*)Ecs.RO(em, p, Ecs.tiPort); if (b == null) continue;
                     long k = Ecs.K(p);
                     if (b[21] != DataInOut) { stuckSet.Remove(k); if (attempts.Remove(k)) gaveUp.Remove(k); continue; }   // resolved: forget it
                     if (gaveUp.Contains(k)) continue;
@@ -87,9 +95,9 @@ namespace CrapMechanics
                         tCensus = 3f;
                         continue;
                     }
-                    if (em.HasComponent(p, ComponentType.ReadOnly(tiTag))) continue;   // already marked, waiting for the game
+                    if (Ecs.Has(em, p, tiTag)) continue;   // already marked, waiting for the game
                     (fix ?? (fix = new List<Entity>())).Add(p);
-                    ModLog.Info("Wireless Transmitter " + tr.Index + ": port " + p.Index + " stuck with no direction (amber LED) — asking the game to resolve it again (try " + n + "/" + MaxAttempts + ")");
+                    ModLog.Info("Wireless Transmitter " + tr.Index + ": port " + p.Index + " stuck with no direction (its LED is off; a sender on the channel shows orange) — asking the game to resolve it again (try " + n + "/" + MaxAttempts + ")");
                 }
                 catch (Exception) { }
             }
@@ -98,7 +106,7 @@ namespace CrapMechanics
             if (fix == null) return;
             for (int i = 0; i < fix.Count; i++)
             {
-                try { var p = fix[i]; if (Ecs.Alive(em, p) && !em.HasComponent(p, ComponentType.ReadOnly(tiTag))) em.AddComponent(p, ComponentType.ReadWrite(tiTag)); }
+                try { var p = fix[i]; if (Ecs.Alive(em, p) && !Ecs.Has(em, p, tiTag)) Ecs.Add(em, p, ComponentType.ReadWrite(tiTag)); }
                 catch (Exception ex) { ModLog.Warn("signal: could not re-tag the port: " + ex.Message); }
             }
         }
@@ -142,28 +150,34 @@ namespace CrapMechanics
         /// <summary>0.24.0, 2nd route: when the cable ends on a PASS-THROUGH port of ours (Slip Ring, for example), the topology doesn't give the
         /// direction — it depends on the other side of the ring. But the CHANNEL does: a channel has a single sender. If there's already another transmitter
         /// on the same channel resolved as a sender, this one can only be a receiver. It doesn't depend on cable, ring or part.
-        /// (Only in this direction: "there's no sender on the channel" does NOT prove this one is the sender — the sender may be stuck too.)</summary>
+        /// (Only in this direction: "there's no sender on the channel" does NOT prove this one is the sender — the sender may be stuck too.)
+        /// 0.31.26 (item 19): only a sender the game itself would pair with counts — SCActive and within 2000 m (distancesq < 4e6, strict)
+        /// [recon/EPC_SCWirelessTransmitter.cs:104, 213-223, 256-258]. A sender out of range does not exist for the receiver.</summary>
         static unsafe bool ByChannel(EntityManager em, Entity tr, Entity port)
         {
             try
             {
                 int channel = Ecs.Channel(em, tr); if (channel < 0) return false;
+                if (!Ecs.HasC(em, tr, Ecs.tiLTW)) return false;
+                var here = Ecs.Position(em, tr);
                 Entity sender = Entity.Null; int onChannel = 0;
                 foreach (var o in Ecs.Transmitters(em))
                 {
                     if (!Ecs.Alive(em, o) || (o.Index == tr.Index && o.Version == tr.Version)) continue;
-                    if (tiPrefabTag.Value != 0 && em.HasComponent(o, ComponentType.ReadOnly(tiPrefabTag))) continue;
+                    if (tiPrefabTag.Value != 0 && Ecs.Has(em, o, tiPrefabTag)) continue;
                     if (Ecs.Channel(em, o) != channel) continue;
+                    if (!Ecs.ScActive(em, o) || !Ecs.HasC(em, o, Ecs.tiLTW)) continue;
+                    var d = Ecs.Sub(Ecs.Position(em, o), here); if (Ecs.Dot(d, d) >= 4000000f) continue;
                     onChannel++;
                     var ps = Ecs.Ports(em, o); if (ps.Length == 0 || !Ecs.HasC(em, ps[0], Ecs.tiPort)) continue;
-                    var b = (byte*)em.GetComponentDataRawRO(ps[0], Ecs.tiPort); if (b == null) continue;
+                    var b = (byte*)Ecs.RO(em, ps[0], Ecs.tiPort); if (b == null) continue;
                     if (b[21] == 0) sender = o;   // DataInput = sender
                 }
                 if (Ecs.IsNull(sender)) return false;
                 var w = (byte*)em.GetComponentDataRawRW(port, Ecs.tiPort); if (w == null) return false;
                 w[21] = 1;   // DataOutput = receiver
                 ModLog.Info("Wireless Transmitter " + tr.Index + ": port " + port.Index + " ends on a pass-through port of this mod (the direction depends on the other side of the ring, so the topology cannot say it)"
-                    + " — but channel " + channel + " already has a sender (transmitter " + sender.Index + ") among its " + (onChannel + 1) + " transmitters, so this one can only be the receiver. Setting it to DataOutput");
+                    + " — but channel " + channel + " already has a sender (transmitter " + sender.Index + ") among its " + (onChannel + 1) + " transmitters within 2 km, so this one can only be the receiver. Setting it to DataOutput");
                 return true;
             }
             catch (Exception ex) { ModLog.Warn("signal: could not set the direction by channel: " + ex.Message); return false; }
@@ -199,12 +213,12 @@ namespace CrapMechanics
                 foreach (var tr in Ecs.Transmitters(em))
                 {
                     if (!Ecs.Alive(em, tr)) continue;
-                    if (tiPrefabTag.Value != 0 && em.HasComponent(tr, ComponentType.ReadOnly(tiPrefabTag))) continue;
+                    if (tiPrefabTag.Value != 0 && Ecs.Has(em, tr, tiPrefabTag)) continue;
                     int c = Ecs.Channel(em, tr); if (c < 0) continue;
                     var ps = Ecs.Ports(em, tr); byte rt = 255; float v = 0f;
                     if (ps.Length > 0 && Ecs.HasC(em, ps[0], Ecs.tiPort))
                     {
-                        var b = (byte*)em.GetComponentDataRawRO(ps[0], Ecs.tiPort);
+                        var b = (byte*)Ecs.RO(em, ps[0], Ecs.tiPort);
                         if (b != null) { rt = b[21]; v = *(float*)(b + 8); }
                     }
                     if (!byChannel.TryGetValue(c, out var sb)) { sb = new System.Text.StringBuilder(); byChannel[c] = sb; }

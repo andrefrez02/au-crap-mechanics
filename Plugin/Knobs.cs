@@ -28,6 +28,8 @@ namespace CrapMechanics
             catch (Exception ex) { failed = true; ModLog.Warn("knobs: " + ex.Message); return false; }
         }
 
+        /// <summary>Remote control (delivery 1): the types are looked up (Persist and Hint need them).</summary>
+        public static bool Ready() => Prepare();
         /// <summary>Child of the block with ActionableData (the knob). Entity.Null if the block has none (old prefab).</summary>
         public static Entity Find(EntityManager em, Entity block)
         {
@@ -48,21 +50,22 @@ namespace CrapMechanics
         public static unsafe bool SwitchOn(EntityManager em, Entity sw, bool defaultValue = true)
         {
             if (!ok || !Ecs.Alive(em, sw) || !Ecs.HasC(em, sw, tiData)) return defaultValue;
-            var p = (float*)em.GetComponentDataRawRO(sw, tiData); if (p == null) return defaultValue;
+            var p = (float*)Ecs.RO(em, sw, tiData); if (p == null) return defaultValue;
             return !(p[0] < 0.5f);
         }
         /// <summary>0..1 value of the knob (NaN if it can't be read).</summary>
         public static unsafe float ReadValue(EntityManager em, Entity knob)
         {
             if (!ok || !Ecs.Alive(em, knob) || !Ecs.HasC(em, knob, tiData)) return float.NaN;
-            var p = (float*)em.GetComponentDataRawRO(knob, tiData); if (p == null) return float.NaN;
+            var p = (float*)Ecs.RO(em, knob, tiData); if (p == null) return float.NaN;
             float v = p[0]; return float.IsNaN(v) ? float.NaN : Math.Max(0f, Math.Min(1f, v));
         }
-        /// <summary>Text of the pointer hint (up to 60 UTF-8 bytes).</summary>
+        /// <summary>Text of the pointer hint (up to 60 UTF-8 bytes; 0.31.35: cut on a character boundary, never in the middle of an accented letter).</summary>
         public static unsafe void Hint(EntityManager em, Entity knob, string txt)
         {
             if (!ok || !Ecs.Alive(em, knob) || !Ecs.HasC(em, knob, tiHint)) return;
             var bytes = System.Text.Encoding.UTF8.GetBytes(txt); int n = Math.Min(bytes.Length, 60);
+            while (n > 0 && n < bytes.Length && (bytes[n] & 0xC0) == 0x80) n--;   // the next byte continues a character: step back to its start
             var p = (byte*)em.GetComponentDataRawRW(knob, tiHint); if (p == null) return;
             *(ushort*)p = (ushort)n; for (int i = 0; i < n; i++) p[2 + i] = bytes[i]; p[2 + n] = 0;
         }
@@ -209,6 +212,29 @@ namespace CrapMechanics
             if (!saved.TryGetValue(guid, out var current) || Math.Abs(current - v) > 0.0005f) { saved[guid] = v; dirty = true; }
             return v;
         }
+        /// <summary>Remote control, delivery 2: a value kept in knobs.txt under "{SCGuid}|{suffix}" that belongs to no actionable (the Remote
+        /// Computer's start state per row, set on the phone in the garage). false = nothing stored (or this machine is a client).</summary>
+        public static bool StoredValue(EntityManager em, Entity block, string suffix, out float v)
+        {
+            v = 0f;
+            if (!Multi.Authoritative(em)) return false;
+            LoadFile();
+            string guid; try { guid = Ecs.Guid(em, block); } catch (Exception) { guid = ""; }
+            if (string.IsNullOrEmpty(guid)) return false;
+            return saved.TryGetValue(guid + "|" + suffix, out v);
+        }
+        /// <summary>Remote control, delivery 2: stores a value under "{SCGuid}|{suffix}" (written to knobs.txt by Store within 2 s). Host / solo only.</summary>
+        public static bool StoreValue(EntityManager em, Entity block, string suffix, float v)
+        {
+            if (!Multi.Authoritative(em)) return false;
+            LoadFile();
+            string guid; try { guid = Ecs.Guid(em, block); } catch (Exception) { guid = ""; }
+            if (string.IsNullOrEmpty(guid)) return false;
+            string k = guid + "|" + suffix;
+            if (!saved.TryGetValue(k, out var cur) || Math.Abs(cur - v) > 0.0005f) { saved[k] = v; dirty = true; }
+            return true;
+        }
+
         /// <summary>Every 0.5 s: knobs of our blocks that are NOT in a Joint (garage): tooltip + persistence.</summary>
         // 0.20.1: the scan of ALL actionables (BlockOfActionable + SCPrefab of each) only every 1 s; every 0.1 s it reads only the knobs
         // already known to belong to a block of ours (the 0.1 s step on a big ship scanned hundreds of the game's buttons)

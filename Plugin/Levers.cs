@@ -63,7 +63,7 @@ namespace CrapMechanics
         }
 
         static bool IsLever(EntityManager em, Entity f) =>
-            em.HasComponent(f, ComponentType.ReadOnly(tiData)) && (em.HasComponent(f, ComponentType.ReadOnly(tiLever)) || em.HasComponent(f, ComponentType.ReadOnly(tiDouble)) || em.HasComponent(f, ComponentType.ReadOnly(tiButton)));
+            Ecs.Has(em, f, tiData) && (Ecs.Has(em, f, tiLever) || Ecs.Has(em, f, tiDouble) || Ecs.Has(em, f, tiButton));
 
         public static void Step(EntityManager em, float dt)
         {
@@ -91,15 +91,15 @@ namespace CrapMechanics
             {
                 p.tFind = 0f;
                 var foundOnes = new List<(Entity e, float x)>();
-                foreach (var f in Ecs.Children(em, p.block)) if (IsLever(em, f) && (!p.onlyDouble || em.HasComponent(f, ComponentType.ReadOnly(tiDouble)))) foundOnes.Add((f, Ecs.LT(em, f).Position.x));
+                foreach (var f in Ecs.Children(em, p.block)) if (IsLever(em, f) && (!p.onlyDouble || Ecs.Has(em, f, tiDouble))) foundOnes.Add((f, Ecs.LT(em, f).Position.x));
                 if (foundOnes.Count == 0)   // the levers may have no Parent: find them by BelongingSC._sc (like the labels)
                 {
                     foreach (var f in Ecs.QueryList(qLevers))
                     {
-                        var b = (Ecs.HasC(em, f, tiBelong) ? (BelongingSC*)em.GetComponentDataRawRO(f, tiBelong) : null);
+                        var b = (Ecs.HasC(em, f, tiBelong) ? (BelongingSC*)Ecs.RO(em, f, tiBelong) : null);
                         if (b == null || b->_sc.Index != p.block.Index || b->_sc.Version != p.block.Version || !IsLever(em, f)) continue;
-                        if (p.onlyDouble && !em.HasComponent(f, ComponentType.ReadOnly(tiDouble))) continue;
-                        float x = 0f; try { if (em.HasComponent(f, ComponentType.ReadOnly(Ecs.tiLT))) x = Ecs.LT(em, f).Position.x; } catch (Exception) { }
+                        if (p.onlyDouble && !Ecs.Has(em, f, tiDouble)) continue;
+                        float x = 0f; try { if (Ecs.Has(em, f, Ecs.tiLT)) x = Ecs.LT(em, f).Position.x; } catch (Exception) { }
                         foundOnes.Add((f, x));
                     }
                     if (foundOnes.Count > 0 && !p.viaBelong) { p.viaBelong = true; ModLog.Info(p.name + " " + p.block.Index + ": levers found via BelongingSC (not children of the block)"); }
@@ -128,8 +128,8 @@ namespace CrapMechanics
                     {
                         try
                         {
-                            if (!em.HasComponent(a, ComponentType.ReadOnly(tiDouble)) || em.HasComponent(a, ComponentType.ReadOnly(tiReturnMid))) continue;
-                            em.AddComponent(a, ComponentType.ReadWrite(tiReturnMid)); n++;
+                            if (!Ecs.Has(em, a, tiDouble) || Ecs.Has(em, a, tiReturnMid)) continue;
+                            Ecs.Add(em, a, ComponentType.ReadWrite(tiReturnMid)); n++;
                         }
                         catch (Exception ex) { ModLog.Warn(p.name + " " + p.block.Index + ": could not add ReturnToMid to lever " + a.Index + ": " + ex.Message); }
                     }
@@ -140,7 +140,7 @@ namespace CrapMechanics
             for (int i = 0; i < p.levers.Length && i < 4; i++)
             {
                 var a = p.levers[i]; if (!Ecs.Alive(em, a)) continue;
-                var v = (Ecs.HasC(em, a, tiData) ? (float*)em.GetComponentDataRawRO(a, tiData) : null); if (v == null) continue;
+                var v = (Ecs.HasC(em, a, tiData) ? (float*)Ecs.RO(em, a, tiData) : null); if (v == null) continue;
                 float x = v[0];
                 if (float.IsNaN(x) || float.IsInfinity(x)) x = 0f;
                 if (Math.Abs(x - p.latest[i]) > 0.02f || (x == 0f && p.latest[i] != 0f))

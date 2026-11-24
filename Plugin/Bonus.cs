@@ -9,14 +9,20 @@ namespace CrapMechanics
     /// <summary>Extra amounts of blocks in the inventory, all of them from [Bonus] extra_blocks in the .cfg (0.29.0: until 0.28.x the
     /// cables per unlocked motor and the Radar of the complete car kit were fixed in the code — they are entries in the .cfg now, so every
     /// bonus is in one place and editable without rebuilding the mod).
-    /// How: Core.Singleton._maxComponentsAvailability (+104) = UnsafeHashMap&lt;SCPrefab,int&gt;* (the map the inventory
-    /// queries). I add the bonus on top of the game's value; if the game recalculates the map (mission completed, load), the value
-    /// changes and I add it again on top of the new value.</summary>
+    /// How (0.31.26, item 24): the game builds Core.Singleton._standaloneComponentsAvailability (+96) from each block's
+    /// EPC_SpaceshipComponent._availableAmount (+92) plus the objectives, and _maxComponentsAvailability (+104) from that one, pooling the
+    /// blocks of a group (a grouped block may use the whole group's sum) [recon_managed/Core.cs:680-733]. The mod keeps each block's original
+    /// _availableAmount, writes original + bonus there and asks the game to rebuild both maps (Core.RefreshStandaloneAvailableComponents),
+    /// so every later rebuild by the game (objective completed, load, network event) keeps the bonus and the garage limit
+    /// [GarageGrabber.cs:499-533] agrees with what the inventory shows. Until 0.31.25 the bonus was written straight into the two hash maps,
+    /// which left grouped blocks out of step with the game's own pooling. The maps are only read now (radar diagnostics).</summary>
     internal static class Bonus
     {
         static TypeIndex tiCore; static EntityQuery qCore; static bool ok, failed, layoutLogged;
-        static readonly Dictionary<ulong, int> written = new Dictionary<ulong, int>();   // cable -> value I wrote last
         static readonly HashSet<string> warnings = new HashSet<string>();
+        static readonly Dictionary<string, int> origAmount = new Dictionary<string, int>(StringComparer.Ordinal);    // block -> the game's _availableAmount
+        static readonly Dictionary<string, int> writtenAmount = new Dictionary<string, int>(StringComparer.Ordinal); // block -> what the mod wrote there
+        static List<Extra> appliedList; static Core appliedCore;
         static float t = 9f;
 
         // HashMapHelper<TKey> (Unity.Collections 2.x), inside the UnsafeHashMap: Ptr(values) Keys Next Buckets Count Capacity Log2MinGrowth BucketCapacity AllocatedIndex FirstFreeIdx SizeOfTValue
@@ -34,6 +40,7 @@ namespace CrapMechanics
                 }
                 var es = Ecs.QueryList(qCore); if (es.Count == 0) return;
                 if (es.Count != nCoreLog) { nCoreLog = es.Count; ModLog.Info("bonus: " + es.Count + " Core.Singleton in world"); }
+                Amounts();
                 for (int ie = 0; ie < es.Count; ie++) CoreStep(em, es[ie], ie);
                 Garage(em);
             }
@@ -67,16 +74,40 @@ namespace CrapMechanics
                     standRadar = Read(sm, idx1, Ecs.HashPrefab("SC_Radar"), out _);
                 }
                 else if (warnings.Add("standalone")) ModLog.Warn("bonus: standalone map (+96) doesn't have the expected format — only the maximum was changed");
-                // 0.24.0 (Andre: "+2000 of each micro frame"): extra blocks from the .cfg list ([Bonus] extra_blocks). Works for
-                // any block, including another mod's — Apply only writes into a key that ALREADY exists in the map, never inserts.
-                var extras = Extras();
-                bool smOk = sm != null && GameFields.Plausible(sm) && sm->Keys != null && sm->Ptr != null && sm->SizeOfTValue == 4 && sm->Count > 0;
-                foreach (var x in extras)
-                {
-                    Apply(m, 0, idx0, x.block, x.hash, x.amount, x.why);
-                    if (smOk) Apply(sm, 1, idx1, x.block, x.hash, x.amount, x.why);
-                }
             }
+        }
+
+        /// <summary>0.31.26 (item 24): writes original + bonus into each block's EPC_SpaceshipComponent._availableAmount and, when something
+        /// changed, has the game rebuild its availability maps (Core.RefreshStandaloneAvailableComponents [recon_managed/Core.cs:668-733]).
+        /// Runs again only when the bonus list or the Core changes. A value the mod did not write (the game or another mod changed it) becomes
+        /// the new original.</summary>
+        static void Amounts()
+        {
+            var core = GameMeshes.CoreEntity; if (core == null) return;
+            var extras = Extras();
+            if (ReferenceEquals(extras, appliedList) && core == appliedCore) return;
+            var list = core._spaceshipComponents; if (list == null || list.Length == 0) return;
+            var bonusOf = new Dictionary<string, Extra>(StringComparer.Ordinal);
+            foreach (var x in extras) bonusOf[x.block] = x;
+            int changed = 0; var seen = new HashSet<string>(StringComparer.Ordinal);
+            for (int i = 0; i < list.Length; i++)
+            {
+                var epc = list[i]; if (epc == null) continue;
+                string name = epc.name; if (string.IsNullOrEmpty(name) || !seen.Add(name)) continue;
+                int cur = epc._availableAmount;
+                bool mine = writtenAmount.TryGetValue(name, out int w) && cur == w;
+                if (!origAmount.TryGetValue(name, out int orig) || (!mine && cur != orig)) { origAmount[name] = orig = cur; writtenAmount.Remove(name); }
+                bool has = bonusOf.TryGetValue(name, out var x);
+                int want = orig + (has ? x.amount : 0);
+                if (cur == want) continue;
+                epc._availableAmount = want; writtenAmount[name] = want; changed++;
+                ModLog.Info("bonus: " + name + " = " + orig + (has ? " + " + x.amount : " (bonus removed)") + " = " + want + (has ? " (from: " + x.why + ")" : ""));
+            }
+            foreach (var x in extras) if (!seen.Contains(x.block) && warnings.Add(x.block)) ModLog.Warn("bonus: " + x.block + " is not in the game's block list (the name is not in blocks.txt)");
+            appliedList = extras; appliedCore = core;
+            if (changed == 0) return;
+            try { core.RefreshStandaloneAvailableComponents(); ModLog.Info("bonus: " + changed + " block amount(s) changed — the game rebuilt its availability maps"); }
+            catch (Exception ex) { ModLog.Warn("bonus: the game could not rebuild its availability maps (" + ex.Message + ") — the bonus shows on its next rebuild"); }
         }
 
         /// <summary>Radar diagnostics: the inventory/garage uses GarageGrabberSingleton._remainingComponentsMapPtr (+216,
@@ -92,7 +123,7 @@ namespace CrapMechanics
                 var gs = Ecs.QueryList(qGar);
                 if (gs.Count > 0)
                 {
-                    var g = (Ecs.HasC(em, gs[0], tiGar) ? (byte*)em.GetComponentDataRawRO(gs[0], tiGar) : null);
+                    var g = (Ecs.HasC(em, gs[0], tiGar) ? (byte*)Ecs.RO(em, gs[0], tiGar) : null);
                     if (g != null)
                     {
                         // 0.31.3 (crash do G): o +216 fixo virou parte de _selectionPoints na 1.0.300 (o mapa foi pra +232) — pelo nome agora
@@ -107,29 +138,12 @@ namespace CrapMechanics
                     }
                 }
                 ulong h1 = Ecs.HashPrefab("SC_Radar"), h2 = Ecs.HashPrefab("SC_Radar M"); int n = 0;
-                foreach (var e in Ecs.Components(em)) { ulong h = Ecs.Prefab(em, e); if (h == h1 || h == h2) n++; }
+                { var set = Ecs.Launched(em); n = set.Of(h1).Count + (h2 != h1 ? set.Of(h2).Count : 0); }   // 0.31.15: from the block index (it read every block of the ship once a second)
                 string s = "bonus/radar: max in Core=" + maxRadar + ", standalone=" + standRadar + ", remaining in garage=" + rest + ", garage over limit=" + over;
                 if (s != radarLog) { radarLog = s; ModLog.Info(s + ", radars in world=" + n); }   // (0.7.8: the count flickers between garage and flight — only logs when the remainder changes)
             }
             catch (Exception ex) { if (radarLog != "error") { radarLog = "error"; ModLog.Warn("bonus/radar diagnostics: " + ex.Message); } }
         }
-
-        /// <summary>hp = the block's hash, worked out once in Extras (Ecs.HashPrefab builds an Il2Cpp object, and this runs for every
-        /// block of every category once a second).</summary>
-        static unsafe void Apply(Map* m, int mapId, Dictionary<ulong, int> idx, string cable, ulong hp, int bonus, string why)
-        {
-            ulong h = hp ^ ((ulong)mapId * 0x9E3779B97F4A7C15UL);
-            string nm = mapId == 0 ? "" : " [standalone]";
-            int* v = Find(m, idx, hp); if (v == null) { if (warnings.Add(cable + nm)) ModLog.Warn("bonus: " + cable + nm + " not in map (the block is still locked, or the name is not in blocks.txt)"); return; }
-            written.TryGetValue(h, out int latest); bool hasLast = written.ContainsKey(h);
-            int gameBase = hasLast && *v == latest ? latest - Bonus_(h) : *v;
-            int target = gameBase + bonus;
-            if (*v == target) return;
-            *v = target; written[h] = target; currentBonus[h] = bonus;
-            ModLog.Info("bonus: " + cable + nm + " = " + gameBase + " + " + bonus + " = " + target + " (from: " + why + ")");
-        }
-        static readonly Dictionary<ulong, int> currentBonus = new Dictionary<ulong, int>();
-        static int Bonus_(ulong h) => currentBonus.TryGetValue(h, out var b) ? b : 0;
 
         /// <summary>0.24.0: "SC_X=2000, SC_Y=50" from the .cfg -> list. 0.29.0: an entry can also name a whole category instead of one
         /// block — a group of the game ("Frame=400", every frame), an inventory tab ("tab:Electronics=50") or the name the inventory shows

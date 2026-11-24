@@ -1,3 +1,218 @@
+Version 0.31.37
+
+For the game update of 23/11: the game split each cable collider into one per pair of cable ends, and the Drive Shaft copied the two old ones by name — every block of the mod failed to start ("Method not found"). The colliders are now taken from the game's own cable whatever it calls them, so the mod works on this update and on the one before it.
+
+Version 0.31.36
+
+New block: Bearing with Slip Ring (and its mirrored version). A Bearing whose top row is a slip ring: the 4 pass-through ports of the base are linked by the mod to the 4 ports of the built-in ring (2 on each side), 1 with 1, 2 with 2... Data and power pass as with a Bearing + Slip Ring pair. The ring, its plugs and the cables plugged in it turn with the piece on top ([Slip Ring] embedded_ring_turns = false draws the ring still). The Bearing, the Slip Ring and old blueprints are unchanged. Known: in flight the cable plugged into a ring port is drawn broken where it meets the port — it still carries data and power.
+New: mirrored version of the Remote Computer (V in the garage): ports on the other side, the controls of each row in the same order.
+Fixed: the in-flight hotbar now has the game's dark slots (the copy had lost the tint the game's buttons give them).
+Fixed: a wrong size could be used when the phone in your hand was made (possible memory damage; it happened to work).
+Lighter: while the mod reads a ship for the sound, new sound cells no longer ask the game to rebuild its whole sound grid every time.
+
+Version 0.31.35
+
+Remote Computer, rows in and out:
+- A 4th switch on every row: DIRECTION. Down = OUTPUT (as before), up = INPUT. The row's port is now the in/out kind (blue + yellow); the switch decides, the mod does not guess.
+- INPUT row: reads what arrives on its cable and, with DESTINATION = cable + channel, what a sender puts on its wireless channel (one sender on the channel = the channel's value; none = the cable's value). Its phone button shows the number, cannot be pressed and is always lit in a colour you choose; 0 to 6 decimals (default 4).
+- Names: the channel and every button can be named (16 characters). On the computer: aim at the front display or at a row and press E. On the phone: the pencil. The phone's name wins over the computer's. Shown as "Name (ch 1)" with the "(ch 1)" smaller and dimmer.
+- Hotbar in flight now uses the game's own hotbar look ([Remote Computer] hotbar_game_look = false draws the old bar).
+- The phone in your hand sits lower ([Remote Computer] hand_low, default -0.88; -0.62 = as before).
+Performance (no change to physics results):
+- The mod asks the game far fewer questions per physics tick ([Debug] perf_read_cache, on; checked against the game one answer in 256).
+- Sound cells that stopped changing go back to the still kind, so the game no longer redoes them on every update ([Air] sound_cells_settle, on).
+- Less memory churn per tick. New "performance+:" log lines with debug_tools.
+
+Version 0.31.34
+
+Remote control, delivery 2:
+- Hotbar in flight (10 slots, bottom centre; shows only while you carry something). Hold E (0.35 s, [Remote Computer] long_press_s) on the Phone Dock to take the phone; tap E on the empty dock to put it back. The game's own keys: 1..0 select a slot, the empty-hand key (default the one left of 1) empties the hand and the phone stays in its slot; Ctrl+digit does nothing. In the garage the mod never reads these keys, so the game's hotbar works as before.
+- The phone in your hand (3D, low right; [Remote Computer] hand_3d = false draws it flat on the screen instead). Right click opens the app in the centre; keys 1..0 press its buttons; right click or Esc puts it away. Seated, dead, in a menu or holding something: hidden. Back in the garage, after a world reload or a rewind to before you took it, the phone is back on its dock.
+- The phone app also opens in the garage (tap E on the dock): there a switch row's ON/OFF is the state it starts with at launch (saved with the computer). No power needed in the garage.
+Fix: the game's sound walked into a room along a wall lying near the middle of its 0.5 m sound cells (a gate leaf on the MicroFrame grid, layers of rubber): now each cell is cut into 8x8x8 small cubes and a side is open only where real air goes from one cell to the next (a wall seals whatever side of the cell's middle it lies on; a hole of about 10 cm or more still lets the sound in). Lighter: less work per frame and per moving gate.
+No new blocks: no Modkit Build needed.
+
+Version 0.31.32
+
+New block: Remote Computer (PC tower, 0.5 x 1.25 x 0.75 m, 2 P/s of power). Front: power input, status LED and the main channel display (0..99, drag like the wireless transmitter). Back: 10 rows, each with a data output, a channel display and three switches: DESTINATION (cable only / cable + channel), TYPE (button / switch) and VALUE (0..1 / x..y: off = x, on = y, typed on the phone). A "cable + channel" row also sends on the game's wireless channel, but only for a few ticks around each command (standby): the game's receivers keep the last value, so two computers on the same channel never fight unless the same button is pressed at the same moment. Row LEDs use the transmitter colours (red = another sender on the channel, green = someone receives, orange = nobody listening). Row state survives rewind; the garage starts with everything off.
+New block: Phone Dock (wireless charger stand with a phone, 0.25 m, no power). Short E on the phone opens the phone app; Esc or E closes it. While open the game's input is off and the cursor is shown. App: active channel 0..99 with arrows, 10 buttons showing the nearest computer's rows, x and y with a pencil and a numeric keypad (saved per channel + button in BepInEx/config/CrapMechanics/phone.txt), keys 1..0 as shortcuts. Every computer on the phone's channel within 2000 m obeys.
+New config: [Remote Computer] power = 2, range_m = 2000, wireless_send_ticks = 3.
+Host only for now (on a client the phone opens but does nothing). Needs a Modkit Build + Deploy (new prefabs).
+
+Version 0.31.31
+
+Fix: the game's sound did not see MicroFrames, Rubber Seals, small blocks or the parts on joints (a gate on pistons/bearings): it only counts blocks of 0.5 m or more on the part you are in, so a gate closed with them was an open hole for sound and the thrusters came in at full volume. New [Air] sound_sees_small_blocks (on): the mod tests the sides of the game's 0.5 m sound cells with rays, like the air test, and tells the game's sound which sides your blocks really close at this moment. Open gate = open sound; a gap of more than about 15 cm always lets the sound through. Only on your own machine, only while you are inside a ship. New [Debug] sound_watch (works only with debug_tools on).
+Change: the whole Rubber Seal is paintable now (base, body and lip), and every colour comes out darker than on a frame (about 43 %; the glued base darker still), matte, so the red of the rubber is not the red of the hull.
+
+Version 0.31.30
+
+New: [Cheats] rubber_seal_solid_percent (slider, 0-100, default 100). How much of each Rubber Seal pushes things, counted from the glued face. 100 = the honest seal: only the lip is soft. Below 100 the part of the block nearest the lip is soft too, so a gate can press into it as if the rubber squeezed; the soft part still blocks the air, so it is a cheat, and the option says so. Steps of 12.5 % (the seal's body is now 8 layers). Applies to ships in flight within a second; the garage always uses the whole block.
+Change: [Air] frame_seam_like_game now touches only the MicroFrames blocks. The game's own frames (half and quarter ones included) keep the game's faces.
+New: [Debug] debug_tools, one master switch (off) for every debug line and test: momentum_watch, seal_watch, drag_watch, no_drag, power_watch, strain_watch, flight_trace and trace only work when it is on. All the [Debug] settings now sit together in the in-game menu, the master switch first. One log line at start says which debug switches are on and whether they are being ignored.
+
+Version 0.31.29
+
+Rubber Seal redone (Andre: the mini grid was wrong, the normal one did not fit, the corner lip pointed the wrong way). Eight pieces, now the same sizes as the game's pipes and the MicroFrames:
+- Rubber Seal 4/4, 2/4, 1/4 (1 m, 0.5 m, 0.25 m long, 0.25 x 0.25 cross-section, like the pipes) and Rubber Seal Corner (0.25 cube). Lip 3 cm.
+- Mini Rubber Seal 4/4, 2/4, 1/4 (0.5 m, 0.25 m, 0.125 m, 0.125 x 0.125, like MicroFrames 1x4 / 1x2 / 1x1) and Mini Rubber Seal Corner (0.125 cube). Lip 2 cm.
+The straight pieces glue by their back face; the corners glue by their two walls and their lip is an L turned INTO the opening. The lip stays soft (blocks the air, never pushes). The old 0.5 m / 1 m / mini straight pieces are gone; an old corner in a saved ship comes back at the new size, overlapping its neighbours: delete it by hand.
+Fix: a closed MicroFrame face next to another closed face let the air through seams the game frames close. The game closes a seam when it is within 2 % of the face size past each edge: 1 cm on its 0.5 m frames, only 2.5 mm on a 0.125 m MicroFrame face. New [Air] frame_seam_like_game (on): in flight, small frame faces reach exactly 1 cm past each edge, like a game frame. Open faces stay open.
+New [Debug] seal_watch (on for this test): every 2 s while you are inside a ship, repeats the game's 54-ball room test from where you stand and writes which block/face the escaping balls crossed. Turn it off after.
+Fix: "rubber seal: launch hook failed" (a method name clashed with Harmony).
+
+Version 0.31.28
+
+New: Rubber Seal, to seal the small gaps of a room (for example around a gate made of MicroFrames on pistons and bearings). Five pieces: Rubber Seal 0.5 m, Rubber Seal 1 m, Rubber Seal Corner, Mini Rubber Seal (0.25 m) and Mini Rubber Seal Corner, for the MicroFrames grid. The rubber has a lip that sticks out 3 cm past its face (2 cm on the mini); two seals face to face close 6 cm. It only closes what it really covers: a gap without rubber keeps leaking, exactly as the game decides. The lip is soft: it blocks the air but never pushes the gate or anything else, so a gate can close over it. Glues only by the back face.
+Good to know: the game already treats any gap narrower than about 7 cm as closed (it checks with a 7 cm ball, not a thin ray), so the seal matters for gaps of about 7 to 10 cm (13 cm with two seals). A frame face left open (no panel) always leaks, MicroFrames included: close it with a panel in the garage like any game frame.
+
+Version 0.31.27
+
+For the game update of 21/11, plus performance work. Not tested in the game.
+
+- Fixed for the game update: the Mini Electric Thruster lost its paintable body because the game renamed that mesh ("Small Electric Thruster Body Paintable" is now "Small Electric Thruster Paintable"). The mod now finds the new name. The two new stability buttons of the game's thruster are not on the mini thruster.
+- Fixed for the game update: the game's list of keys bound to a seat grew from 96 to 240 bytes per key (it now also holds controller bindings). The turret seat's and the seat's bindings reach wrote at the old fixed position, into the middle of the game's data. The layout now comes from the game itself.
+- Performance: the mod now makes far fewer calls into the game inside every physics tick. Servos that are already at their angle are skipped, and each part is checked once instead of several times. Nothing changes in how anything moves.
+- Log: the performance line now also shows how many physics ticks each frame has, how long the game's own physics tick takes, and how long each of the mod's steps inside the tick takes. The "power watch" line now names the circuit that is short of power and says why (no circuit, nothing stored or generated, or a deficit), and says when the slip ring power sharing is not involved.
+- Texts: solver_iterations now says the game uses 8 iterations, and the wheel friction text now explains which friction is used on contact.
+
+Version 0.31.26
+
+A full review of the mod against the game's own code, decompiled on 19-21/11, and against the source of the physics package the game ships (Unity Physics 1.4.7, the exact version). Everything the mod only assumed about the game was checked; what was wrong is fixed here. Not tested in the game.
+
+Joints, pistons, bearings, turret
+- Letting go of a joint now works the way the game's decoupler does: the mod asks the game to break it, inside the physics tick, and the game breaks it. Until now the mod lowered the joint's strength from outside the tick, which the game ignores when "Indestructible joints" is on and which could leave a joint half-broken. In a world where joints cannot break, a piston, bearing or turret that would separate stays whole and the log says so once.
+- When a separation fails (the top piece is still held some other way), the released joints are really linked back, with their strain reset. Before, the joint was gone and only its strength was given back. The failure is now seen on the tick right after the release; the 3 s window stays as a backup.
+- A piece being carried while it separates now moves with the ship's spin (speed + spin x distance), not just with the ship's speed. Both bodies share the motion that keeps their total push and spin, so nothing is created.
+- "Live joints" are now the game's own list of connected joints, read once per frame; joints the game broke in a crash are never counted or re-linked as the mod's.
+- Joint reinforcement keeps its original value across the whole flight and also reinforces joints on loose structures.
+- The turret's saved turning inertia follows the game when the game rewrites it; turrets come back correctly after a time rewind.
+- Recouplers come back locked after a rewind when their game joint is still alive.
+- Comment fix only: the game uses 8 solver iterations, not 4.
+
+Mass, flight, spin
+- New: [Physics] contact_inertia_scaling (off). The game turns on a setting of the physics solver that shrinks the turning part of every contact push. Inside one ship, parts that touch each other then gain or lose spin out of nothing, even in vacuum with the ship at rest. Off = in vacuum (gravity below 0.05) the mod turns that setting off; with gravity the game's value is always used. On = the game's value everywhere. Candidate for the ship spinning on its own.
+- The mod's extra masses now exist only while the solver runs: real masses go back right after it, not just before the game's forces. In vacuum, a vehicle whose joints are all locked goes through the solver with its real masses.
+- Thrust on a locked group is applied as on one body when the group has stabilisation or gimbal.
+- Moving the centre of mass now carries the matching speed (spin x offset), so the move itself adds no motion.
+- Rigid pistons and servos advance once per physics tick instead of once per frame.
+- The zero gravity of the launch window now really reaches the solver; until now the game rewrote gravity every tick and the option did nothing.
+- The 0.31.25 correction of the stored speed is replaced by the above.
+- Log: thrust estimate and drag watch use the game's own formulas.
+
+Cables, power, signals
+- Power across slip rings is shared from the top down and never more than each circuit has; batteries on both sides charge only from spare generation, and a burnt power cable stops the bridge.
+- Port directions on DataInOut ports, the LRT and the slip ring are written the way the game does, and never undone when the game resolved them itself.
+- Signal values are filtered like the game does (above 1e20 and NaN are cut, negatives pass). Wireless needs SCActive and exactly one sender within 2000 m.
+- Radar, LED colours and blinking, and the beacon icon follow the game's formulas.
+
+Couplers, world, multiplayer, garage
+- The 100 km rule decides per group of linked parts and always gives the part back to the physics world; the mod's joints are rebuilt in the current pose when it comes back. Turrets and recouplers are frozen with the group instead of being dropped.
+- Merging parts keeps their push and spin.
+- [Wheel] friction default is now 2.0. A config file that already exists keeps its value until you change it.
+- The 3 s pause on unload is only for leaving the world; a recall restarts the mod on the next frame.
+- Multiplayer: a player with status On counts as connected, an offline one does not. The mod channel protocol is now 2: every machine needs 0.31.26.
+- Turret in multiplayer: the server sends the turret's layout, so clients draw the turret and its pieces with the server's formula. A client sitting at a turret aims from where the turret already points.
+- Bonus parts go through the game's own inventory refresh. The seat shortcuts reach 4.5 m like the game (the mod read it as about 2.1 m). Painting uses the game's function. Old names are converted in the blueprints bin too. The garage ignores blueprint ghosts.
+- Dead code removed (PistonMerge leftovers).
+
+Not changed: the texts, the mass balance itself, the drag, the piston feel.
+
+Version 0.31.25
+
+One correction to 0.31.23, found while reading the game's strain code (SpaceshipInertiaToShockwaveSystem). The game stores each part's speed at the start of its force step and compares it with the speed after the solver to work out the jolt on every block; a jolt above about 0,17 m/s in one tick (a little over 1 g) strains the block's joints. Since 0.31.23 the hull's speed was stored while its real centre of mass was in and compared while the solver's centre was in — the same motion measured at two points 0,26 m apart, which the game would read as a small extra jolt whenever the ship is turning. The stored speed is now carried over to the solver's point before the solver runs, so the game's strain sees exactly the jolt there was. Nothing else changed.
+Not tested in the game.
+
+Version 0.31.24
+
+What changed since 0.31.23, after reading the game's own code (its Burst code was decompiled on 18/11; the parts quoted here are SpaceshipPartsApplyForces and AerodynamicsSystem).
+Confirmed: the game works out every push on a part from that part's stored mass and centre of mass — the change of speed is force x inverse mass, and the turning effect is taken about the stored centre of mass and divided by the stored inertia. So the centre of mass the mod had moved 0,26 m on the hull did put the hull's thrust 0,26 m off the ship's centre, as 0.31.23 assumed. That part of 0.31.23 stays as it is.
+Corrected: 0.31.23 said "in the game a thruster never turns the part it sits on". That is wrong. The game applies the full turning effect of every thruster and then, separately, brakes the part's spin by a limited amount each tick (the thruster's stabilisation). The option built on that wrong sentence, [Physics] welded_thrust_through_centre, is removed; it was off by default and never ran.
+New: [Physics] welded_drag_as_one (on). The game's drag never turns a part: each part gets one braking number, and its speed and spin are both scaled by it; the number comes from rays cast against that part's own collider only. A ship in one piece just slows down. The same ship with a gate on pistons has each gate piece braked on its own, far from the centre, and that difference turns the ship in the air — which is what Andre found on 14/11. Now a welded group is braked as one part: what each of its parts received is undone and the group is slowed by the mass-weighted mean, speed and spin alike. The total braking is what the game applied; only the turning it caused is gone. Known limit: a gate piece hidden behind the hull still counts its own area, so the ship brakes a little more than the one-piece ship would.
+Log: the momentum watch line says how much the group was slowed per tick by that rule.
+Not tested in the game.
+
+Version 0.31.23
+
+Fixed (attempt, with its own number in the log): the ship with a gate on pistons and bearings leaning under thrust and in the air, while the same ship with the wall welded on does not.
+What the logs of 14/11 add up to: the six gate pieces weigh 385 kg and are counted as 5230 kg so their welds hold; to keep the ship's weight and centre of mass right, the hull gives those kilograms back and its own centre of mass is moved 0,26 m. That is right for the physics solver and wrong for what the GAME does to each part before the solver. The game pushes each part through that part's centre of mass, and the hull's had been moved 0,26 m by the mod — in those flights the hull was getting about 16 degrees per second of spin every second straight from the game's own force step, engines on. And whatever the game does to a part according to its mass lands on the gate pieces as if they weighed 25 times what they weigh, 7 m from the centre.
+New: [Physics] weld_before_solver (on). The made-up masses now exist only while the solver runs. Every physics tick: (1) before the game applies thrust and drag, every part gets its real mass and real centre of mass back; (2) right before the solver, the parts held by a piston that is not moving or a servo bearing that is not turning are put on the single rigid motion that carries exactly the push and the spin they already have, counted with the real masses — nothing added, nothing removed, it is what a perfect weld would do; (3) the solver's masses go back in and the solver runs as before. A piece on a moving piston, a turning servo, a free bearing or the turret goes through the solver as it always did. Turn it off to compare: everything is then exactly as in 0.31.22.
+New, OFF by default (REMOVED in 0.31.24, its premise was wrong): [Physics] welded_thrust_through_centre. In the game a thruster never turns the part it sits on. A ship split in parts still has each part pushed through its own centre, which is not the ship's centre: a small real lever the one-piece ship does not have. On = the push the game gives a welded group moves it without turning it. Only worth trying if the ship still leans under thrust with weld_before_solver on.
+Log: the momentum watch line now says WHERE in the frame the ship's spin changes, in kg m2/s per second: in the game's forces (the engines show up here, and that is right), in the solver, and in the rest of the frame. A number in the last two is spin made out of nothing. It also says how many parts entered the solver as one body and how much relative motion was taken out.
+Not touched: the gate, the door, the pistons, the servos, the mass balance itself, the drag. Not tested in the game: it was built and installed with Andre away.
+
+Version 0.31.22
+
+Removed: keep_spin, the correction added in 0.31.21. It cancelled the mod's leak after the solver had already run, every tick, by writing velocities on a ship in normal flight. Andre turned it down and he is right: hiding the result is not ending the leak, and the mod has no business rewriting the motion of a ship that is flying. The [Physics] keep_spin and keep_spin_max keys are gone; if they are still written in your config file they do nothing. MomentumWatch now only reads — it writes nothing at all.
+Kept: the measurement across the solver, which is the useful half. The vehicle's spin momentum is read at the END of PhysicsPreGroup (the game's thrust and air are already applied there) and again at the START of the group after the physics solver (where the mod's welds, servos and pistons act). Everything the engines and the air did is inside the first reading and drops out of the subtraction; what is left crossed the solver and, for a vehicle touching nothing outside itself, cannot be anything but internal. The momentum watch line says how much that is, in kg m2/s per second, with the ship flying normally and the engines running.
+
+Version 0.31.21
+
+Fixed: the ship gaining spin on its own. Measured on 14/11: coasting in vacuum with every engine off, Andre's ship went from 0 to 0,27 degrees per second in 44 seconds, twice — a vehicle touching nothing outside itself cannot do that, so the mod's own joints were making it.
+How it is found without guessing which joint: the spin momentum of the whole vehicle is read at the END of PhysicsPreGroup — the game's thrust and air have been applied by then — and again at the START of the group after the physics solver. Everything the engines and the air did is inside the first reading and drops out of the subtraction. What is left crossed the solver, where the mod's welds, servos and pistons act, and for a vehicle touching nothing outside, that cannot be anything but internal. [Physics] keep_spin (on) takes exactly that back out, as one rigid correction spread over every part of the vehicle: the same extra angular velocity on all of them plus the matching linear velocity, so no piece is pushed against another and the vehicle's linear momentum is untouched. It works with the engines running, which is where the problem actually shows up.
+Guards, so it does not become a cheat: only with no air (in the atmosphere or on the ground the vehicle leans on things the mod cannot account for), and only on a slow drift — [Physics] keep_spin_max (0,2 degrees per second of ship spin per second of flight). Anything faster is a jolt from outside, and a hit, a block coming off or a decoupler firing goes through untouched.
+Log: the momentum watch line now also says how much momentum crossed the solver per second (the leak itself, measured with the ship flying normally, engines on) and how much keep_spin took back, plus how many jolts it left alone.
+Nothing else changed: the gate, the door, the pistons, the servos and the mass balance are exactly as they were.
+
+Version 0.31.20
+
+The momentum watch now only claims anything when the ship is in FREE FLIGHT — no thruster pushing and no air. With the thrusters on, the game is allowed to change the ship's spin and the number proves nothing; the line says which case it is. In free flight it also says WHERE the new spin appeared: the parts whose own spin changed, each with what the mod is faking on that part (how many kilograms it is counted as against its real weight, and how many times harder to turn) and which weld holds it.
+Why: Andre's flight of 14/11 (session-20261114-165708) coasted for 80 s in vacuum with every thruster off, and the ship went from 0,01 to 0,42 deg/s on its own. A ship in free flight cannot gain spin from nothing, so it is the mod making it. This version says which piece it is coming out of.
+
+Version 0.31.19
+
+Reverted: the piston change of 0.31.18. Capping a piece's turning inertia at 25x instead of the mass cap squared (625x) did not stop the ship leaning, and it made the gate's door wobble on its own — the 625 is what holds a piece steady against the twist of the weld (0.26.8). The [Piston] inertia_factor_max key is gone; if it is still written in your config file it does nothing. Everything about the pistons is exactly as it was in 0.31.17.
+Kept: the momentum watch of 0.31.18 ([Debug] momentum_watch), which is the part that answers the question.
+
+Version 0.31.18
+
+Fixed (or at least: changed, with the number that tells us): how much harder to TURN than it really is a piece may be counted. While a piston weld holds two parts, the lighter one is counted heavier so the solver listens to the weld (mass_ratio_max, since 0.26.7), and its turning inertia was counted heavier too — capped at mass_factor_max SQUARED, 625x, which was never a decision, it just fell out of "inertia goes with size squared". A piece counted 25x heavier and 625x harder to turn trades momentum with the hull through the weld at a made-up ratio; on Andre's ship there are six of those around the gate (63 to 80 kg pieces counted as 500 to 1570 kg), and the ship leans in vacuum, where nothing outside it can be pushing. The inertia now has its own cap, [Piston] inertia_factor_max, at 25x. Set it to 625 for the old behaviour if a piston starts sagging under weight.
+New (log only): momentum watch, [Debug] momentum_watch, on by default and needing no special flight. A vehicle flying with no air can only have its spin changed from outside, by its thrusters: the welds, the servos, the pistons and the car resting on the floor only pass momentum from one piece to another, they cannot create it. Every half second the mod adds up the spin momentum of every part of the vehicle and logs how fast the total drifts, and what that drift is worth as degrees per second added to the hull each second. Drifting with the thrusters off means the mod is making spin out of nothing, and the number says how much; not drifting means the lean comes from outside the vehicle and the mod is not the cause. The line also goes into the black box snapshot (F8), and it says when the mod changed the masses in that window, because then a jump in the total is expected.
+Note: the drag watch of 0.31.17 answered one thing already — in space the air density is EXACTLY zero, so the game applies no drag at all up there, and the lean survived with the drag switched off. Whatever turns the ship in vacuum, it is not the game's air.
+
+Version 0.31.17
+
+New (log only, debug): drag watch, [Debug] drag_watch. Two flights with the same ship, one with the microframe gate and one with that opening closed by a welded wall, pointed at the game's own drag: with the gate the ship starts to lean in space and ends up tumbling at 86 deg/s, without it it holds 0,3 deg/s at 3000 m/s — while making six times MORE thruster torque, which the game cancels on its own. So something the game does not compensate is turning the ship, and the gate is what changes. The game computes drag per PART, casting rays against that part's own shape, so a ship with a gate is several bodies taking the wind instead of one: the hull with the whole doorway missing from its shape, the door as a body of its own pushing the hull through the bearing, and the gap around the door that can never be closed. Every 0.5 s this writes one "drag watch:" line: the air density with real decimals (the flight line rounds it to 0.000, which hides what is left in high orbit) and, per part, the two numbers the game keeps for its drag plus how much that part's speed and spin changed in the step the drag runs in. A part with no thruster pushing it in that tick gets nothing else in that step, so for that one the change IS the drag.
+New (test only): [Debug] no_drag. Zeroes the game's drag on every part, every tick, to tell apart "the gate's drag is turning my ship" from "something else is": fly the same ship with it on and off. It is NOT a way to play — with it on nothing in flight is slowed by the air, so a bad manoeuvre or a pass near the sun stops costing what it should. The log warns once while it is on, and says whether the game accepted the zero or put its own numbers back in the same tick; if it put them back, the switch turns the drag off the other way instead — it takes the air away from each part where the air is already thinner than 0.01, for the one step the game's drag runs in, and gives it back right after. Real atmosphere is left alone, so the switch only turns the drag off high up and in space.
+Nothing in the flight changes with both switches off (they are off by default).
+
+Version 0.31.16
+
+Fixed: three places where the slip ring bridges only reacted after the game had already acted (not tested in the game yet).
+- When the game rebuilds its electric circuits, it rebuilds them and updates the power in the same tick, and the bridge only got into the new circuit on the next tick: one tick with no power on the far side (16 times in one of Andre's flights). Now the mod runs the game's own rebuild at the start of the tick, puts the bridge into the new circuit and only then lets the game update the power. [Slip Ring] rebuild_circuits_in_tick (on by default; the log says once whether it is working).
+- When a joint was born, split, merged or got a new part, the ring's link was cut and only made again on the next half-second scan (in Andre's log: gone at 22:20:38.117, back at 38.633, with everything behind that piston dark in between). Now the rings are scanned in the very tick a joint, recoupler or turret changes, and a link whose ring is not found in one scan stays up for a second instead of being cut on the spot (unless another joint took that ring, or it is a recoupler, whose links go by distance).
+- Launch: the links are made as the joints are born, instead of after two half-second clocks in a row. A chain of joints, which settles one joint per pass, now settles in consecutive ticks.
+- A side of a bridge that lost its circuit and did not find the new one at once is looked for again on every tick (it waited for the next frame).
+New (log only): power watch, [Debug] power_watch (on by default). Every game tick, every circuit fed through a slip ring and every electric thruster is checked for a component that asks for power and is not supplied. One "power watch:" line per episode: what, for how many ticks, and what was happening in the tick it began (the game rebuilt a circuit, a joint changed, the feeding side had no power, or nothing). The trace samples the thrusters every 2 s; a cut shorter than that could not be seen.
+Log: the performance line also counts ring scans on a joint change, data links the game reset and the mod put back, and the power watch's episodes.
+Not done: a reserve of stored power on the bridge. The moment that matters is the one in which the bridge's entity is not in the circuit, so what it holds is not there either, and accounting for what the game takes from it depends on game behaviour that could not be checked (a wrong guess drains the ship). The reserve that works is a battery of the game on the fed side.
+
+Version 0.31.15
+
+Fixed: power and signals that cross a mod joint (slip ring, bearing, piston, recoupler) dropped whenever the game stuttered — thrusters fed through a joint cut out and the ship lost thrust and dropped its nose. The bridges were kept once per drawn frame, while the game works its circuits once per physics tick: at 15 fps that is 4 ticks per frame, and many more in a row after a stutter, all with the bridge as the last frame left it. Now the bridges are kept inside every game tick, right before the game updates its circuits: the data links are put back and each power bridge carries what the far side consumes in that same tick. When the game rebuilds a circuit, the bridge is back on the next tick (it used to wait for the next frame; a side that had lost its circuit could wait half a second).
+Faster: the mod's cost per frame on a big ship (Andre's: 27 thousand blocks, 31 joints — 8 to 13 ms per frame, with spikes of 55 to 420 ms). What changed:
+- Cables. The path of a cable (which port feeds which) is kept for about half a second instead of being walked cell by cell for every port, every frame; the value is still read live. This covers the slip ring channels, the pistons', bearings' and motors' inputs and the wireless channels (finding the sender went through every transmitter of the ship on every read).
+- Whole-ship scans. Slip rings, plug colours, block discovery, the garage pass, the radar and the black box each went through every block of the ship 1 to 10 times per second. There is now one index of blocks by type, rebuilt only when blocks appear or disappear, and the scans only look at the mod's own blocks. Cameras and monitors come from a query.
+- The radar icon check looked through every object the game has loaded once a second; now every 30 s.
+- Per joint. A bearing's signal ports and a block's input port are worked out once, not every frame.
+- The game's data is asked for a writable pointer only when something actually changes.
+Log: the performance line also shows the worst single frame of each step (the average hid a step that took 60 ms twice a second) and the slip ring's cost inside the game's ticks, with how many times a circuit rebuild forced a full pass.
+Changed (debug): the strain watch of 0.31.14 has its own switch, [Debug] strain_watch (off by default), instead of running with flight_trace — it reads every link of the ship every frame.
+
+Version 0.31.14
+
+New: a car docked on a decoupler gets the ship's power and signals before it ever undocks. Layout: ship -> slip ring -> Decoupler (release face to the car) -> Recoupler (car). The ring behind the decoupler stays on the ship when it fires, and now links to the recoupler touching that decoupler in any state (the garage pose included), port 1 with port 1 and so on. Before, it only linked after the car re-attached. It unlinks when the car drives away and links again when it docks. Two recouplers glued side by side in the garage are a single part: they never come apart.
+Fixed: in the garage, the plugs of a recoupler and of the ring or recoupler it pairs with now take the colour of the cable on the other side, like the bearings and pistons (the cue for which port goes with which).
+New (debug, with [Debug] flight_trace): strain watch, log only. The game breaks a block off when the link between two blocks gets more strain than its break force; in flight that strain comes from how hard each block is jerked in one physics step (collisions too), not from the air. Every frame the mod reads every link: when one breaks without the mod or a decoupler breaking it, a "strain: BROKE" line says which two blocks, how close to its limit it was, its peak in the last 3 s, the jolt of both blocks and the nearest mod joint. It also watches how far each bearing and piston is from its fit ("strain: ... is OPEN" above 25 cm or 10 degrees). Every 2 s, with the trace line: the 5 links nearest to breaking and the joint that opened the most.
+
+Version 0.31.13
+
+New: recouplers pass signals and power without waiting to re-attach. Two recouplers touching (car and ship) link their 4 pass-through ports to each other, port 1 with port 1 and so on, and a slip ring glued to a recoupler links to it, in any state: held by a decoupler that hasn't fired, pulling or merged. Before, a recoupler only linked after re-attaching, and only to a ring glued to the decoupler, so a car parked on an unfired decoupler never got its ports across. They unlink when they move apart.
+Fixed: the thrusters' efficiency in the log read zeros since game update 1.0.311 (the field moved); it is read by name now. Log only, nothing in the flight changed.
+
+Version 0.31.12
+
+New (debug): [Debug] circuit_dump_key (Home by default; also in Mod Menu). In the simulation, the key writes the ship's whole circuit to logs/circuits/circuit-HHmmss.txt, read from the game: every block with data ports, each port with the game's own name, its live value and the block and port that feed it (through cables, Frame With Ports and wireless channels), who reads each output, the Remapper ranges, the Memory/Accumulator mode and the Condition comparison, and the senders/receivers of every wireless channel. A Datameter on every port at once; it only reads, nothing in the game changes.
+
 Version 0.31.11
 
 Fixed: a Long Range Transmitter whose signal cable went straight into a pass-through port of a mod joint (an SC_Bearing M in Andre's ship) stayed red and "not wired": the game gives an in/out port its direction only from the port at the other end of the cable, and a joint's pass-through port has none. Now, when the game leaves it without a direction, the mod looks across the joint (following a chain of joints): an input over there (a monitor) makes the transmitter RECEIVE, an output (a camera) makes it SEND, and the slip ring bridges the data across. With no slip ring on that port (Andre's case: the channel 1 receiver drives the bearing's servo directly), the port is the joint's own signal input, so the transmitter RECEIVES and the bearing reads the channel. The log says which. The game's port is not changed.

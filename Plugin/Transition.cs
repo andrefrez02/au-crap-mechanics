@@ -114,8 +114,8 @@ namespace CrapMechanics
         {
             try
             {
-                var p = Ecs.HasC(em, e, tiAir) ? (float*)em.GetComponentDataRawRO(e, tiAir) : null; if (p != null) return p[0].ToString("F3");
-                var parent = Ecs.Parent(em, e); p = Ecs.HasC(em, parent, tiAir) ? (float*)em.GetComponentDataRawRO(parent, tiAir) : null; if (p != null) return p[0].ToString("F3") + "(part)";
+                var p = Ecs.HasC(em, e, tiAir) ? (float*)Ecs.RO(em, e, tiAir) : null; if (p != null) return p[0].ToString("F3");
+                var parent = Ecs.Parent(em, e); p = Ecs.HasC(em, parent, tiAir) ? (float*)Ecs.RO(em, parent, tiAir) : null; if (p != null) return p[0].ToString("F3") + "(part)";
                 return "?";
             }
             catch (Exception) { return "?"; }
@@ -125,7 +125,7 @@ namespace CrapMechanics
             try
             {
                 var target = Ecs.HasC(em, e, tiVel) ? e : Ecs.Parent(em, e);
-                var p = Ecs.HasC(em, target, tiVel) ? (float*)em.GetComponentDataRawRO(target, tiVel) : null; if (p == null) return "?";
+                var p = Ecs.HasC(em, target, tiVel) ? (float*)Ecs.RO(em, target, tiVel) : null; if (p == null) return "?";
                 return Math.Sqrt(p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).ToString("F1") + " m/s";
             }
             catch (Exception) { return "?"; }
@@ -144,14 +144,14 @@ namespace CrapMechanics
                 if (kind == "WirelessTransmitter") sb.Append(" channel ").Append(Ecs.Channel(em, e));
                 if (kind == "Camera")
                 {
-                    var c = Ecs.HasC(em, e, tiCam) ? (byte*)em.GetComponentDataRawRO(e, tiCam) : null;
+                    var c = Ecs.HasC(em, e, tiCam) ? (byte*)Ecs.RO(em, e, tiCam) : null;
                     // 0.31.3: offsets pelo nome do campo (eram 0x00/0x28/0x30 fixos)
                     int oCe = GameFields.Of(typeof(SCTypeCamera), "_cameraEntity", 0), oSl = GameFields.Of(typeof(SCTypeCamera), "_renderingSlice", 0x30), oNd = GameFields.Of(typeof(SCTypeCamera), "_nextDrawTime", 0x28);
                     if (c != null && oCe >= 0) { var ce = *(Entity*)(c + oCe); sb.Append(" cameraEntity ").Append(ce.Index).Append(Ecs.Alive(em, ce) ? "" : "(DEAD)"); if (oSl >= 0) sb.Append(" slice ").Append(*(int*)(c + oSl)); if (oNd >= 0) sb.Append(" nextDraw ").Append((*(double*)(c + oNd)).ToString("F2")); }
                 }
                 if (kind == "Monitor")
                 {
-                    var m = Ecs.HasC(em, e, tiMon) ? (byte*)em.GetComponentDataRawRO(e, tiMon) : null;
+                    var m = Ecs.HasC(em, e, tiMon) ? (byte*)Ecs.RO(em, e, tiMon) : null;
                     // 0.31.3: pelo nome (eram 0x20..0x2C fixos)
                     int oSlc = GameFields.Of(typeof(SCTypeMonitor), "_assignedRenderingSlices", 0x28), oSig = GameFields.Of(typeof(SCTypeMonitor), "_lastReceivedSignals", 0x20);
                     if (m != null) { if (oSlc >= 0) sb.Append(" slices (").Append(*(int*)(m + oSlc)).Append(',').Append(*(int*)(m + oSlc + 4)).Append(')'); if (oSig >= 0) sb.Append(" lastSignals (").Append((*(float*)(m + oSig)).ToString("G9")).Append(',').Append((*(float*)(m + oSig + 4)).ToString("G9")).Append(')'); }
@@ -165,7 +165,7 @@ namespace CrapMechanics
                 var p = ports[i]; sb.Append("\n      [").Append(i).Append("] ").Append(p.Index).Append(':').Append(p.Version);
                 if (!Ecs.Alive(em, p)) { sb.Append(" DEAD"); continue; }
                 if (!Ecs.RawPortPub(em, p, out var t, out var v, out var end, out var persist)) { sb.Append(" no SpaceshipElectricPort"); continue; }
-                byte rt = 255; try { var b = Ecs.HasC(em, p, tiPortAlt) ? (byte*)em.GetComponentDataRawRO(p, tiPortAlt) : null; if (b != null) rt = b[21]; } catch (Exception) { }
+                byte rt = 255; try { var b = Ecs.HasC(em, p, tiPortAlt) ? (byte*)Ecs.RO(em, p, tiPortAlt) : null; if (b != null) rt = b[21]; } catch (Exception) { }
                 sb.Append(" setup ").Append(t).Append(" runtime ").Append(rt).Append(" value ").Append(v.ToString("G9"));
                 sb.Append(" persistent -> ").Append(Who(em, persist)).Append(" runtimeEnd -> ").Append(Who(em, end));
                 if (t == Ecs.PortInput || rt == Ecs.PortInput || t == 3)

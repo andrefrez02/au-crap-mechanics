@@ -13,7 +13,7 @@ namespace CrapMechanics
     /// constant torque). Log only, changes nothing: every 2 s for the first 3 minutes of each launch (then every 10 s), one "trace:" line with
     ///  1) the spin, as an axis in the hull's own axes (the garage axes): which way it pitches/rolls/yaws;
     ///  2) the vehicle's centre of mass with the REAL masses and with the masses the physics sees (the mod's mass balance must keep them equal);
-    ///  3) the thrust of every thruster that is pushing (electric: power used / max power; others: the input signal), its total, and the
+    ///  3) the thrust of every thruster that is pushing (0.31.26: the game's own factor, _frameEfficiency x _atmoUnderwaterMultiplier01), its total, and the
     ///     torque it makes around the real centre of mass + where the thrust line passes;
     ///  4) the same torque if every thruster were exactly where the garage put it relative to the hull — the difference is what the mod's
     ///     joints (pistons, bearings) bending under the thrust add; the rest is how the ship is built;
@@ -27,7 +27,7 @@ namespace CrapMechanics
         static Entity refBlock;
         static readonly Dictionary<ulong, string> names = new Dictionary<ulong, string>(); static bool namesDone;
 
-        public static void Forget() { vehicleKey = 0; refBlock = Entity.Null; }
+        public static void Forget() { vehicleKey = 0; refBlock = Entity.Null; StrainWatch.Forget(); }
 
         static bool Prepare()
         {
@@ -51,7 +51,7 @@ namespace CrapMechanics
             tSince += span;
             if (tSince < tNext) return;
             tNext = tSince + (tSince < 180f ? 2f : 10f);
-            try { ModLog.Info(Line(em, big, parts)); }
+            try { ModLog.Info(Line(em, big, parts)); }   // (0.31.15: the strain watch logs on its own, [Debug] strain_watch)
             catch (Exception ex) { if (warnings++ < 3) ModLog.Warn("flight trace: " + ex.Message); }
         }
 
@@ -59,7 +59,7 @@ namespace CrapMechanics
         {
             g = default;
             if (!Ecs.HasC(em, e, tiGT)) return false;
-            var p = (RigidTransform*)em.GetComponentDataRawRO(e, tiGT); if (p == null) return false;
+            var p = (RigidTransform*)Ecs.RO(em, e, tiGT); if (p == null) return false;
             g = *p; return true;
         }
         static float Angle(quaternion a, quaternion b) { float d = System.Math.Abs(math.dot(a.value, b.value)); return math.degrees(2f * (float)System.Math.Acos(System.Math.Min(1f, d))); }
@@ -87,13 +87,13 @@ namespace CrapMechanics
             // the vehicle: parts near the hull moving with it
             var bigC = Ecs.CenterOfMass(em, big);
             float3 bigV = default, bigW = default; quaternion inertiaRot = quaternion.identity;
-            if (Ecs.HasC(em, big, Ecs.tiVel)) { var pv = (PhysicsVelocity*)em.GetComponentDataRawRO(big, Ecs.tiVel); bigV = pv->Linear; bigW = pv->Angular; }
-            if (Ecs.HasC(em, big, Ecs.tiMass)) inertiaRot = ((PhysicsMass*)em.GetComponentDataRawRO(big, Ecs.tiMass))->Transform.rot;
+            if (Ecs.HasC(em, big, Ecs.tiVel)) { var pv = (PhysicsVelocity*)Ecs.RO(em, big, Ecs.tiVel); bigV = pv->Linear; bigW = pv->Angular; }
+            if (Ecs.HasC(em, big, Ecs.tiMass)) inertiaRot = ((PhysicsMass*)Ecs.RO(em, big, Ecs.tiMass))->Transform.rot;
             var mine = new HashSet<long>(); double mR = 0, mP = 0; double3 sR = default, sP = default;
             foreach (var p in parts)
             {
                 if (!JointSystem.RealOf(em, p, out float mr, out float3 cr, out float mp, out float3 cp)) continue;
-                float3 v = default; if (Ecs.HasC(em, p, Ecs.tiVel)) v = ((PhysicsVelocity*)em.GetComponentDataRawRO(p, Ecs.tiVel))->Linear;
+                float3 v = default; if (Ecs.HasC(em, p, Ecs.tiVel)) v = ((PhysicsVelocity*)Ecs.RO(em, p, Ecs.tiVel))->Linear;
                 if (math.length(cp - bigC) > 80f || math.length(v - bigV) > 15f) continue;
                 mine.Add(Ecs.K(p)); mR += mr; mP += mp; sR += (double3)cr * mr; sP += (double3)cp * mp;
             }
@@ -124,17 +124,16 @@ namespace CrapMechanics
             {
                 if (!Ecs.Alive(em, e) || !Ecs.HasC(em, e, Thrusters.Ti)) continue;
                 var part = Ecs.Parent(em, e); if (Ecs.IsNull(part) || !mine.Contains(Ecs.K(part))) continue;
-                var fl = *(float3*)((byte*)em.GetComponentDataRawRO(e, Thrusters.Ti) + off);
-                float ratio; bool powered = Ecs.HasPower(em, e, out byte pst);
-                if (hasElec && Ecs.HasC(em, e, tiElec) && Ecs.HasC(em, e, Ecs.tiPower))
+                var fl = *(float3*)((byte*)Ecs.RO(em, e, Thrusters.Ti) + off);
+                // 0.31.26 (item 31): the game's own factor (_frameEfficiency × _atmoUnderwaterMultiplier01, signed), not power used / max
+                // power or |signal| — see Thrusters.Efficiency [recon/EPC_SCThruster.cs:250, 260]
+                if (!Thrusters.Efficiency(em, e, out float ratio)) ratio = 0f;
+                if (System.Math.Abs(ratio) < 0.01f)
                 {
-                    float maxC = *(float*)em.GetComponentDataRawRO(e, tiElec);
-                    float cons = *(float*)((byte*)em.GetComponentDataRawRO(e, Ecs.tiPower) + 32);
-                    ratio = maxC > 0f ? System.Math.Min(1f, System.Math.Max(0f, cons / maxC)) : 0f;
-                    if (!powered) { if (ratio > 0.01f) noPower++; ratio = 0f; }
+                    // an electric thruster asked to push (signal) but with no power: counted apart, as before
+                    if (hasElec && Ecs.HasC(em, e, tiElec) && !Ecs.HasPower(em, e, out _) && Ecs.Signal(em, e, out float sv, out _) && System.Math.Abs(sv) > 0.01f) noPower++;
+                    idle++; continue;
                 }
-                else ratio = Ecs.Signal(em, e, out float sv, out _) ? System.Math.Min(1f, System.Math.Abs(sv)) : 0f;
-                if (ratio < 0.01f) { idle++; continue; }
                 pushing++;
                 Ecs.Pose(em, e, out float3 pos, out quaternion rot);
                 float3 f = math.rotate(rot, fl) * ratio; F += f; T += math.cross(pos - cReal, f);

@@ -66,16 +66,16 @@ namespace CrapMechanics
             foreach (var b in Garage.Blocks(em))
             {
                 if (!Ecs.Alive(em, b) || Ecs.IsPart(em, Ecs.Parent(em, b))) continue;   // launched copies are not the garage ship
-                var gp = (RigidTransform*)em.GetComponentDataRawRO(b, tiGT); if (gp == null) continue; var g = *gp;
+                var gp = (RigidTransform*)Ecs.RO(em, b, tiGT); if (gp == null) continue; var g = *gp;
                 if (Ecs.HasC(em, b, tiMass))
                 {
-                    var mp = (byte*)em.GetComponentDataRawRO(b, tiMass);
+                    var mp = (byte*)Ecs.RO(em, b, tiMass);
                     float m = *(float*)(mp + offM); float3 c = *(float3*)(mp + offC);
                     if (m > 0f && m < 1e7f && !float.IsNaN(m)) { M += m; S += (double3)(g.pos + math.rotate(g.rot, c)) * m; }
                 }
                 if (Ecs.HasC(em, b, Thrusters.Ti))
                 {
-                    var fl = *(float3*)((byte*)em.GetComponentDataRawRO(b, Thrusters.Ti) + Thrusters.MaxForceOffset);
+                    var fl = *(float3*)((byte*)Ecs.RO(em, b, Thrusters.Ti) + Thrusters.MaxForceOffset);
                     if (math.lengthsq(fl) > 1f) thr.Add((b, g.pos, math.rotate(g.rot, fl)));
                 }
             }

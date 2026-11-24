@@ -50,11 +50,16 @@ namespace CrapMechanics
             int k = b.icon;
             if (Ecs.Alive(em, b.knob))
             {
-                var v = (Ecs.HasC(em, b.knob, tiData) ? (float*)em.GetComponentDataRawRO(b.knob, tiData) : null);
+                var v = (Ecs.HasC(em, b.knob, tiData) ? (float*)Ecs.RO(em, b.knob, tiData) : null);
                 if (v != null)
                 {
                     float x = v[0]; if (float.IsNaN(x)) x = 0f;
-                    k = x <= 1.01f ? (int)Math.Round(x * 2f) : (int)Math.Round(x);   // 3 positions: 0 / 0.5 / 1 (or 0 / 1 / 2)
+                    // 0.31.26 (item 49): the detent the knob itself shows — ActionableData.GetValueInterval = clamp((int)(x * N), 0, N - 1) with
+                    // N = _roundingIntervals (ActionableData +32) [results/03_actionables_05.md; recon/EPC_SCWirelessTransmitter.cs:222]. round(x * 2)
+                    // only matched at rest with N = 3 (the knob rests at the centre of its interval, 1/6, 1/2, 5/6); while turning it could
+                    // disagree with the knob. (The old `x > 1.01` branch never happened: the value is 0..1.)
+                    int n = *(int*)((byte*)v + 32);
+                    k = n > 0 ? Math.Max(0, Math.Min(n - 1, (int)(x * n))) : (int)Math.Round(x * 2f);
                     k = Math.Max(0, Math.Min(2, k));
                     if (Math.Abs(x - b.knobLog) > 0.01f) { if (b.knobLog < -1f) ModLog.Info("SC_Beacon " + b.block.Index + ": knob value " + x.ToString("F2")); b.knobLog = x; }
                 }
@@ -99,7 +104,7 @@ namespace CrapMechanics
         public static Entity[] AllActionables(EntityManager em) => Prepare(em) ? Ecs.QueryList(qData).ToArray() : new Entity[0];
         public static unsafe Entity BlockOfActionable(EntityManager em, Entity a)
         {
-            var bs = (Ecs.HasC(em, a, tiBelong) ? (BelongingSC*)em.GetComponentDataRawRO(a, tiBelong) : null);
+            var bs = (Ecs.HasC(em, a, tiBelong) ? (BelongingSC*)Ecs.RO(em, a, tiBelong) : null);
             return bs == null ? Entity.Null : bs->_sc;
         }
         /// <summary>0.23.0: Knobs sends here the TypeIndex of ActionableToggle (the bearing's switch) so it isn't mistaken for the knob.</summary>
@@ -112,7 +117,7 @@ namespace CrapMechanics
             if (!Prepare(em)) return r;
             foreach (var f in Ecs.QueryList(qData))
             {
-                var bs = (Ecs.HasC(em, f, tiBelong) ? (BelongingSC*)em.GetComponentDataRawRO(f, tiBelong) : null);
+                var bs = (Ecs.HasC(em, f, tiBelong) ? (BelongingSC*)Ecs.RO(em, f, tiBelong) : null);
                 if (bs != null && bs->_sc.Index == block.Index && bs->_sc.Version == block.Version) r.Add(f);
             }
             return r;
@@ -122,7 +127,7 @@ namespace CrapMechanics
             foreach (var f in Ecs.Children(em, block)) if (Ecs.HasC(em, f, tiData) && !Skip(em, f)) return f;
             foreach (var f in Ecs.QueryList(qData))
             {
-                var bs = (Ecs.HasC(em, f, tiBelong) ? (BelongingSC*)em.GetComponentDataRawRO(f, tiBelong) : null);
+                var bs = (Ecs.HasC(em, f, tiBelong) ? (BelongingSC*)Ecs.RO(em, f, tiBelong) : null);
                 if (bs != null && bs->_sc.Index == block.Index && bs->_sc.Version == block.Version && !Skip(em, f)) return f;
             }
             return Entity.Null;

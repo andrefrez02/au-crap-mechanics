@@ -15,7 +15,7 @@ namespace CrapMechanics
         static readonly Dictionary<string, float> DIAMETER = new Dictionary<string, float> {
             { "SC_WheelSportsSmall", 1f }, { "SC_WheelSportsMedium", 1.5f }, { "SC_WheelSportsLarge", 2f },
             { "SC_WheelOffroadSmall", 1f }, { "SC_WheelOffroadMedium", 1.5f }, { "SC_WheelOffroadLarge", 2f } };
-        public static float SportsFriction = 1.5f, OffroadFriction = 2.2f;
+        public static float SportsFriction = 2.0f, OffroadFriction = 2.2f;   // 0.31.26 (item 13): 1.5 lost to the ground's 1.7 (Maximum policy wins)
         const int Sides = 24; const float Width = 0.5f;
 
         static string Base(string name) => name != null && name.EndsWith(" M") ? name.Substring(0, name.Length - 2) : name;   // 0.12.14: mirrored version

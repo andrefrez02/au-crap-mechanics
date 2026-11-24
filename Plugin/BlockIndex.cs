@@ -20,6 +20,8 @@ namespace CrapMechanics
 
         /// <summary>The catalogue has been read (the Core and the texts already existed).</summary>
         public static bool Ready;
+        /// <summary>0.31.12: every prefab name in the catalogue (CircuitDump turns them into hashes).</summary>
+        public static IEnumerable<string> Prefabs() => byPrefab.Keys;
         /// <summary>The catalogue could not be read — extra_blocks then only takes exact block names, as it did before 0.29.0.</summary>
         public static bool Failed;
         static float t = 9f;

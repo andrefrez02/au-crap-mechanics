@@ -77,9 +77,11 @@ namespace CrapMechanics
             {
                 foreach (var e in Ecs.QueryList(qClients))
                 {
-                    var c = (byte*)em.GetComponentDataRawRO(e, tiClient); if (c == null) continue;
+                    var c = (byte*)Ecs.RO(em, e, tiClient); if (c == null) continue;
                     ulong id = *(ulong*)c;   // NetcoreClient._steamID (+0)
-                    if (id != 0 && id != me) n++;
+                    // 0.31.26 (item 23): a player who dropped keeps the entity with _isOnline = false (+220) so they can reconnect; only a kick or
+                    // Close destroys it [recon_managed/Netcore.cs:322-331; types_layout.txt NetcoreClient +220]. Offline players are not in the game.
+                    if (id != 0 && id != me && c[220] != 0) n++;
                 }
             }
             catch (Exception) { }
@@ -93,7 +95,7 @@ namespace CrapMechanics
             {
                 foreach (var e in Ecs.QueryList(qNet))
                 {
-                    var p = (byte*)em.GetComponentDataRawRO(e, tiNet); if (p == null) continue;
+                    var p = (byte*)Ecs.RO(em, e, tiNet); if (p == null) continue;
                     server = p[0] != 0;   // Netcore.Singleton._isServer (+0)
                     s = (Status)(*(int*)(p + 4));   // _networkStatus (+4)
                     return;
@@ -101,8 +103,12 @@ namespace CrapMechanics
             }
             catch (Exception) { }
         }
-        public static bool Networked(EntityManager em) { var s = Now(em); return s == Status.Client || ((s == Status.ServerOpen || s == Status.ServerClosed) && others > 0); }
-        public static bool IAmClient(EntityManager em) => Now(em) == Status.Client;
+        /// <summary>0.31.26 (item 22): status On counts as a network too. While connecting to a server, and after the host drops, the game is
+        /// On (1) with _isServer = false and the world still loaded [recon_managed/Netcore.cs:96-97, 344-347, 175-176].</summary>
+        public static bool Networked(EntityManager em) { var s = Now(em); return s == Status.Client || s == Status.On || ((s == Status.ServerOpen || s == Status.ServerClosed) && others > 0); }
+        /// <summary>0.31.26 (item 22): a client is any machine on a network that is not the server — Client (4), or On (1) with _isServer false
+        /// (connecting / host lost). Before, only Client counted, so in those windows a client copy ran the server's physics.</summary>
+        public static bool IAmClient(EntityManager em) { var s = Now(em); return FakeClient || s == Status.Client || (s != Status.Off && !cachedServer); }
         /// <summary>Does this machine run the mod's physics (joints, motors, splitting, merging, knob restore)? The server and a solo game do;
         /// a client doesn't (with host_only off, everyone does — the pre-0.24 behaviour).</summary>
         public static bool Authoritative(EntityManager em) => !OwnerOnly || !IAmClient(em);

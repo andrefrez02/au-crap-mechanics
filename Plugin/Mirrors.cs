@@ -16,7 +16,7 @@ namespace CrapMechanics
         /// <summary>Names of the mod's " M" versions (only those leave the inventory).</summary>
         static readonly HashSet<string> namesM = new HashSet<string>();
 
-        static readonly string[] Self = { "SC_Pedal", "SC_SteeringWheel", "SC_TurretSeat", "SC_TankSmallBlue", "SC_TankSmallGreen", "SC_DriveShaft", "SC_SlipRing", "SC_MiniSlipRing", "SC_PistonEnd", "SC_MiniPistonEnd" };   // 0.22.4: symmetric plates   // 0.20.0: Piston End (symmetric); 0.22.0: Slip Ring (ports symmetric in X)
+        static readonly string[] Self = { "SC_Pedal", "SC_SteeringWheel", "SC_TurretSeat", "SC_TankSmallBlue", "SC_TankSmallGreen", "SC_DriveShaft", "SC_SlipRing", "SC_MiniSlipRing", "SC_PistonEnd", "SC_MiniPistonEnd", "SC_RubberSeal4", "SC_RubberSeal2", "SC_RubberSeal1", "SC_RubberSealCorner", "SC_MiniRubberSeal4", "SC_MiniRubberSeal2", "SC_MiniRubberSeal1", "SC_MiniRubberSealCorner", "SC_RemoteComputer", "SC_PhoneDock" };   // 0.31.36: the Remote Computer has a mirrored version now ("SC_RemoteComputer M": a prefab with a model of its own, readable digits) — it is paired below when the bundle has it; with an older bundle it stays here, symmetric as before   // 0.31.28: seals (the lip is centred; the corner's L is symmetric about its diagonal)   // 0.22.4: symmetric plates   // 0.20.0: Piston End (symmetric); 0.22.0: Slip Ring (ports symmetric in X)
         /// <summary>0.20.0 (Andre: "remove the piston tiers"): the 2/4/8 pistons stay registered (old BPs) but leave the inventory.</summary>
         static readonly string[] Hidden = { };   // 0.22.5: the old items (2/4/8 pistons, cube Piston End) were removed
 

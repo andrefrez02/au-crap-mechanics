@@ -107,7 +107,13 @@ namespace CrapMechanics
         public static void ConvertBlueprintFiles()
         {
             if (byHash == null || byHash.Count == 0) return;
-            string folder = BlueprintFolder();
+            // 0.31.26 (item 42): the game keeps blueprints in two folders — Blueprints and BlueprintsBin (bin and autosave); its own
+            // converter walks both [results/g2_garage_01.md:27,68; ga/BlueprintUtility.asm RunBlueprintConversion 0x10DDBC0..0x10DDC0C]
+            ConvertFolder(BlueprintFolder("Blueprints"));
+            ConvertFolder(BlueprintFolder("BlueprintsBin"));
+        }
+        static void ConvertFolder(string folder)
+        {
             if (folder == null || !Directory.Exists(folder)) { ModLog.Info("old prefab names: no blueprint folder (" + folder + ")"); return; }
             int files = 0, changed = 0, parts = 0, skipped = 0;
             foreach (var f in Directory.GetFiles(folder, "*.bp", SearchOption.AllDirectories))
@@ -135,10 +141,10 @@ namespace CrapMechanics
             ModLog.Info("old prefab names: " + files + " blueprint(s) in " + folder + ", " + changed + " converted (" + parts + " part(s))" + (skipped > 0 ? ", " + skipped + " not in the known format and left alone" : ""));
         }
 
-        static string BlueprintFolder()
+        static string BlueprintFolder(string sub)
         {
-            try { var p = UnityEngine.Application.persistentDataPath; if (!string.IsNullOrEmpty(p)) return Path.Combine(p, "Blueprints"); } catch (Exception) { }
-            try { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AppData", "LocalLow", "ApproximatelyGames", "ApproximatelyUp", "Blueprints"); } catch (Exception) { return null; }
+            try { var p = UnityEngine.Application.persistentDataPath; if (!string.IsNullOrEmpty(p)) return Path.Combine(p, sub); } catch (Exception) { }
+            try { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "AppData", "LocalLow", "ApproximatelyGames", "ApproximatelyUp", sub); } catch (Exception) { return null; }
         }
 
         /// <summary>[u32 nStructs] + nStructs x [u64 typeHash][u32 structSize][u32 fieldCount] + fieldCount x 16 B; then records to the end of the file:

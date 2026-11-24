@@ -32,7 +32,10 @@ namespace CrapMechanics
             {
                 tiGT = TypeManager.GetTypeIndex(Il2CppType.Of<GarageTransform>());
                 tiMem = TypeManager.GetTypeIndex(Il2CppType.Of<CRPRendererMemory_Color>());
-                var a = new Il2CppStructArray<ComponentType>(2); a[0] = ComponentType.ReadOnly(Ecs.tiPrefab); a[1] = ComponentType.ReadOnly(tiGT);
+                // 0.31.26 (item 37): every garage query of the game leaves out the blueprint preview being placed (GarageBlueprintPlacingEntity)
+                // [results/01_garage_02.md; 01_garage_01.md:81] — those ghosts are not blocks of the garage ship
+                var ex = ComponentType.ReadOnly(TypeManager.GetTypeIndex(Il2CppType.Of<GarageBlueprintPlacingEntity>())); ex.AccessModeType = ComponentType.AccessMode.Exclude;
+                var a = new Il2CppStructArray<ComponentType>(3); a[0] = ComponentType.ReadOnly(Ecs.tiPrefab); a[1] = ComponentType.ReadOnly(tiGT); a[2] = ex;
                 qGar = em.CreateEntityQuery(a);
                 ok = true; return true;
             }
@@ -77,7 +80,7 @@ namespace CrapMechanics
         {
             gt = default;
             if (!Ecs.HasC(em, e, tiGT)) return false;
-            var p = (RigidTransform*)em.GetComponentDataRawRO(e, tiGT); if (p == null) return false;
+            var p = (RigidTransform*)Ecs.RO(em, e, tiGT); if (p == null) return false;
             gt = *p; return true;
         }
 
@@ -87,6 +90,11 @@ namespace CrapMechanics
         public static float HalfEnd(string name) => 0.0625f;   // 0.22.5: only the plates (the cube was removed)
         /// <summary>0.22.4: garage blocks (SCPrefab + GarageTransform) — so SlipRings.cs paints the plugs in the garage too.</summary>
         public static List<Entity> Blocks(EntityManager em) => Prepare(em) ? Ecs.QueryList(qGar) : new List<Entity>();
+        /// <summary>0.31.15: the blocks with a GarageTransform indexed by prefab (Ecs.BlockSet) — rebuilt only when their number changes.</summary>
+        static readonly Ecs.BlockSet set = new Ecs.BlockSet();
+        static readonly Ecs.BlockSet empty = new Ecs.BlockSet();
+        public static Ecs.BlockSet Set(EntityManager em) => Prepare(em) ? Ecs.Refresh(em, set, qGar) : empty;
+        public static void ForgetBlocks() { set.Forget(); }
         public static bool Aligned(RigidTransform gP, float middle, float strokeMax, RigidTransform gE, out float gap, out float ax, out float lat, float halfEnd = 0.125f)
         {
             var up = Ecs.Rot(gP.rot, Ecs.UY); var d = Ecs.Sub(gE.pos, gP.pos);
@@ -104,9 +112,8 @@ namespace CrapMechanics
             if (!Prepare(em)) { reason = "garage helper not ready"; return false; }
             if (!GT(em, piston, out var gP)) { reason = "the piston has no GarageTransform"; return false; }
             float bestPick = 999f; int near = 0; string endName = null;
-            foreach (var e in Ecs.Components(em))
+            foreach (var (e, h) in Ecs.Launched(em).mod)   // 0.31.15: the mod's blocks only (block index)
             {
-                ulong h; try { h = Ecs.Prefab(em, e); } catch (Exception) { continue; }
                 if (!JointSystem.KindFromHash(h, out var tp, out _, out var np) || tp != Kind.End || !GT(em, e, out var gE)) continue;   // 0.22.4: old cube + plates
                 if (Aligned(gP, middle, strokeMax, gE, out var g, out var ax, out var lat, HalfEnd(np))) { if (g < bestPick) { bestPick = g; endBlock = e; gap = g; endName = np; } }
                 else if (Ecs.Len(Ecs.Sub(gE.pos, gP.pos)) < strokeMax + 1f) near++;
@@ -117,10 +124,9 @@ namespace CrapMechanics
             // extended up to it (the stroke becomes the distance to the end). The end belongs to the nearest one; the others get no end.
             if (GT(em, endBlock, out var gEnd))
             {
-                foreach (var e in Ecs.Components(em))
+                foreach (var (e, h2) in Ecs.Launched(em).mod)
                 {
                     if (e.Index == piston.Index && e.Version == piston.Version) continue;
-                    ulong h2; try { h2 = Ecs.Prefab(em, e); } catch (Exception) { continue; }
                     if (!JointSystem.KindFromHash(h2, out var tp2, out var stroke2, out var np2) || tp2 != Kind.Piston || !GT(em, e, out var gO)) continue;
                     if (!Aligned(gO, 0.25f * JointSystem.ScaleFromName(np2), stroke2, gEnd, out var g2, out _, out _, HalfEnd(endName)) || g2 >= bestPick - 0.002f) continue;
                     reason = "the Piston End on this axis is " + (bestPick * 100f).ToString("F0") + " cm away but only " + (g2 * 100f).ToString("F0")
@@ -136,12 +142,13 @@ namespace CrapMechanics
             bool h = HOn(em);
             var pst = new List<(Entity e, RigidTransform gt, float scale, float strokeMax, string name)>();
             var ends = new List<(Entity e, RigidTransform gt, float half)>();
-            foreach (var e in Ecs.QueryList(qGar))
+            foreach (var (e, hh) in Set(em).mod)
             {
                 // 0.26.11: the type first (cached prefab, Ecs.Prefab) — before, there were 8 calls into the game per block (Parent + IsPart) on
                 // ALL the ~10 thousand blocks with GarageTransform, every 0.1 s, even in flight, just to discard whatever isn't a piston
-                ulong hh; try { hh = Ecs.Prefab(em, e); } catch (Exception) { continue; }
+                // 0.31.15: and now only the mod's blocks, from the block index (no call into the game per block at all)
                 if (!JointSystem.KindFromHash(hh, out var kind, out var stroke, out var name) || (kind != Kind.End && kind != Kind.Piston)) continue;
+                if (!Ecs.Alive(em, e)) continue;
                 if (Ecs.IsPart(em, Ecs.Parent(em, e))) continue;   // launched: the Joint takes care of it
                 if (kind == Kind.End) { if (GT(em, e, out var g)) ends.Add((e, g, HalfEnd(name))); }
                 else if (kind == Kind.Piston) { if (GT(em, e, out var g)) pst.Add((e, g, JointSystem.ScaleFromName(name), stroke, name)); }

@@ -8,6 +8,8 @@ namespace CrapMechanics
     {
         // 0.28.0: client view (ClientView.cs) — the top block, its pose relative to the piston/bearing in the garage, and what was measured
         public Entity cNbr; public RigidTransform cRel0; public float cExtBase, cTry, cAngle; public bool cReady, cAngleOk, cLogged;
+        // 0.31.26 (p2_torre N1): this block's SCGuid, the version of the server's layout record last looked at, and the one the top block came from
+        public string cGuid; public int cTopoSeen = -1, cTopoVer = -1;
     }
 
     internal static partial class JointSystem
@@ -19,6 +21,15 @@ namespace CrapMechanics
         static unsafe void ClientView(EntityManager em, Joint j, float dt)
         {
             if (!Ecs.IsPart(em, Ecs.Parent(em, j.block))) { j.cReady = false; j.cAngleOk = false; j.cNbr = Entity.Null; return; }   // garage: Garage.cs draws
+            if (j.cReady && ModNet.TopoHeard)
+            {
+                // 0.31.26 (p2_torre N1): the server's layout for this block changed, or the top block was a guess made while the layout's block
+                // wasn't here yet (look again every second, quietly)
+                if (j.cGuid == null) j.cGuid = Ecs.Guid(em, j.block);
+                var tr = ModNet.TopoJointOf(j.cGuid); int v = tr != null ? tr.ver : -1;
+                if (v != j.cTopoSeen) { j.cReady = false; j.cTry = 0f; }
+                else if (v != -1 && j.cTopoVer != v && (j.cTry -= dt) <= 0f) { j.cReady = false; j.cTry = 0f; }
+            }
             if (!j.cReady || !Ecs.Alive(em, j.cNbr))
             {
                 j.cReady = false; j.cAngleOk = false;
@@ -59,8 +70,14 @@ namespace CrapMechanics
         static unsafe bool ClientFindTop(EntityManager em, Joint j)
         {
             Entity nbr = Entity.Null; float extBase = 0f; string how = "glued to the top face";
+            Entity before = j.cNbr;
+            // 0.31.26 (p2_torre N1): a client has no joint list (_joints = null [recon_managed/NetcoreDoIncomingEventsSystem.cs:745]), so the
+            // server's layout (ModNet TTopo: the top block or Piston End it uses, by SCGuid) comes first; the guesses below stay as the fallback
+            j.cTopoVer = -1;
+            if (ModNet.TopoHeard) { if (j.cGuid == null) j.cGuid = Ecs.Guid(em, j.block); var tr = ModNet.TopoJointOf(j.cGuid); j.cTopoSeen = tr != null ? tr.ver : -1; }
+            if (TopFromLayout(em, j, out var nbrL, out var extL, out var howL)) { nbr = nbrL; extBase = extL; how = howL; }
             var joints = Ecs.Joints(em, out int n);
-            if (joints != null) TopJoints(em, j.block, joints, n, out nbr);
+            if (Ecs.IsNull(nbr) && joints != null) TopJoints(em, j.block, joints, n, out nbr);
             if (Ecs.IsNull(nbr) && j.kind == Kind.Piston && Garage.FindEnd(em, j.block, j.middle, j.strokeMax, out var endB, out var gap, out _))
             { nbr = endB; extBase = gap; how = "Piston End " + gap.ToString("F2") + " m ahead"; }
             if (Ecs.IsNull(nbr) || !Ecs.Alive(em, nbr))
@@ -70,9 +87,9 @@ namespace CrapMechanics
             }
             RigidTransform rel0;
             if (!tiGTok) { tiGTok = true; tiGT = TypeManager.GetTypeIndex(Il2CppInterop.Runtime.Il2CppType.Of<GarageTransform>()); }
-            if (em.HasComponent(j.block, ComponentType.ReadOnly(tiGT)) && em.HasComponent(nbr, ComponentType.ReadOnly(tiGT)))
+            if (Ecs.Has(em, j.block, tiGT) && Ecs.Has(em, nbr, tiGT))
             {
-                var gb = *(RigidTransform*)em.GetComponentDataRawRO(j.block, tiGT); var gv = *(RigidTransform*)em.GetComponentDataRawRO(nbr, tiGT);
+                var gb = *(RigidTransform*)Ecs.RO(em, j.block, tiGT); var gv = *(RigidTransform*)Ecs.RO(em, nbr, tiGT);
                 rel0 = math.mul(math.inverse(gb), gv);
             }
             else if (Same(Ecs.Parent(em, j.block), Ecs.Parent(em, nbr)))
@@ -86,7 +103,7 @@ namespace CrapMechanics
                 return false;
             }
             j.cNbr = nbr; j.cExtBase = extBase; j.cRel0 = rel0; j.cReady = true;
-            if (!j.cLogged || DetailedLog) ModLog.Info(j.name + " " + j.block.Index + ": client view — top block " + nbr.Index + " (" + how + "); drawn from the server's poses");
+            if (!j.cLogged || (DetailedLog && (nbr.Index != before.Index || nbr.Version != before.Version))) ModLog.Info(j.name + " " + j.block.Index + ": client view — top block " + nbr.Index + " (" + how + "); drawn from the server's poses");
             j.cLogged = true;
             return true;
         }

@@ -22,10 +22,11 @@ namespace CrapMechanics
         static readonly Dictionary<long, string> camState = new Dictionary<long, string>();
         static int captures;
         static TypeIndex tiCam, tiMon, tiAir; static bool tiOk, tiFailed;
+        static EntityQuery qCam, qMon; static bool qOk;
 
         public static void Forget() { partsBefore = -1; refOk = false; camState.Clear(); tQuiet = 0f; FlightTrace.Forget(); }
 
-        static bool Prepare()
+        static bool Prepare(EntityManager em)
         {
             if (tiOk) return true; if (tiFailed) return false;
             try
@@ -34,6 +35,14 @@ namespace CrapMechanics
                 tiMon = TypeManager.GetTypeIndex(Il2CppInterop.Runtime.Il2CppType.Of<SCTypeMonitor>());
                 tiAir = TypeManager.GetTypeIndex(Il2CppInterop.Runtime.Il2CppType.Of<AtmosphereDensityMeter>());
                 tiOk = true;
+                // 0.31.15: launched cameras / monitors straight from a query (WatchCameras asked every block of the ship, 4 calls each, twice a second)
+                try
+                {
+                    var a = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppStructArray<ComponentType>(3); a[0] = ComponentType.ReadOnly(tiCam); a[1] = ComponentType.ReadOnly(Ecs.tiParent); a[2] = ComponentType.ReadOnly(Ecs.tiLTW);
+                    var b = new Il2CppInterop.Runtime.InteropTypes.Arrays.Il2CppStructArray<ComponentType>(3); b[0] = ComponentType.ReadOnly(tiMon); b[1] = ComponentType.ReadOnly(Ecs.tiParent); b[2] = ComponentType.ReadOnly(Ecs.tiLTW);
+                    qCam = em.CreateEntityQuery(a); qMon = em.CreateEntityQuery(b); qOk = true;
+                }
+                catch (Exception ex) { qOk = false; ModLog.Warn("black box: camera/monitor queries: " + ex.Message); }
             }
             catch (Exception ex) { tiFailed = true; ModLog.Warn("black box: off (" + ex.Message + ")"); }
             return tiOk;
@@ -42,7 +51,7 @@ namespace CrapMechanics
         /// <summary>Simulation cycle (after the menu checks).</summary>
         public static unsafe void Step(EntityManager em, float dt)
         {
-            if (!Prepare()) return;
+            if (!Prepare(em)) return;
             tFlight += dt; tWatch += dt; tCooldown -= dt; tQuiet += dt;
             if (tWatch < 0.5f) return;
             float span = tWatch; tWatch = 0f;
@@ -83,16 +92,19 @@ namespace CrapMechanics
         static unsafe void WatchCameras(EntityManager em)
         {
             var seen = new HashSet<long>(); string changed = null;
-            foreach (var e in Ecs.Components(em))
+            if (!qOk) return;
+            var watched = new List<(Entity e, bool cam)>();
+            foreach (var e in Ecs.QueryList(qCam)) watched.Add((e, true));
+            foreach (var e in Ecs.QueryList(qMon)) watched.Add((e, false));
+            foreach (var (e, cam) in watched)
             {
-                bool cam = Ecs.HasC(em, e, tiCam), mon = !cam && Ecs.HasC(em, e, tiMon); if (!cam && !mon) continue;
-                long k = Ecs.K(e); seen.Add(k);
+                long k = Ecs.K(e); if (!seen.Add(k)) continue;
                 string s;
                 try
                 {
                     Ecs.HasPower(em, e, out byte st);
                     s = (st == 255 ? "power n/a" : "power " + JointSystem.StateName(st)) + (Far.Active(em, e) ? "" : ", SWITCHED OFF");
-                    if (cam) { var c = (byte*)em.GetComponentDataRawRO(e, tiCam); var ce = *(Entity*)c; s += ", camera entity " + (Ecs.Alive(em, ce) ? "ok" : "DEAD"); }
+                    if (cam) { var c = (byte*)Ecs.RO(em, e, tiCam); var ce = *(Entity*)c; s += ", camera entity " + (Ecs.Alive(em, ce) ? "ok" : "DEAD"); }
                     else
                     {
                         // (the render slices turn over all the time — only the input, power and SCActive count as a change)
@@ -114,7 +126,7 @@ namespace CrapMechanics
         public static void Capture(EntityManager em, string why, bool fromKey = false)
         {
             if (!fromKey && tCooldown > 0f) return;
-            Prepare();
+            Prepare(em);
             tCooldown = 10f; int n = ++captures;
             string snap; try { snap = Snapshot(em); } catch (Exception ex) { snap = "  (snapshot failed: " + ex.Message + ")\n"; }
             // 0.31.1: "f8-" / "auto-" in the name, so the captures Andre asked for are easy to tell apart when he reviews them; F8 beeps (no window now)
@@ -138,6 +150,7 @@ namespace CrapMechanics
             }
             sb.Append("mass balance: ").Append(JointSystem.MassSummary()).Append('\n');
             sb.Append("game joints closest to breaking (strain / break force):\n").Append(Strain(em));
+            sb.Append(MomentumWatch.Summary()).Append("\n");   // 0.31.18
             sb.Append("thrusters:\n").Append(Thrusters.Summary(em));
             sb.Append("cameras and monitors:");
             var cams = new StringBuilder();
@@ -156,7 +169,8 @@ namespace CrapMechanics
         {
             var joints = Ecs.Joints(em, out int n); if (joints == null) return "  (not available)\n";
             var top = new List<(float r, int i)>();
-            for (int i = 0; i < n; i++) { var sj = &joints[i]; if (sj->_breakForce <= 0f || sj->_breakForce > 1e8f) continue; float r = sj->_currentStrain / sj->_breakForce; if (r > 0.05f) top.Add((r, i)); }
+            var live = JointSystem.LiveSet(em, n);   // 0.31.26: a broken link keeps its strain frozen at the break (1e35 when the mod/decoupler released it) [recon/SpaceshipCheckJoints.cs:113-122]
+            for (int i = 0; i < n; i++) { var sj = &joints[i]; if (sj->_breakForce <= 0f || sj->_breakForce > 1e8f || (live != null && !live[i])) continue; float r = sj->_currentStrain / sj->_breakForce; if (r > 0.05f) top.Add((r, i)); }
             top.Sort((a, b) => b.r.CompareTo(a.r));
             var sb = new StringBuilder();
             for (int k = 0; k < top.Count && k < 10; k++)
@@ -172,11 +186,11 @@ namespace CrapMechanics
         {
             w = default;
             if (!Ecs.HasC(em, part, Ecs.tiVel)) return default;
-            var pv = (PhysicsVelocity*)em.GetComponentDataRawRO(part, Ecs.tiVel); w = pv->Angular; return pv->Linear;
+            var pv = (PhysicsVelocity*)Ecs.RO(em, part, Ecs.tiVel); w = pv->Angular; return pv->Linear;
         }
         static unsafe string Air(EntityManager em, Entity e)
         {
-            try { var p = Ecs.HasC(em, e, tiAir) ? (float*)em.GetComponentDataRawRO(e, tiAir) : null; return p != null ? p[0].ToString("F3") : "?"; } catch (Exception) { return "?"; }
+            try { var p = Ecs.HasC(em, e, tiAir) ? (float*)Ecs.RO(em, e, tiAir) : null; return p != null ? p[0].ToString("F3") : "?"; } catch (Exception) { return "?"; }
         }
         static string Fmt(float3 p) => "(" + (p.x / 1000f).ToString("F1") + ", " + (p.y / 1000f).ToString("F1") + ", " + (p.z / 1000f).ToString("F1") + ") km";
     }

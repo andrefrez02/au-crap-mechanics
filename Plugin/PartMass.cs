@@ -29,6 +29,10 @@ namespace CrapMechanics
     {
         public static float MassRatio = 10f;   // [Piston] mass_ratio_max (0 or 1 = off)
         public static float MassFactorMax = 25f;   // [Piston] mass_factor_max (0 = no cap)
+        // 0.31.18 tried capping the TURNING inertia at 25x instead of the mass cap squared (625x), to see whether the made-up ratio at the
+        // weld was what made the ship lean. It is not: the ship went on leaning the same, and the gate's door started wobbling on its own
+        // (Andre, 14/11: "ficou horrivel, ele fica balançando sozinho"). Reverted in 0.31.19 — the 625 is what holds a piece steady
+        // against the twist (0.26.8), and it is not where the lean comes from.
         public static float TurretMassFactor = 4f;   // 0.31.2: [Turret Seat] mass_factor_max
         // 0.31.0 (Andre's 125 t ship, 31/10: 24 light pieces each counted as 8.6-9.7 t = +113-126 t of physics-only mass, and the hull came apart in
         // flight — the game's stress follows those kilograms; with mass_ratio_max = 0 the landing legs, dampers and flat fans held and only the
@@ -39,7 +43,10 @@ namespace CrapMechanics
         //  - the turret pivot is kept as it was (it came apart without it).
         const float LeafRatio = 50f;
 
-        class PartMass { public Entity part; public float invM; public float3 invI; public float3 com, writtenCom; public float writtenM; public float3 writtenI; public bool wasMoved; public float logged; public bool massOnly; public bool donor; }
+        // 0.31.26 (item 12): realIn = the part's PhysicsMass holds its REAL mass/inertia/centre right now (false: the solver's, or untouched).
+        // One explicit flag per part instead of guessing from InverseMass: a part whose mass was not raised (only its inertia) has the same
+        // InverseMass in both books, and with U2 some parts keep the real book through the solver while others do not.
+        class PartMass { public Entity part; public float invM; public float3 invI; public float3 com, writtenCom; public float writtenM; public float3 writtenI; public bool wasMoved; public float logged; public bool massOnly; public bool donor; public bool backOk; public bool realIn; public float3 linBefore, angBefore; }
         static readonly Dictionary<long, PartMass> masses = new Dictionary<long, PartMass>();
         static readonly Dictionary<long, string> donorLog = new Dictionary<long, string>();
         static readonly HashSet<long> donorKeys = new HashSet<long>();
@@ -80,6 +87,18 @@ namespace CrapMechanics
             return r;
         }
 
+        /// <summary>0.31.20: what the mod is faking on this part, for the momentum watch: its real mass, the mass the physics sees, and how
+        /// much harder to turn it is being counted (largest axis). False when the mod is not touching it.</summary>
+        internal static bool Faked(Entity part, out float realKg, out float physKg, out float spinFactor)
+        {
+            realKg = 0f; physKg = 0f; spinFactor = 1f;
+            if (!masses.TryGetValue(Ecs.K(part), out var r) || !r.wasMoved) return false;
+            realKg = Inv(r.invM); physKg = Inv(r.writtenM);
+            float i0 = MaxI(r.invI), i1 = MaxI(r.writtenI);
+            spinFactor = i0 > 0f ? i1 / i0 : 1f;
+            return true;
+        }
+
         /// <summary>0.30.3: the heaviest part loses the kilograms its pieces gained (at most half its own) and its centre of mass moves so the
         /// vehicle's total mass and centre of mass are the real ones.</summary>
         static unsafe void ApplyDonor(EntityManager em, Donor d)
@@ -94,7 +113,7 @@ namespace CrapMechanics
             float3 cw = (M * c0 - d.moment * f) / (M - give);
             float3 local = math.rotate(math.inverse(lt.Rotation), cw - lt.Position) / (lt.Scale > 0f ? lt.Scale : 1f);
             pm->InverseMass = 1f / (M - give); r.writtenM = pm->InverseMass;
-            pm->Transform.pos = local; r.writtenCom = local;
+            SetCom(em, r.part, pm, local); r.writtenCom = local;   // 0.31.26 (S-N2): the speed kept is the centre's — moving the centre carries ω×Δ
             r.wasMoved = true; r.donor = true; r.massOnly = true;   // its inertia is left as it is
             string sig = (give / 100f).ToString("F0") + "|" + d.pieces;
             if (!donorLog.TryGetValue(d.key, out var prev) || prev != sig)
@@ -112,7 +131,7 @@ namespace CrapMechanics
         {
             mReal = mPhys = 0f; cReal = cPhys = default;
             if (!Ecs.IsPart(em, part) || !Ecs.HasC(em, part, Ecs.tiMass) || !Ecs.HasC(em, part, Ecs.tiLT)) return false;
-            var pm = (PhysicsMass*)em.GetComponentDataRawRO(part, Ecs.tiMass); if (pm == null) return false;
+            var pm = (PhysicsMass*)Ecs.RO(em, part, Ecs.tiMass); if (pm == null) return false;
             var lt = Ecs.LT(em, part); float s = lt.Scale == 0f ? 1f : lt.Scale;
             float invP = pm->InverseMass, invR = invP; float3 lp = pm->Transform.pos, lr = lp;
             if (masses.TryGetValue(Ecs.K(part), out var r) && r.wasMoved) { invR = r.invM; if (r.donor) lr = r.com; }
@@ -122,8 +141,9 @@ namespace CrapMechanics
             return true;
         }
 
+        // 0.31.27: IsPart already tests the existence and PhysicsMass (the extra HasC was two more calls into the game, three times per tick per part)
         static unsafe PhysicsMass* PM(EntityManager em, Entity part) =>
-            Ecs.IsPart(em, part) && Ecs.HasC(em, part, Ecs.tiMass) ? (PhysicsMass*)em.GetComponentDataRawRW(part, Ecs.tiMass) : null;
+            Ecs.IsPart(em, part) ? (PhysicsMass*)em.GetComponentDataRawRW(part, Ecs.tiMass) : null;
 
         static bool Eq(float3 a, float3 b) => a.x == b.x && a.y == b.y && a.z == b.z;
         static float Inv(float x) => x > 0f ? 1f / x : float.PositiveInfinity;
@@ -147,6 +167,11 @@ namespace CrapMechanics
         /// is worth for physics.</summary>
         static unsafe void BalanceMasses(EntityManager em)
         {
+            // 0.31.23: the balance always works on the solver's masses. 0.31.26 (item 12): between ticks the REAL masses are in now (they go
+            // back right after the solver), so every frame starts by putting the solver's back — with the hull's speed carried to the solver's
+            // centre (ToSolver). Without that, Register would take the real mass for a rewrite by the game, and ApplyDonor would move the
+            // centre without the speed.
+            ToSolver(em, true, null); swappedList.Clear();
             var edges = new List<(long a, long b, bool spin)>(); var onlyM = new HashSet<long>(); var turretPieces = new HashSet<long>();
             if (Rigid && MassRatio > 1f)
             {
@@ -281,7 +306,7 @@ namespace CrapMechanics
                     {
                         pm->InverseMass = r.invM; r.writtenM = r.invM;
                         if (!r.massOnly) pm->InverseInertia = r.invI;   // the turret's inertia is its own business
-                        if (r.donor) { pm->Transform.pos = r.com; r.writtenCom = r.com; r.donor = false; donorLog.Remove(kv.Key); }
+                        if (r.donor) { SetCom(em, r.part, pm, r.com); r.writtenCom = r.com; r.donor = false; donorLog.Remove(kv.Key); }   // 0.31.26 (S-N2)
                         r.wasMoved = false; r.logged = 0f;
                         ModLog.Info("joints: part " + r.part.Index + " back to its real " + m0.ToString("F0") + " kg");
                     }

@@ -101,9 +101,20 @@ namespace CrapMechanics
                 try { var v = Recolor(baseM, target.Substring(t + 1)); fromGame[target] = v; return v; }
                 catch (Exception ex) { if (warned.Add(target)) ModLog.Warn("game meshes: could not recolor '" + target + "': " + ex.Message + " (using the plain one)"); return baseM; }
             }
+            // 0.31.27: the game renames meshes when it remakes a model (update of 21/11: "Small Electric Thruster Body Paintable" became
+            // "Small Electric Thruster Paintable", so the mini thruster lost its paintable body). Known renames first, then the same name without " Body".
+            string alias = null;
+            if (Renamed.TryGetValue(target, out var known) && fromGame.ContainsKey(known)) alias = known;
+            else if (target.Contains(" Body ") && fromGame.ContainsKey(target.Replace(" Body ", " "))) alias = target.Replace(" Body ", " ");
+            if (alias != null)
+            {
+                if (warned.Add("alias:" + target)) ModLog.Info("game meshes: '" + target + "' is now '" + alias + "' in the game (" + who + ")");
+                return fromGame[alias];
+            }
             lacking++; if (warned.Add(target)) ModLog.Warn("game meshes: '" + target + "' not found (" + who + " will lack this visual piece)");
             return null;
         }
+        static readonly Dictionary<string, string> Renamed = new Dictionary<string, string> { { "Small Electric Thruster Body Paintable", "Small Electric Thruster Paintable" } };
 
         public static readonly Color32 InputColor = new Color32(0xeb, 0xb4, 0xa2, 0), OutputColor = new Color32(0x64, 0x2d, 0x9a, 0);   // Andre: input #ebb4a2, output #642d9a
         static bool Dark(Color32 c) => c.r < 40 && c.g < 10 && c.b < 10;   // core of the game's plugs (26,0,0): stays

@@ -44,6 +44,16 @@ namespace CrapMechanics
         static TypeIndex tiPlayer; static EntityQuery qPlayer; static bool playerOk;
         public static uint IconBeacon = 2;        // RadarIconID.PlanetPackage until RadarIcon builds its own icon
         static readonly Dictionary<long, Recoupler> recs = new Dictionary<long, Recoupler>();
+        /// <summary>0.31.16: changes when a recoupler is born, dies, engages or lets go (JointSystem.LinkSignature).</summary>
+        internal static long Signature()
+        {
+            unchecked
+            {
+                long h = 3L;
+                foreach (var r in recs.Values) { h = (h ^ Ecs.K(r.block)) * 1099511628211L; h = (h ^ r.state) * 1099511628211L; h = (h ^ (r.onAnchor ? 1 : 0)) * 1099511628211L; h = (h ^ Ecs.K(r.decoupler)) * 1099511628211L; }
+                return h;
+            }
+        }
         static readonly Dictionary<long, Beacon> beacons = new Dictionary<long, Beacon>();
         static TypeIndex tiIcon; static bool ok; static EntityQuery qDec; static bool qDecOk;
 
@@ -161,7 +171,7 @@ namespace CrapMechanics
         static unsafe List<uint> GhostIcons(EntityManager em)
         {
             var l = new List<uint>();
-            foreach (var bc in beacons.Values) { if (Ecs.IsNull(bc.ghost) || !Ecs.Alive(em, bc.ghost)) continue; var p = (Ecs.HasC(em, bc.ghost, tiIcon) ? (uint*)em.GetComponentDataRawRO(bc.ghost, tiIcon) : null); if (p != null) l.Add(*p); }
+            foreach (var bc in beacons.Values) { if (Ecs.IsNull(bc.ghost) || !Ecs.Alive(em, bc.ghost)) continue; var p = (Ecs.HasC(em, bc.ghost, tiIcon) ? (uint*)Ecs.RO(em, bc.ghost, tiIcon) : null); if (p != null) l.Add(*p); }
             return l;
         }
 
@@ -178,7 +188,7 @@ namespace CrapMechanics
                 {
                     var ti = arr[i].TypeIndex;
                     if (ti.Value == Ecs.tiLTW.Value || ti.Value == tiIcon.Value) continue;
-                    bool tag = false; try { tag = TypeManager.GetTypeInfo(ti).IsZeroSized; } catch (Exception) { }
+                    bool tag = false; try { tag = ti.IsZeroSized; } catch (Exception) { }   // 0.31.36: the flag on the index itself (TypeManager.GetTypeInfo returns by reference: read wrong by the interop here, see Ecs.ComponentSize)
                     string name = "#" + ti.Value; try { var t = TypeManager.GetType(ti); if (t != null) name = t.FullName; } catch (Exception) { }
                     if (tag) { extraTags.Add(ti); lacking.Append(" +").Append(name); } else lacking.Append(" (data, not copying: ").Append(name).Append(")");
                 }
@@ -189,7 +199,7 @@ namespace CrapMechanics
         }
         static void ByTags(EntityManager em, Entity e)
         {
-            foreach (var ti in extraTags) { try { if (!em.HasComponent(e, ComponentType.ReadOnly(ti))) em.AddComponent(e, ComponentType.ReadWrite(ti)); } catch (Exception) { } }
+            foreach (var ti in extraTags) { try { if (!Ecs.Has(em, e, ti)) Ecs.Add(em, e, ComponentType.ReadWrite(ti)); } catch (Exception) { } }
         }
 
         static unsafe string Components(EntityManager em, Entity e)
@@ -203,7 +213,7 @@ namespace CrapMechanics
                 {
                     var ct = arr[i]; string name = null;
                     try { var t = TypeManager.GetType(ct.TypeIndex); if (t != null) name = t.FullName; } catch (Exception) { }
-                    try { if (TypeManager.GetTypeInfo(ct.TypeIndex).IsZeroSized) name = (name ?? "#" + ct.TypeIndex.Value) + "(tag)"; } catch (Exception) { }
+                    try { if (ct.TypeIndex.IsZeroSized) name = (name ?? "#" + ct.TypeIndex.Value) + "(tag)"; } catch (Exception) { }
                     sb.Append(i == 0 ? "" : ", ").Append(name ?? ("#" + ct.TypeIndex.Value));
                 }
                 return sb.ToString();
@@ -225,7 +235,15 @@ namespace CrapMechanics
                 tiConn = TypeManager.GetTypeIndex(Il2CppType.Of<SCConnectedJoint>()); tiCheck = TypeManager.GetTypeIndex(Il2CppType.Of<SpaceshipPartConsistencyCheck>());
             }
             var pa = Ecs.Parent(em, r.block);
-            if (!Ecs.IsPart(em, pa)) { r.state = 0; r.armed = true; RefreshLed(em, r); return; }   // garage
+            if (!Ecs.IsPart(em, pa))
+            {
+                // review acopla_rede-2: while the mod's 100 km rule (KeepFar) holds the vehicle, the lock and state 1 stay (the group is frozen
+                // together and resumes as it was; the KeepFar union keeps the link). Any other case (garage, ...): the fixed joint is destroyed —
+                // never left alive with state 0 (orphaned lock that nothing could release any more).
+                if (r.state == 1 && !Ecs.IsNull(r.joint) && Ecs.Alive(em, r.joint) && Far.SwitchedOffHere(em, pa)) { RefreshLed(em, r); return; }
+                if (!Ecs.IsNull(r.joint)) Drop(em, r, "part left the physics world / garage");
+                r.state = 0; r.armed = true; RefreshLed(em, r); return;
+            }
             RefreshLed(em, r);
             float s = 0f; var pe = Ecs.PortOfType(em, r.block, Ecs.PortInput);
             if (!Ecs.IsNull(pe)) Ecs.ReadInput(em, pe, out s, out _, out _);
@@ -325,9 +343,9 @@ namespace CrapMechanics
             original = false;
             try
             {
-                if (em.HasComponent(r.block, ComponentType.ReadOnly(tiGT)) && em.HasComponent(r.decoupler, ComponentType.ReadOnly(tiGT)))
+                if (Ecs.Has(em, r.block, tiGT) && Ecs.Has(em, r.decoupler, tiGT))
                 {
-                    var gr = *(Ecs.HasC(em, r.block, tiGT) ? (RigidTransform*)em.GetComponentDataRawRO(r.block, tiGT) : null); var gd = *(Ecs.HasC(em, r.decoupler, tiGT) ? (RigidTransform*)em.GetComponentDataRawRO(r.decoupler, tiGT) : null);
+                    var gr = *(Ecs.HasC(em, r.block, tiGT) ? (RigidTransform*)Ecs.RO(em, r.block, tiGT) : null); var gd = *(Ecs.HasC(em, r.decoupler, tiGT) ? (RigidTransform*)Ecs.RO(em, r.decoupler, tiGT) : null);
                     var qi = Ecs.Inv(gd.rot);
                     var tp = Ecs.Rot(qi, Ecs.Sub(gr.pos, gd.pos));
                     if (Ecs.Dist(tp, new float3 { y = 0.5f }) < 0.02f)
@@ -360,6 +378,9 @@ namespace CrapMechanics
             // who holds during the pull: if the decoupler is on top of a piston, the piston's BASE (ship, heavy) — otherwise the
             // light top (110 kg) would be the one going to the car (7 t). The piston keeps the top still relative to the base.
             var baseP = JointSystem.PistonBase(pb); r.onAnchor = !Ecs.IsNull(baseP) && Ecs.IsPart(em, baseP) && baseP.Index != pa.Index; r.anchor = r.onAnchor ? baseP : pb;
+            // 0.31.26 (U6): never a pair with the same part on both ends — Unity Physics solves it against itself and keeps a spurious impulse
+            // [UP PhysicsWorldBuilder.cs:879,894-906; Solver.cs:1101-1131]
+            if (r.anchor.Index == pa.Index) { r.decoupler = Entity.Null; r.partA = Entity.Null; r.partB = Entity.Null; if (r.warnings++ < 3) ModLog.Warn("SC_Recoupler " + r.block.Index + ": the decoupler's piece is the recoupler's own part — not coupling"); return; }
             var pR = Ecs.Position(em, r.block); Ecs.Axes(em, r.block, out var rx, out var ry, out _);
             r.fb = Ecs.Frame(em, pa, pR, rx, ry);                  // on the recoupler's piece: the recoupler itself
             r.fa0 = Ecs.Frame(em, r.anchor, pR, rx, ry);           // on the holder: where it is now
@@ -369,7 +390,7 @@ namespace CrapMechanics
             var pair = new PhysicsConstrainedBodyPair(); pair.Entities = new EntityPair { EntityA = r.anchor, EntityB = pa }; pair.EnableCollision = 0;
             var kinds = new Il2CppStructArray<ComponentType>(3);
             kinds[0] = ComponentType.ReadWrite(Ecs.tiPar); kinds[1] = ComponentType.ReadWrite(Ecs.tiJoint); kinds[2] = ComponentType.ReadWrite(Ecs.tiPWI);
-            var e = em.CreateEntity(kinds);
+            var e = Ecs.Create(em, kinds);
             *(Ecs.HasC(em, e, Ecs.tiPar) ? (PhysicsConstrainedBodyPair*)em.GetComponentDataRawRW(e, Ecs.tiPar) : null) = pair;
             *(Ecs.HasC(em, e, Ecs.tiJoint) ? (PhysicsJoint*)em.GetComponentDataRawRW(e, Ecs.tiJoint) : null) = pj;
             r.joint = e; r.state = 1; r.armed = false; r.tPull = 0f;
@@ -421,6 +442,7 @@ namespace CrapMechanics
             try
             {
                 var pR = Ecs.Position(em, r.block); Ecs.Axes(em, r.block, out var rx, out var ry, out _);
+                if (r.partB.Index == r.partA.Index) return;   // 0.31.26 (U6): never the same part on both ends of the pair
                 var fa = Ecs.Frame(em, r.partB, pR, rx, ry); var fb = Ecs.Frame(em, r.partA, pR, rx, ry);
                 var pj = (Ecs.HasC(em, r.joint, Ecs.tiJoint) ? (PhysicsJoint*)em.GetComponentDataRawRW(r.joint, Ecs.tiJoint) : null); int v = pj->m_Version;
                 var newVal = PhysicsJoint.CreateFixed(fa, fb); newVal.m_Version = (byte)(v + 1); *pj = newVal;
@@ -442,19 +464,22 @@ namespace CrapMechanics
             return h;
         }
         internal static unsafe byte* Elems(Hdr* h) => h->Pointer != null ? h->Pointer : (byte*)h + sizeof(Hdr);
+        /// <summary>Appends one element to a buffer. 0.31.26 (item 35): grows it with Unity's own BufferHeader.EnsureCapacity — the function
+        /// DynamicBuffer.Add calls when a list is full (SCDecouplingJoint is [InternalBufferCapacity(0)], always on the heap
+        /// [recon/EPC_SCDecoupler.cs:14]) and the one SlipRings.Grow already uses — instead of a hand-made Malloc / MemCpy / Free of the
+        /// block, so the allocation is exactly the one Unity frees when the buffer goes away. The header pointer comes from
+        /// GetComponentDataRawRW, which has already waited for the jobs using this type.</summary>
         internal static unsafe void Attach(Hdr* h, void* item, int size)
         {
             if (h->Length >= h->Capacity)
             {
-                int newOne = System.Math.Max(8, h->Capacity * 2);
-                var p = (byte*)Unity.Collections.LowLevel.Unsafe.UnsafeUtility.Malloc((long)newOne * size, 16, Unity.Collections.Allocator.Persistent);
-                Unity.Collections.LowLevel.Unsafe.UnsafeUtility.MemCpy(p, Elems(h), (long)h->Length * size);
-                if (h->Pointer != null) Unity.Collections.LowLevel.Unsafe.UnsafeUtility.Free(h->Pointer, Unity.Collections.Allocator.Persistent);
-                h->Pointer = p; h->Capacity = newOne;
+                BufferHeader.EnsureCapacity((BufferHeader*)h, h->Length + 1, size, size % 8 == 0 ? 8 : 4, BufferHeader.TrashMode.RetainOldData, false, 0);
+                if (h->Length >= h->Capacity) { if (attachWarnings++ < 3) ModLog.Warn("buffer: could not make room for one more element (" + h->Length + "/" + h->Capacity + ") — not added"); return; }   // never write past the block
             }
             Unity.Collections.LowLevel.Unsafe.UnsafeUtility.MemCpy(Elems(h) + (long)h->Length * size, item, size);
             h->Length++;
         }
+        static int attachWarnings;
         internal static unsafe bool HasInt(Hdr* h, int v) { var p = (int*)Elems(h); for (int i = 0; i < h->Length; i++) if (p[i] == v) return true; return false; }
 
         /// <summary>The opposite of the decoupler. Returns null on success, otherwise the reason.</summary>
@@ -474,25 +499,27 @@ namespace CrapMechanics
             var children = new List<Entity>(); var pf = (Entity*)Elems(chRec); for (int i = 0; i < chRec->Length; i++) children.Add(pf[i]);
             if (children.Count == 0) return "recoupler part has no children";
             // garage transform: pose on the decoupler's part = LT_dec * inv(GT_dec) * GT_child
-            var ltDec = *(Ecs.HasC(em, dec, Ecs.tiLT) ? (LocalTransform*)em.GetComponentDataRawRO(dec, Ecs.tiLT) : null);
-            var gDec = *(Ecs.HasC(em, dec, tiGT) ? (RigidTransform*)em.GetComponentDataRawRO(dec, tiGT) : null); var qiG = Ecs.Inv(gDec.rot);
+            var ltDec = *(Ecs.HasC(em, dec, Ecs.tiLT) ? (LocalTransform*)Ecs.RO(em, dec, Ecs.tiLT) : null);
+            var gDec = *(Ecs.HasC(em, dec, tiGT) ? (RigidTransform*)Ecs.RO(em, dec, tiGT) : null); var qiG = Ecs.Inv(gDec.rot);
             var newOnes = new List<(Entity e, LocalTransform lt)>();
             foreach (var f in children)
             {
-                if (!em.HasComponent(f, ComponentType.ReadOnly(tiGT)) || !em.HasComponent(f, ComponentType.ReadOnly(Ecs.tiLT))) return "block " + f.Index + " has no GarageTransform/LocalTransform";
-                var g = *(Ecs.HasC(em, f, tiGT) ? (RigidTransform*)em.GetComponentDataRawRO(f, tiGT) : null); var lt = *(Ecs.HasC(em, f, Ecs.tiLT) ? (LocalTransform*)em.GetComponentDataRawRO(f, Ecs.tiLT) : null);
+                if (!Ecs.Has(em, f, tiGT) || !Ecs.Has(em, f, Ecs.tiLT)) return "block " + f.Index + " has no GarageTransform/LocalTransform";
+                var g = *(Ecs.HasC(em, f, tiGT) ? (RigidTransform*)Ecs.RO(em, f, tiGT) : null); var lt = *(Ecs.HasC(em, f, Ecs.tiLT) ? (LocalTransform*)Ecs.RO(em, f, Ecs.tiLT) : null);
                 var rel = Ecs.Rot(qiG, Ecs.Sub(g.pos, gDec.pos));
                 lt.Position = Ecs.Add(ltDec.Position, Ecs.Rot(ltDec.Rotation, rel));
                 lt.Rotation = QMul(ltDec.Rotation, QMul(qiG, g.rot));
                 newOnes.Add((f, lt));
             }
+            // 0.31.26 (review P-N1): momentum of the two bodies, read before anything moves (written to pDec right before pRec goes away)
+            string mom = MergedMotion(em, pDec, pRec, out var vNew, out var wNew, out bool angOk);
             // 3) apply: blocks -> decoupler's part
             bool hasPrev = false;
             foreach (var (f, lt) in newOnes)
             {
                 *(Ecs.HasC(em, f, Ecs.tiLT) ? (LocalTransform*)em.GetComponentDataRawRW(f, Ecs.tiLT) : null) = lt;
                 *(Ecs.HasC(em, f, Ecs.tiParent) ? (Entity*)em.GetComponentDataRawRW(f, Ecs.tiParent) : null) = pDec;
-                if (em.HasComponent(f, ComponentType.ReadOnly(tiPrev))) { *(Ecs.HasC(em, f, tiPrev) ? (Entity*)em.GetComponentDataRawRW(f, tiPrev) : null) = pDec; hasPrev = true; }
+                if (Ecs.Has(em, f, tiPrev)) { *(Ecs.HasC(em, f, tiPrev) ? (Entity*)em.GetComponentDataRawRW(f, tiPrev) : null) = pDec; hasPrev = true; }
             }
             chDec = Header(em, pDec, tiChild); chRec = Header(em, pRec, tiChild);   // (re-read: the pointers can change with writes)
             if (chDec == null || chRec == null) return "Child changed midway (blocks already moved!)";
@@ -508,24 +535,113 @@ namespace CrapMechanics
             // is checked for breaking. Without this the decoupler was told to release and nothing happened.
             string active = ActivateJoint(em, k);
             // 5) release the fixed joint, remove the recoupler's empty part and ask the game to recalculate the decoupler's part
-            try { if (Ecs.Alive(em, r.joint)) em.DestroyEntity(r.joint); } catch (Exception) { }
+            try { if (Ecs.Alive(em, r.joint)) Ecs.Destroy(em, r.joint); } catch (Exception) { }
             r.joint = Entity.Null;
             string leg = "";
             try
             {
-                if (em.HasComponent(pRec, ComponentType.ReadOnly(tiLEG)))
+                if (Ecs.Has(em, pRec, tiLEG))
                 {
                     var cl = Header(em, pRec, tiLEG);
                     if (cl != null) { var rd = (Entity*)Elems(cl); int m = 0; for (int i = 0; i < cl->Length; i++) if (rd[i].Index == pRec.Index) rd[m++] = rd[i]; leg = " (LinkedEntityGroup " + cl->Length + " -> " + m + ")"; cl->Length = m; }
                 }
             }
             catch (Exception ex) { leg = " (LEG: " + ex.Message + ")"; }
-            try { em.DestroyEntity(pRec); } catch (Exception ex) { ModLog.Warn("SC_Recoupler " + r.block.Index + ": destroying the empty part failed: " + ex.Message); }
-            em.AddComponent(pDec, ComponentType.ReadWrite(tiCheck));
+            // 0.31.26 (P-N1): the game's recalculation (_1 of SpaceshipPostCheckConsistency) rebuilds mass, centre and inertia of pDec and
+            // never touches its PhysicsVelocity [recon/Spaceship__part_a.cs:156-174, 304-324]: without this the recoupler side's momentum was
+            // simply dropped. Linear = velocity of the new centre, Angular = L / I_new in the part's axes (what the recalculation will give).
+            if (mom == null)
+            {
+                try
+                {
+                    var pv = Ecs.HasC(em, pDec, Ecs.tiVel) ? (PhysicsVelocity*)em.GetComponentDataRawRW(pDec, Ecs.tiVel) : null;
+                    if (pv != null) { pv->Linear = vNew; if (angOk) pv->Angular = wNew; }
+                }
+                catch (Exception ex) { mom = ex.Message; }
+            }
+            // 0.31.26 (review P-N2): a part's collider is a blob built at run time with no cleanup component; the game frees it by hand before
+            // destroying a part (DestroySpaceship [recon_managed/SpaceshipSystem.cs:166-177], rewind [recon/TimeRewindSystem__05_rewind_02.cs:480],
+            // split [recon/Spaceship__part_a.cs:165]). Same order as the rewind: free, then destroy.
+            string col = FreeCollider(em, pRec);
+            try { Ecs.Destroy(em, pRec); } catch (Exception ex) { ModLog.Warn("SC_Recoupler " + r.block.Index + ": destroying the empty part failed: " + ex.Message); }
+            Ecs.Add(em, pDec, ComponentType.ReadWrite(tiCheck));
             r.state = 2; r.partA = Entity.Null; r.partB = Entity.Null;
-            ModLog.Info("SC_Recoupler " + r.block.Index + ": MERGED — " + newOnes.Count + " block(s) moved to part " + pDec.Index + ", game joint " + k + " re-enabled (" + active + ")" + (hasPrev ? ", PreviousParent updated" : "") + leg + "; the game will recompute the part");
+            ModLog.Info("SC_Recoupler " + r.block.Index + ": MERGED — " + newOnes.Count + " block(s) moved to part " + pDec.Index + ", game joint " + k + " re-enabled (" + active + ")" + (hasPrev ? ", PreviousParent updated" : "") + leg + "; the game will recompute the part"
+                + (mom == null ? "; momentum of both kept (" + (angOk ? "linear and angular" : "linear only") + ")" : "; momentum NOT carried over (" + mom + ")") + (col != null ? "; collider: " + col : ""));
             Rearm(em, r);
             return null;
+        }
+
+        /// <summary>0.31.26 (review P-N1): velocity of the merged body that keeps the momentum of both, with the REAL masses (PartMass /
+        /// WeldFirst may have the solver's book in PhysicsMass: RealBook). Linear is the velocity of the centre of mass and Angular is in the
+        /// inertia axes [UP PhysicsComponents.cs:197-205; recon/TimeRewindSystem__05_rewind_02.cs:465]. P = m_d v_d + m_r v_r at the new centre
+        /// C; L = Σ R_i diag(I_i) Angular_i + Σ m_i (c_i − C) × v_i. The game's recalculation sums diagonal block inertias in the part's
+        /// (garage) axes with rotation identity [recon/Spaceship__part_a.cs:304-322], which by parallel axes is diag(Σ R_i diag(I_i) R_iᵀ +
+        /// Σ m_i(|d|² − d dᵀ)) in pDec's axes — so the new Angular is L / that diagonal. Null on success, else why not.</summary>
+        static unsafe string MergedMotion(EntityManager em, Entity pDec, Entity pRec, out float3 vNew, out float3 wNew, out bool angOk)
+        {
+            vNew = default; wNew = default; angOk = false;
+            try
+            {
+                if (!Body(em, pDec, out var md, out var Id, out var cd, out var vd, out var Ad, out var Rd, out var ltD, out var ioD)) return "decoupler part has no mass/velocity";
+                if (!Body(em, pRec, out var mr, out var Ir, out var cr, out var vr, out var Ar, out var Rr, out _, out _)) return "recoupler part has no mass/velocity";
+                float M = md + mr; var C = (cd * md + cr * mr) / M;
+                vNew = (vd * md + vr * mr) / M;
+                if (!math.all(math.isfinite(vNew))) return "bad linear velocity";
+                var L = math.rotate(Rd, Id * Ad) + math.rotate(Rr, Ir * Ar) + math.cross(cd - C, vd) * md + math.cross(cr - C, vr) * mr;
+                var qi = math.inverse(ltD.Rotation);
+                var Inew = DiagIn(math.mul(qi, Rd), Id) + DiagIn(math.mul(qi, Rr), Ir) + ParallelAxes(md, math.rotate(qi, cd - C)) + ParallelAxes(mr, math.rotate(qi, cr - C));
+                if (!(Inew.x > 0f && Inew.y > 0f && Inew.z > 0f)) return null;   // linear only
+                var wLocal = math.rotate(qi, L) / Inew;                                // in pDec's axes
+                wNew = math.rotate(math.inverse(ioD), wLocal);                         // stored in its inertia axes (identity for the game's parts)
+                angOk = math.all(math.isfinite(wNew));
+                return null;
+            }
+            catch (Exception ex) { return ex.Message; }
+        }
+        static unsafe bool Body(EntityManager em, Entity p, out float m, out float3 I, out float3 c, out float3 v, out float3 A, out quaternion R, out LocalTransform lt, out quaternion io)
+        {
+            m = 0f; I = default; c = default; v = default; A = default; R = quaternion.identity; lt = default; io = quaternion.identity;
+            if (!Ecs.Alive(em, p) || !Ecs.HasC(em, p, Ecs.tiMass) || !Ecs.HasC(em, p, Ecs.tiVel) || !Ecs.HasC(em, p, Ecs.tiLT)) return false;
+            var pm = (PhysicsMass*)Ecs.RO(em, p, Ecs.tiMass); var pv = (PhysicsVelocity*)Ecs.RO(em, p, Ecs.tiVel);
+            lt = Ecs.LT(em, p); float s = lt.Scale == 0f ? 1f : lt.Scale;
+            JointSystem.RealBook(p, pm, out float invM, out float3 invI, out float3 com);
+            if (!(invM > 0f) || !(invI.x > 0f) || !(invI.y > 0f) || !(invI.z > 0f)) return false;
+            m = 1f / invM; I = 1f / invI; io = pm->InertiaOrientation;
+            R = math.mul(lt.Rotation, io); A = pv->Angular;
+            var w = math.rotate(R, A);
+            var cPhys = lt.Position + math.rotate(lt.Rotation, pm->CenterOfMass * s);
+            c = lt.Position + math.rotate(lt.Rotation, com * s);
+            v = pv->Linear + math.cross(w, c - cPhys);   // velocity of the real centre (Linear is the one of the centre in PhysicsMass)
+            return true;
+        }
+        /// <summary>Diagonal of R diag(I) Rᵀ.</summary>
+        static float3 DiagIn(quaternion q, float3 I)
+        {
+            var R = new float3x3(q);
+            return new float3(
+                R.c0.x * R.c0.x * I.x + R.c1.x * R.c1.x * I.y + R.c2.x * R.c2.x * I.z,
+                R.c0.y * R.c0.y * I.x + R.c1.y * R.c1.y * I.y + R.c2.y * R.c2.y * I.z,
+                R.c0.z * R.c0.z * I.x + R.c1.z * R.c1.z * I.y + R.c2.z * R.c2.z * I.z);
+        }
+        static float3 ParallelAxes(float m, float3 d) => m * new float3(d.y * d.y + d.z * d.z, d.z * d.z + d.x * d.x, d.x * d.x + d.y * d.y);
+
+        static TypeIndex tiCollider; static bool tiColliderOk;
+        /// <summary>0.31.26 (P-N2): frees the part's PhysicsCollider blob (what the game does before destroying a part). Null when freed or there
+        /// was none; else what went wrong (the part is destroyed anyway, as before).</summary>
+        static unsafe string FreeCollider(EntityManager em, Entity part)
+        {
+            try
+            {
+                if (!tiColliderOk) { tiColliderOk = true; tiCollider = TypeManager.GetTypeIndex(Il2CppType.Of<PhysicsCollider>()); }
+                if (!Ecs.Alive(em, part) || !Ecs.Has(em, part, tiCollider)) return null;
+                // PhysicsCollider = { BlobAssetReference<Collider> Value } = { BlobAssetReferenceData { m_Ptr } } (the interop wraps the
+                // generic struct as a managed type, so it is read through its data struct)
+                var bd = (BlobAssetReferenceData*)em.GetComponentDataRawRW(part, tiCollider);
+                if (bd->m_Ptr != IntPtr.Zero) bd->Dispose();   // = BlobAssetReference.Dispose (frees the header and clears the pointer)
+                return null;
+            }
+            catch (Exception ex) { return "not freed (" + ex.Message + ")"; }
         }
 
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)] unsafe struct IntList { public int* Ptr; public int Length; public int Capacity; public ushort AllocIndex; public ushort AllocVersion; }
@@ -534,7 +650,7 @@ namespace CrapMechanics
             try
             {
                 var q = Ecs.QueryList(Ecs.QSing); if (q.Count == 0) return "no SpaceshipSingleton";
-                var sing = (Ecs.HasC(em, q[0], Ecs.tiSing) ? (SpaceshipSingleton*)em.GetComponentDataRawRO(q[0], Ecs.tiSing) : null);
+                var sing = (Ecs.HasC(em, q[0], Ecs.tiSing) ? (SpaceshipSingleton*)Ecs.RO(em, q[0], Ecs.tiSing) : null);
                 var l = (IntList*)sing->_connectedJoints; if (l == null || l->Ptr == null) return "active list is null";
                 if (l->Length < 0 || l->Length > l->Capacity || l->Capacity > 10000000) return "active list has an odd format";
                 for (int i = 0; i < l->Length; i++) if (l->Ptr[i] == k) return "was already active";
@@ -548,6 +664,7 @@ namespace CrapMechanics
                     l->Ptr = p; l->Capacity = newOne;
                 }
                 l->Ptr[l->Length] = k; l->Length++;
+                JointSystem.InvalidateLive();   // 0.31.26: the live-joint set (JointSystem.LiveSet) is rebuilt on the next read
                 return "active again";
             }
             catch (Exception ex) { return "activation failed: " + ex.Message; }
@@ -631,12 +748,12 @@ namespace CrapMechanics
         static void Drop(EntityManager em, Recoupler r, string reason)
         {
             if (Ecs.IsNull(r.joint)) { r.state = 0; return; }
-            try { if (Ecs.Alive(em, r.joint)) em.DestroyEntity(r.joint); } catch (Exception) { }
+            try { if (Ecs.Alive(em, r.joint)) Ecs.Destroy(em, r.joint); } catch (Exception) { }
             ModLog.Info("SC_Recoupler " + r.block.Index + ": released (" + reason + ")");
             r.joint = Entity.Null; r.partA = Entity.Null; r.partB = Entity.Null; r.state = 0;
         }
 
-        static List<Entity> Decouplers(EntityManager em)
+        internal static List<Entity> Decouplers(EntityManager em)   // 0.31.14: internal (SlipRings: ring behind the decoupler)
         {
             if (!qDecOk) { var a = new Il2CppStructArray<ComponentType>(2); a[0] = ComponentType.ReadOnly(Ecs.tiDecType); a[1] = ComponentType.ReadOnly(Ecs.tiLTW); qDec = em.CreateEntityQuery(a); qDecOk = true; }
             return Ecs.QueryList(qDec);
@@ -669,7 +786,7 @@ namespace CrapMechanics
             if (hideIt != b.hidden) { b.hidden = hideIt; ModLog.Info("SC_Beacon " + b.block.Index + (hideIt ? ": hidden from radar (" : ": visible on radar (") + why + ")"); }
             // (0.11.2: the label was removed from every block — Andre)
             // 0.11.1 (Andre: "make it consume power too, 5 P"): asks for 5 P/s at the power port; without power it stays off the radar
-            Ecs.SetConsumption(em, b.block, BeaconPowerUse);
+            Ecs.SetConsumption(em, b.block, BeaconPowerUse);   // 0.31.26 (item 36): written only when it changes (Ecs.SetConsumption)
             byte stateE = 255; bool power = BeaconPowerUse <= 0f || Ecs.HasPower(em, b.block, out stateE);
             if (stateE != b.energyState) { b.energyState = stateE; ModLog.Info("SC_Beacon " + b.block.Index + ": power " + JointSystem.StateName(stateE)); }
             if (!power != b.noPower) { b.noPower = !power; ModLog.Info("SC_Beacon " + b.block.Index + (power ? ": powered, back on radar" : ": NO power — off radar")); }
@@ -678,13 +795,13 @@ namespace CrapMechanics
             {
                 var kinds = new Il2CppStructArray<ComponentType>(2);
                 kinds[0] = ComponentType.ReadWrite(Ecs.tiLTW); kinds[1] = ComponentType.ReadWrite(tiIcon);
-                b.ghost = em.CreateEntity(kinds);
+                b.ghost = Ecs.Create(em, kinds);
                 ghostsCreated.Add(Ecs.K(b.ghost));   // 0.19.5: every ghost is registered so it gets destroyed if it becomes an orphan
                 ByTags(em, b.ghost);
                 *(Ecs.HasC(em, b.ghost, tiIcon) ? (uint*)em.GetComponentDataRawRW(b.ghost, tiIcon) : null) = RadarIcon.SlotOf(b.icon);
                 ModLog.Info("SC_Beacon " + b.block.Index + ": on radar (icon " + RadarIcon.SlotOf(b.icon) + " = " + BeaconIcon.Names[b.icon] + ", entity " + b.ghost.Index + ")");
             }
-            *(Ecs.HasC(em, b.ghost, Ecs.tiLTW) ? (LocalToWorld*)em.GetComponentDataRawRW(b.ghost, Ecs.tiLTW) : null) = *(Ecs.HasC(em, b.block, Ecs.tiLTW) ? (LocalToWorld*)em.GetComponentDataRawRO(b.block, Ecs.tiLTW) : null);
+            *(Ecs.HasC(em, b.ghost, Ecs.tiLTW) ? (LocalToWorld*)em.GetComponentDataRawRW(b.ghost, Ecs.tiLTW) : null) = *(Ecs.HasC(em, b.block, Ecs.tiLTW) ? (LocalToWorld*)Ecs.RO(em, b.block, Ecs.tiLTW) : null);
             GhostWorld(em, b);
             var ic = (Ecs.HasC(em, b.ghost, tiIcon) ? (uint*)em.GetComponentDataRawRW(b.ghost, tiIcon) : null);
             uint wants = RadarIcon.SlotOf(b.icon);
@@ -704,9 +821,10 @@ namespace CrapMechanics
                 if (hRadar == 0) { hRadar = Ecs.HashPrefab("SC_Radar"); hRadarM = Ecs.HashPrefab("SC_Radar M"); }
                 var pj = PlayerPos(em, out bool hasPlayer);
                 Entity bestPick = Entity.Null; float dm = 1e9f;
-                foreach (var e in Ecs.Components(em))
+                var radars = new List<Entity>(Ecs.Launched(em).Of(hRadar)); if (hRadarM != hRadar) radars.AddRange(Ecs.Launched(em).Of(hRadarM));   // 0.31.15: block index
+                foreach (var e in radars)
                 {
-                    ulong h = Ecs.Prefab(em, e); if (h != hRadar && h != hRadarM) continue;
+                    if (!Ecs.Alive(em, e)) continue;
                     if (!Ecs.IsPart(em, Ecs.Parent(em, e))) continue;
                     float d = hasPlayer ? Ecs.Dist(Ecs.Position(em, e), pj) : 0f; if (d < dm) { dm = d; bestPick = e; }
                 }
@@ -746,19 +864,19 @@ namespace CrapMechanics
             {
                 if (!worldOk) { worldOk = true; tiWWI = TypeManager.GetTypeIndex(Il2CppType.Of<WormholeWorldIndex>()); tiAWW = TypeManager.GetTypeIndex(Il2CppType.Of<ActiveWormholeWorld>()); tiUP = TypeManager.GetTypeIndex(Il2CppType.Of<UniversePosition>()); }
                 var g = b.ghost; var part = Ecs.Parent(em, b.block);
-                Entity Source(TypeIndex ti) => em.HasComponent(b.block, ComponentType.ReadOnly(ti)) ? b.block : (!Ecs.IsNull(part) && em.HasComponent(part, ComponentType.ReadOnly(ti))) ? part : Entity.Null;
+                Entity Source(TypeIndex ti) => Ecs.Has(em, b.block, ti) ? b.block : (!Ecs.IsNull(part) && Ecs.Has(em, part, ti)) ? part : Entity.Null;
                 var fW = Source(tiWWI); var fA = Source(tiAWW); var fU = Source(tiUP);
-                if (!em.HasComponent(g, ComponentType.ReadOnly(tiWWI))) em.AddComponent(g, ComponentType.ReadWrite(tiWWI));
-                if (!em.HasComponent(g, ComponentType.ReadOnly(tiUP))) em.AddComponent(g, ComponentType.ReadWrite(tiUP));
-                if (!em.HasComponent(g, ComponentType.ReadOnly(Ecs.tiLT))) em.AddComponent(g, ComponentType.ReadWrite(Ecs.tiLT));
+                if (!Ecs.Has(em, g, tiWWI)) Ecs.Add(em, g, ComponentType.ReadWrite(tiWWI));
+                if (!Ecs.Has(em, g, tiUP)) Ecs.Add(em, g, ComponentType.ReadWrite(tiUP));
+                if (!Ecs.Has(em, g, Ecs.tiLT)) Ecs.Add(em, g, ComponentType.ReadWrite(Ecs.tiLT));
                 bool wantsActive = Ecs.IsNull(fA) ? true : true;   // the beacon is in the world the player is flying in
-                if (wantsActive && !em.HasComponent(g, ComponentType.ReadOnly(tiAWW))) em.AddComponent(g, ComponentType.ReadWrite(tiAWW));
-                if (!Ecs.IsNull(fW)) *(Ecs.HasC(em, g, tiWWI) ? (int*)em.GetComponentDataRawRW(g, tiWWI) : null) = *(Ecs.HasC(em, fW, tiWWI) ? (int*)em.GetComponentDataRawRO(fW, tiWWI) : null);
+                if (wantsActive && !Ecs.Has(em, g, tiAWW)) Ecs.Add(em, g, ComponentType.ReadWrite(tiAWW));
+                if (!Ecs.IsNull(fW)) *(Ecs.HasC(em, g, tiWWI) ? (int*)em.GetComponentDataRawRW(g, tiWWI) : null) = *(Ecs.HasC(em, fW, tiWWI) ? (int*)Ecs.RO(em, fW, tiWWI) : null);
                 Ecs.Pose(em, b.block, out var pos, out var rot);
                 if (!Ecs.IsNull(fU))
                 {
                     // the ghost's universe position = the source's + (block position - source position)
-                    var up = *(Ecs.HasC(em, fU, tiUP) ? (double3*)em.GetComponentDataRawRO(fU, tiUP) : null);
+                    var up = *(Ecs.HasC(em, fU, tiUP) ? (double3*)Ecs.RO(em, fU, tiUP) : null);
                     var pf = fU.Index == b.block.Index ? pos : Ecs.LT(em, fU).Position;
                     var d = Ecs.Sub(pos, pf);
                     *(Ecs.HasC(em, g, tiUP) ? (double3*)em.GetComponentDataRawRW(g, tiUP) : null) = new double3 { x = up.x + d.x, y = up.y + d.y, z = up.z + d.z };
@@ -785,7 +903,7 @@ namespace CrapMechanics
 
         static void DeleteGhost(EntityManager em, Beacon b)
         {
-            try { if (Ecs.Alive(em, b.ghost)) em.DestroyEntity(b.ghost); } catch (Exception) { }
+            try { if (Ecs.Alive(em, b.ghost)) Ecs.Destroy(em, b.ghost); } catch (Exception) { }
             ghostsCreated.Remove(Ecs.K(b.ghost));
             b.ghost = Entity.Null;
         }
@@ -804,7 +922,7 @@ namespace CrapMechanics
             {
                 ghostsCreated.Remove(k);
                 var e = Ecs.OfKey(k);
-                try { if (Ecs.Alive(em, e) && Ecs.HasC(em, e, tiIcon)) { em.DestroyEntity(e); n++; } } catch (Exception) { }
+                try { if (Ecs.Alive(em, e) && Ecs.HasC(em, e, tiIcon)) { Ecs.Destroy(em, e); n++; } } catch (Exception) { }
             }
             if (n > 0) { ModLog.Info("radar: " + n + " orphan beacon icon entity(ies) destroyed"); RadarIcon.RequestRecheck = true; }
         }
@@ -817,7 +935,28 @@ namespace CrapMechanics
             {
                 if (r.state != 0) Drop(em, r, "time rewind");
                 r.state = 0; r.armed = false; r.tPull = 0f; r.rearmDecoupler = false; r.onAnchor = false; r.gameJoint = -1;
+                // 0.31.26 (p2_pistao N4): the rewind gives back the SCDecouplingJoint buffers of the snapshot [recon/TimeRewindSystem__05_rewind_02.cs:503-510],
+                // and a decoupler with an empty buffer never fires [recon/EPC_SCDecoupler.cs:44-53]. A snapshot taken between MERGED and the Rearm comes
+                // back with the pieces in one part, the game joint connected and the buffer empty: keep it merged and re-arm it (Rearm checks HasInt).
+                try
+                {
+                    if (Ecs.IsNull(r.decoupler) || !Ecs.Alive(em, r.decoupler) || !Ecs.Alive(em, r.block)) continue;
+                    var pa = Ecs.Parent(em, r.block);
+                    if (!Ecs.IsPart(em, pa) || Ecs.Parent(em, r.decoupler).Index != pa.Index) continue;
+                    int k = GameJointBetween(em, r.decoupler, r.block);
+                    if (k < 0 || !JointSystem.IsConnected(em, k)) continue;
+                    r.state = 2; r.gameJoint = k; r.rearmDecoupler = true;
+                    ModLog.Info("SC_Recoupler " + r.block.Index + ": time rewind — still merged with Decoupler " + r.decoupler.Index + " (game joint " + k + " connected); re-arming it");
+                }
+                catch (Exception) { }
             }
+        }
+        /// <summary>Index in SpaceshipSingleton._joints of the game joint between the two blocks (the same search as MergeParts), -1 if none.</summary>
+        static unsafe int GameJointBetween(EntityManager em, Entity x, Entity y)
+        {
+            var joints = Ecs.Joints(em, out int n); if (joints == null) return -1;
+            for (int i = 0; i < n; i++) { var sj = &joints[i]; if ((sj->_a.Index == x.Index && sj->_b.Index == y.Index) || (sj->_b.Index == x.Index && sj->_a.Index == y.Index)) return i; }
+            return -1;
         }
 
         public static void Forget() { recs.Clear(); beacons.Clear(); radarIcons.Clear(); RadarWrite.Forget(); }

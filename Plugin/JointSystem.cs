@@ -8,7 +8,7 @@ using Unity.Transforms;
 
 namespace CrapMechanics
 {
-    internal enum Kind { Piston, Bearing, Motor, Recoupler, Beacon, Levers, TurretSeat, Transmission, Radio, End }   // 0.20.0: End = Piston End (only marks the end of the stroke)
+    internal enum Kind { Piston, Bearing, Motor, Recoupler, Beacon, Levers, TurretSeat, Transmission, Radio, End, Seal, Remote }   // remote control (delivery 1): Remote = Remote Computer (stroke 0) / Phone Dock (stroke 1)   // 0.20.0: End = Piston End (only marks the end of the stroke)
 
     /// <summary>A piston or bearing inside a launched ship, and the physics joint it keeps.</summary>
     internal partial class Joint
@@ -29,8 +29,8 @@ namespace CrapMechanics
         public float3 bLocP, bLocE, bLocQ, gP, gE, gQ; public long locNeighbor = -1; public int deferrals; public float tWait, tImprove, bestLateral;   // 0.24.0: wait for the fit by time/convergence
         public float tTilt, tTiltAcc, measuredStroke, strokeBefore, gaveUpTarget, tYieldLog; public bool tilted; public bool measuredStrokeOk;
         public BodyFrame faExtra, fbExtra; public bool extraWeld; public float angCmd; public bool angCmdOk;   // 0.26.0: rigid joint
-        public float tStill, tSettled, strokeSettled, tMergeFailed; public string mergeLog; public bool unmerging;   // 0.26.3: merge of the still piston (PistonMerge.cs)
-        public List<int> colIdx; public long colBlob; public List<Entity> topSide; public long sidePart = -1; public bool moving; public float tRecalc, tNoPart, tColLog; public string kinLog; public long colBefore; public int recalcs;   // 0.26.5: kinematic piston (Fusao.cs)
+        public float tStill; public string mergeLog; public bool unmerging;   // 0.26.3: merge of the still piston (PistonMerge.cs)
+        public bool moving; public float tNoPart;   // 0.26.5 (0.31.26, item 28: the kinematic piston's own fields went with its dead code)
         public RigidTransform poseRelNb; public bool poseRelNbOk;   // 0.26.1: pose of the upper block relative to the piston, to hold it during the separation window   // 0.24.0: a piston that can't close the error stops pushing
         // piston: stroke (m) at which the two joint frames coincide. 0 the 1st time; when recreating = current stroke. Motor target =
         // -(requested stroke - strokeBase), the same convention that already works the 1st time (frames together, -x stretches x).
@@ -45,6 +45,7 @@ namespace CrapMechanics
         public float angServo = 999f, angLog = 999f, tAngLog, angCont;   // 0.19.1: angCont = angle without wrapping at 180 (servo up to 360)   // 0.7.14: servo done by the mod (measured angle, rad)
         public BodyFrame pullA0, pullA1; public float tPullT = -1f, pullDur; public float3[] apA0, apA1, apB;
         public BodyFrame fa, fb;
+        public Entity[] servoPorts;   // 0.31.15: the bearing's ports that can carry a servo signal (inputs / untyped, not pass-through)
         public int mode = -1;     // bearing: 0 free, 1 motor, 2 servo
         public bool spin; public bool spinRefOk; public float spinRef, spinTarget; public int spinLog;   // 0.19.14: Gyro Bearing (leveller) — the servo's target comes from gravity
         public Entity knob; public float tKnob = 9f; public int knobHint = int.MinValue; public float servoDegrees = float.NaN, strokeFraction = 1f;   // 0.19.2: knob on the block
@@ -54,6 +55,9 @@ namespace CrapMechanics
         public float tLaunch = -1f;   // 0.26.12: Time.time at which the block showed up in a part (left the garage); -1 in the garage
         public float servoRadius; public long partRadius = -1;   // 0.26.14: distance from the axis to the farthest block of the piece the servo turns
         public float angVelCmd;   // 0.26.10: speed of the rigid servo's command (rad/s), with limited acceleration
+        // 0.31.26 (U3): the rigid piston/servo command advances once per physics TICK (CommandsInTick), not once per frame. The frame only
+        // leaves here what it read: the piston's requested stroke / the servo's goal angle, and the frame it did so (stale after one frame).
+        public int tickFrame = -10; public float tickRequest, tickGoal;
         public float impulseMode; public string modeOrigin;
         public int warnings;
         // ship joints (SpaceshipSingleton._joints) that we forced to break: index and original _breakForce, to give back later
@@ -93,6 +97,7 @@ namespace CrapMechanics
             ("SC_Piston", Kind.Piston, 8f), ("SC_MiniPiston", Kind.Piston, 4f),   // 0.20.0: single piston (up to 8 m), mini (up to 4 m), Piston End
             ("SC_Bearing", Kind.Bearing, 0f), ("SC_GyroBearing", Kind.Bearing, 1f),   // 0.19.14: stroke 1 = gyroscope (leveller)
             ("SC_MiniBearing", Kind.Bearing, 0f), ("SC_MiniGyroBearing", Kind.Bearing, 1f),   // 0.20.0
+            ("SC_BearingRing", Kind.Bearing, 0f),   // 0.31.36: Bearing with Slip Ring — a Bearing whose top quarter is its own slip ring (SlipRings.SelfRing, RingVisual.cs)
             ("SC_MotorSmall", Kind.Motor, 0f), ("SC_MotorMedium", Kind.Motor, 1f), ("SC_MotorLarge", Kind.Motor, 2f),
             ("SC_MotorFuelSmall", Kind.Motor, 3f), ("SC_MotorFuelMedium", Kind.Motor, 4f), ("SC_MotorFuelLarge", Kind.Motor, 5f),
             ("SC_Recoupler", Kind.Recoupler, 0f), ("SC_Beacon", Kind.Beacon, 0f), ("SC_Pedal", Kind.Levers, 0f), ("SC_SteeringWheel", Kind.Levers, 0f),
@@ -100,7 +105,11 @@ namespace CrapMechanics
             ("SC_DriveShaft", Kind.Transmission, 0f), ("SC_Differential", Kind.Transmission, 0f), ("SC_ShaftReverser", Kind.Transmission, 0f), ("SC_ShaftTransmitter", Kind.Transmission, 0f),
             ("SC_SingleCellBattery", Kind.Transmission, 0f), ("SC_MiniElectricThruster", Kind.Transmission, 0f), ("SC_LongRangeTransmitter", Kind.Radio, 0f), ("SC_SolarPanelMini", Kind.Transmission, 0f),
             ("SC_SlipRing", Kind.Transmission, 0f), ("SC_MiniSlipRing", Kind.Transmission, 0f),   // 0.22.0: slip ring (passive: SlipRings.cs finds it by hash); 0.22.4: normal/mini plates
-            ("SC_PistonEnd", Kind.End, 0f), ("SC_MiniPistonEnd", Kind.End, 0f) };   // 0.22.4: Piston End as a plate (normal/mini, fit both pistons)   // 0.19.0: mini solar panel (game only)   // 0.15.0 / 0.16.0 / 0.18.0 (battery and mini thruster: game only)
+            ("SC_PistonEnd", Kind.End, 0f), ("SC_MiniPistonEnd", Kind.End, 0f),
+            // 0.31.28: Rubber Seal (passive: RubberSeal.cs keeps the lip's contacts off in flight)
+            ("SC_RubberSeal4", Kind.Seal, 0f), ("SC_RubberSeal2", Kind.Seal, 0f), ("SC_RubberSeal1", Kind.Seal, 0f), ("SC_RubberSealCorner", Kind.Seal, 0f),   // seal redo: pipe sizes
+            ("SC_MiniRubberSeal4", Kind.Seal, 0f), ("SC_MiniRubberSeal2", Kind.Seal, 0f), ("SC_MiniRubberSeal1", Kind.Seal, 0f), ("SC_MiniRubberSealCorner", Kind.Seal, 0f),
+            ("SC_RemoteComputer", Kind.Remote, 0f), ("SC_PhoneDock", Kind.Remote, 1f) };   // remote control, delivery 1 (RemoteComputer.cs / Phone.cs)   // (MicroFrame sizes)   // 0.22.4: Piston End as a plate (normal/mini, fit both pistons)   // 0.19.0: mini solar panel (game only)   // 0.15.0 / 0.16.0 / 0.18.0 (battery and mini thruster: game only)
         /// <summary>0.12.15: is the name (with or without " M") a block of this mod?</summary>
         public static bool IsModBlock(string name)
         {
@@ -127,7 +136,31 @@ namespace CrapMechanics
         public static float ScaleFromName(string name) => name != null && name.StartsWith("SC_Mini") ? 0.5f : 1f;
         public static bool HashesOk => hashesOk;
         public static bool HasJoint(Entity e) => allJoints.ContainsKey(Ecs.K(e));
+        /// <summary>0.31.16: changes whenever a joint, a recoupler or a turret is born, dies, changes state or gets another part — what the slip
+        /// ring scan depends on. The scan runs when this changes (in that very tick), not only on its half-second clock.</summary>
+        internal static long LinkSignature()
+        {
+            unchecked
+            {
+                long h = 1469598103934665603L;
+                foreach (var j in allJoints.Values) { h = (h ^ Ecs.K(j.block)) * 1099511628211L; h = (h ^ j.state) * 1099511628211L; h = (h ^ Ecs.K(j.partA)) * 1099511628211L; h = (h ^ Ecs.K(j.partB)) * 1099511628211L; }
+                h = (h ^ Couplers.Signature()) * 1099511628211L;
+                h = (h ^ TurretSignature()) * 1099511628211L;
+                return h;
+            }
+        }
         /// <summary>0.21.0: pairs of parts linked by an active mod joint (+ turrets). 0.22.0: the cable splice was removed; kept for whoever needs it.</summary>
+        /// <summary>0.31.20: the mod joint that holds this part (for the momentum watch).</summary>
+        internal static string JointOfPart(Entity part)
+        {
+            foreach (var j in allJoints.Values)
+            {
+                if (j.state != 2 && j.state != 4) continue;
+                if (!Ecs.IsNull(j.partB) && j.partB.Index == part.Index) return j.name + " " + j.block.Index;
+                if (!Ecs.IsNull(j.partA) && j.partA.Index == part.Index) return j.name + " " + j.block.Index + " (base side)";
+            }
+            return null;
+        }
         public static IEnumerable<(Entity, Entity)> LinkedParts()
         {
             foreach (var j in allJoints.Values) if (j.state == 2 && !Ecs.IsNull(j.partA) && !Ecs.IsNull(j.partB)) yield return (j.partA, j.partB);
@@ -136,6 +169,8 @@ namespace CrapMechanics
         public static bool ActiveJoint(Entity e) => allJoints.TryGetValue(Ecs.K(e), out var j) && (j.state == 2 || j.state == 4);   // 0.20.5; 0.26.3: merged counts
         /// <summary>0.22.0: active joints (for SlipRings.cs: bearing / piston -> slip ring on the upper piece).</summary>
         internal static IEnumerable<Joint> ActiveJoints() { foreach (var j in allJoints.Values) if (j.state == 2 || j.state == 4) yield return j; }   // 0.26.3: merged: partB = the single part (the ring stays linked)
+        /// <summary>0.31.36: the launched Bearings with Slip Ring, in ANY state (their ring is the block itself: SlipRings links it as soon as the block flies).</summary>
+        internal static IEnumerable<Joint> SelfRingJoints(EntityManager em) { foreach (var j in allJoints.Values) if (j.selfRing && Ecs.Alive(em, j.block) && Ecs.IsPart(em, Ecs.Parent(em, j.block))) yield return j; }
         static readonly HashSet<ulong> hashMirror = new HashSet<ulong>();
         static bool hashesOk = false;
         static readonly Dictionary<long, Joint> allJoints = new Dictionary<long, Joint>();
@@ -183,20 +218,32 @@ namespace CrapMechanics
             // 0.26.10: time of each step (from the previous T up to this one), added up until the next performance log — the trace measures by writing
             // a line to the log, and that distorts exactly the steps that log the most
             double now = swStage.Elapsed.TotalMilliseconds;
-            if (stage != "cycle start") { stageTime.TryGetValue(stage, out var v); stageTime[stage] = v + (now - tPrevStage); }
+            if (stage != "cycle start")
+            {
+                double d = now - tPrevStage; stageTime.TryGetValue(stage, out var v); stageTime[stage] = v + d;
+                if (!stagePeak.TryGetValue(stage, out var pk) || d > pk) stagePeak[stage] = d;   // 0.31.15: the worst single frame of each step
+            }
             tPrevStage = now;
             if (Trail > 0) ModLog.Info("after BP load (" + Trail + "): " + stage); else ModLog.Trace("cycle " + stage);
         }
         static readonly System.Diagnostics.Stopwatch swStage = System.Diagnostics.Stopwatch.StartNew();
-        static readonly Dictionary<string, double> stageTime = new Dictionary<string, double>(); static double tPrevStage;
+        static readonly Dictionary<string, double> stageTime = new Dictionary<string, double>(), stagePeak = new Dictionary<string, double>(); static double tPrevStage;
         /// <summary>0.26.10: the slowest steps since the last call (ms per frame) — goes into the performance log. Resets the sum.</summary>
         public static string SlowestSteps(int frames)
         {
             var l = new List<KeyValuePair<string, double>>(stageTime); l.Sort((a, b) => b.Value.CompareTo(a.Value));
             var sb = new System.Text.StringBuilder();
             for (int i = 0; i < l.Count && i < 6; i++) sb.Append(i == 0 ? "" : ", ").Append(l[i].Key).Append(' ').Append((l[i].Value / System.Math.Max(1, frames)).ToString("F2"));
-            stageTime.Clear(); return sb.ToString();
+            // 0.31.15: the average hides a step that takes 60 ms once every half second — the worst frame of each step, and the slip ring's ticks
+            var pk = new List<KeyValuePair<string, double>>(stagePeak); pk.Sort((a, b) => b.Value.CompareTo(a.Value));
+            sb.Append(" | worst frame of a step, ms:");
+            for (int i = 0; i < pk.Count && i < 5; i++) sb.Append(i == 0 ? " " : ", ").Append(pk[i].Key).Append(' ').Append(pk[i].Value.ToString("F1"));
+            if (SlipRings.Ticks > 0) sb.Append(" | slip ring in the game's ticks: ").Append(SlipRings.Ticks).Append(" tick(s), average ").Append((SlipRings.TickMs / SlipRings.Ticks).ToString("F3")).Append(" ms, worst ").Append(SlipRings.TickPeakMs.ToString("F1")).Append(" ms, ").Append(SlipRings.TickBodies).Append(" full pass(es) in a tick (circuit rebuilt or rings linked again), ")
+                .Append(SlipRings.TickScans).Append(" ring scan(s) on a joint change, ").Append(SlipRings.DataResets).Append(" data link(s) put back, power watch: ").Append(SlipRings.LossEvents).Append(" new episode(s), ").Append(SlipRings.LossesOpen).Append(" still short now, ").Append(SlipRings.LossTicks).Append(" tick(s) short (summed over every short circuit or thruster; the \"power watch:\" lines say which and why)");
+            SlipRings.Ticks = 0; SlipRings.TickMs = 0; SlipRings.TickPeakMs = 0; SlipRings.TickBodies = 0; SlipRings.TickScans = 0; SlipRings.DataResets = 0; SlipRings.LossEvents = 0; SlipRings.LossTicks = 0;
+            stageTime.Clear(); stagePeak.Clear(); return sb.ToString();
         }
+        static readonly List<long> deadSet = new List<long>(), deadOnes = new List<long>();
         public static void Step(EntityManager em, float dt)
         {
             if (!Ecs.Prepare(em)) return;
@@ -205,7 +252,7 @@ namespace CrapMechanics
             if (RewindRequested) { RewindRequested = false; try { Rewind(em); RewindTurrets(em); } catch (Exception ex) { ModLog.Error("time rewind: " + ex); } }
             Bonus.Step(em, dt); T("bonus");
             Solver(em, dt); T("solver");
-            try { GravityControl(em); } catch (Exception ex) { WarnLimited("gravity: " + ex.Message); } T("gravity");
+            // 0.31.26 (U7): the launch gravity is no longer written here — see GravityInTick
             if (!hashesOk)
             {
                 hashesOk = true;
@@ -230,10 +277,10 @@ namespace CrapMechanics
             T("knobs saved"); try { Painting.Step(em, dt); } catch (Exception ex) { WarnLimited("paint: " + ex.Message); }   // 0.17.1
             T("paint done");
             try { Radio.Step(em); } catch (Exception ex) { WarnLimited("long range: " + ex.Message); }   // 0.18.0
-            T("long range done");
+            T("long range done"); Ecs.Sync(em);
 
             // motors first (the bearings read their state)
-            var deadSet = new List<long>();
+            deadSet.Clear();   // 0.31.35: kept between frames
             foreach (var kv in motors)
             {
                 var m = kv.Value;
@@ -242,16 +289,19 @@ namespace CrapMechanics
             }
             foreach (var k in deadSet) motors.Remove(k);
             if (deadSet.Count > 0) RedoOutputMap();
-            T("motors done");
+            T("motors done"); Ecs.Sync(em);
             try { MapAxes(em, dt); } catch (Exception ex) { WarnLimited("map: " + ex.Message); }
             T("shafts done");   // 0.15.0: who moves whom through the Drive Shafts
 
-            var deadOnes = new List<long>();
+            deadOnes.Clear();   // 0.31.35: kept between frames
             foreach (var kv in allJoints)
             {
                 var j = kv.Value;
                 try
                 {
+                    // 0.31.35: only in the read cache's one-number fallback (Ecs.cs): the world's structure number is read again before each
+                    // joint (one call), so what the joint before created, destroyed or split is never answered from before it
+                    Ecs.Sync(em);
                     if (!Ecs.Alive(em, j.block)) { Undo(em, j, "block is gone"); deadOnes.Add(kv.Key); continue; }
                     j.tState += dt;
                     // 0.28.0: per machine — the server (or a solo game) drives the mod's physics, a client only draws (Multi.cs)
@@ -262,6 +312,8 @@ namespace CrapMechanics
                     if (j.kind == Kind.Piston && j.state == 0) { j.tRetract += dt; if (j.tRetract >= 0.5f) { j.tRetract = 0f; RetractInGarage(em, j); } }
                     if (j.kind == Kind.Piston) PistonLeds(em, j, dt);
                     if (j.kind == Kind.Bearing) { try { AngleOutput(em, j, dt); } catch (Exception ex) { if (j.warnings++ < 2) ModLog.Warn(j.name + " angle output: " + ex.Message); } }   // 0.23.0
+                    // 0.31.36: Bearing with Slip Ring — its ring plate and plugs are drawn at the angle just measured (every machine, drawing only)
+                    if (j.selfRing) { try { RingVisual.Step(em, j, dt, ours); } catch (Exception ex) { if (j.warnings++ < 3) ModLog.Warn(j.name + " " + j.block.Index + ": built-in ring: " + ex.Message); } }
                     // 0.24.0-mp: the server's parts get no physics from a client. State 0 (breaking the game's joints to release the upper
                     // piece) stays behind break_on_client (debug): the server splits the parts and the game sends the split to the clients.
                     if (ours ? j.state == 2 : j.cReady) Multi.Tally(ours);
@@ -282,14 +334,16 @@ namespace CrapMechanics
                 catch (Exception ex) { if (j.warnings++ < 5) ModLog.Warn(j.name + " " + j.block.Index + ": " + ex.Message); }
             }
             foreach (var k in deadOnes) allJoints.Remove(k);
-            T("joints loop");   // 0.26.10: separates the joints loop from the mass balance in the performance log
+            T("joints loop"); Ecs.Sync(em);   // 0.26.10: separates the joints loop from the mass balance in the performance log
             try { BalanceMasses(em); } catch (Exception ex) { WarnLimited("piston mass balance: " + ex.Message); }   // 0.26.7
+            try { MomentumWatch.Step(em, dt); } catch (Exception ex) { WarnLimited("momentum watch: " + ex.Message); }   // 0.31.18
             T("mass balance");
             tReplan += dt; if (tReplan >= 1f) { tReplan = 0f; try { ReplanFree(em); } catch (Exception ex) { ModLog.Warn("replanning rings: " + ex.Message); } }
-            T("joints done");
-            LaunchQueue(em, dt); T("queue");
-            Couplers.Step(em, dt); T("recoupler/beacon");
+            T("joints done"); Ecs.Sync(em);
+            LaunchQueue(em, dt); T("queue"); Ecs.Sync(em);
+            Couplers.Step(em, dt); T("recoupler/beacon"); Ecs.Sync(em);
             try { SlipRings.Step(em, dt); } catch (Exception ex) { WarnLimited("slip ring: " + ex.Message); } T("slip ring");   // 0.21.0; 0.22.0: slip ring
+            try { RingCables.GarageStep(em, dt); } catch (Exception ex) { WarnLimited("built-in ring: garage pass: " + ex.Message); }   // 0.31.36: Bearings with Slip Ring standing in the garage (twice a second)
             try { Multi.Step(em, dt); } catch (Exception ex) { WarnLimited("multiplayer: " + ex.Message); }   // 0.24.0-mp
             try { ModNet.Step(em, dt); } catch (Exception ex) { WarnLimited("mod channel: " + ex.Message); }   // 0.28.0
             try { Signal.Step(em, dt); } catch (Exception ex) { WarnLimited("signal: " + ex.Message); }   // 0.24.0: transmitter stuck without signal
@@ -297,12 +351,13 @@ namespace CrapMechanics
             TurretsStep(em, dt); T("turrets");
         }
 
-        // PhysicsStep.SolverIterationCount (+20): the game uses the default (4). With more iterations the joints give way much less under
+        // PhysicsStep.SolverIterationCount (+20): the game uses 8 (Core._solverIterations, set in its constructor [recon_managed/Core__g3_core_04.cs:398;
+        // Core.cs:969-981]; the mod's own log shows "8 -> 20"). With more iterations the joints give way much less under
         // weight (large Offroad wheel). Only raises it (never lowers) and only while we have an active joint; checks every 2 s.
         static TypeIndex tiStep; static EntityQuery qStep; static bool stepOk; static float tStep = 9f; static int stepLogged = -1;
         static unsafe void Solver(EntityManager em, float dt)
         {
-            if (SolverIterations <= 0) return;
+            if (SolverIterations <= 0 && ContactInertiaScaling && !scalingSaved) return;
             tStep += dt; if (tStep < 2f) return; tStep = 0f;
             try
             {
@@ -311,20 +366,78 @@ namespace CrapMechanics
                 // the game's own iterations.
                 // 0.26.12: [Physics] solver_iterations_rigid = raise it also with only welds/free bearings active (car test: chain
                 // body -> axle -> mini pistons -> hubs -> wheels giving way with the game's iterations)
-                bool hasJoint = false; foreach (var j in allJoints.Values) if (j.state == 2 && (IterationsAlways || !Rigid || (j.kind == Kind.Bearing && j.mode == 1))) { hasJoint = true; break; }
-                if (!hasJoint) return;
+                bool hasJoint = false;
+                if (SolverIterations > 0) foreach (var j in allJoints.Values) if (j.state == 2 && (IterationsAlways || !Rigid || (j.kind == Kind.Bearing && j.mode == 1))) { hasJoint = true; break; }
+                bool scaling = !ContactInertiaScaling || scalingSaved;   // 0.31.26 (U1): the contact scaling needs a look even with no joint
+                if (!hasJoint && !scaling) return;
                 if (!stepOk) { tiStep = TypeManager.GetTypeIndex(Il2CppInterop.Runtime.Il2CppType.Of<PhysicsStep>()); var a = new Il2CppStructArray<ComponentType>(1); a[0] = ComponentType.ReadOnly(tiStep); qStep = em.CreateEntityQuery(a); stepOk = true; }
                 foreach (var e in Ecs.QueryList(qStep))
                 {
                     var ps = (Ecs.HasC(em, e, tiStep) ? (PhysicsStep*)em.GetComponentDataRawRW(e, tiStep) : null); if (ps == null) continue;
-                    if (ps->SolverIterationCount < SolverIterations)
+                    if (hasJoint && ps->SolverIterationCount < SolverIterations)
                     {
                         int before = ps->SolverIterationCount; ps->SolverIterationCount = SolverIterations;
                         if (stepLogged != before) { stepLogged = before; ModLog.Info("physics: solver iterations " + before + " -> " + SolverIterations + " (stiffer joints)"); }
                     }
+                    if (scaling) ContactScaling(ps);
                 }
             }
-            catch (Exception ex) { SolverIterations = 0; ModLog.Warn("physics: could not change PhysicsStep: " + ex.Message); }
+            catch (Exception ex)
+            {
+                // review massa_voo-3: give the game's InertiaScalingFactor back BEFORE dropping the flag (else the mod's vacuum 0 stayed for good)
+                if (scalingSaved) { try { var ps = StepPtr(em, true); if (ps != null) *(float*)((byte*)ps + 32) = scalingOrig; } catch (Exception) { } }
+                SolverIterations = 0; ContactInertiaScaling = true; scalingSaved = false; ModLog.Warn("physics: could not change PhysicsStep: " + ex.Message);
+            }
+        }
+
+        // 0.31.26 (U1). The game turns Unity Physics' solver stabilisation on (factors 1.0 / 1.0) [Core.asm 010FED5C-010FEE3F;
+        // recon_managed/Core.cs:976-979]. With it, a body in 2 or more contact pairs gets InverseInertiaScale = 1/(1 + 0.2·(n−1)) [UP
+        // Dynamics/Solver/Solver.cs:1370-1376], and from the 2nd iteration on the contact impulse is applied with the whole linear part and
+        // the ANGULAR part shrunk, body by body [ContactJacobian.cs:411-420, 684-692]: equal and opposite pushes, unequal turning — spin
+        // made out of nothing, in vacuum and from rest (the velocity clipping of the same feature is inert in vacuum, its threshold goes
+        // with |g| [Solver.cs:1378-1390]). Parts of the same ship touch each other (only a joint with EnableCollision = 0 filters a pair
+        // [Scheduler.cs:762-765]). [Physics] contact_inertia_scaling = false: while gravity is near zero, InertiaScalingFactor
+        // (PhysicsStep +24 SolverStabilizationHeuristicSettings, +8 InertiaScalingFactor = +32 [types_layout.txt:1565-1584]) is written 0
+        // — the rest of the stabilisation stays; with gravity (stacks resting on the ground need it) the game's own value goes back.
+        public static bool ContactInertiaScaling = false;   // [Physics] contact_inertia_scaling
+        static bool scalingSaved; static float scalingOrig = 1f;
+        static unsafe void ContactScaling(PhysicsStep* ps)
+        {
+            var isf = (float*)((byte*)ps + 32);
+            float3 g = gravSaved ? gravOrig : ps->Gravity;   // during the launch window the mod's own zero is in PhysicsStep: use the game's value
+            bool off = !ContactInertiaScaling && Ecs.Len(g) < VacuumG;
+            if (off)
+            {
+                if (!scalingSaved) { scalingOrig = *isf > 0f ? *isf : 1f; scalingSaved = true; }   // review massa_voo-3: never take a 0 as the game's value (1.0 = PhysicsStep.Default, Core.cs:976-979)
+                if (*isf != 0f) { ModLog.Info("physics: contact inertia scaling " + (*isf).ToString("F2") + " -> 0 (gravity " + Ecs.Len(g).ToString("F3") + " m/s2: contacts between parts keep the spin they pass on)"); *isf = 0f; }
+            }
+            else if (scalingSaved)
+            {
+                *isf = scalingOrig; scalingSaved = false;
+                ModLog.Info("physics: contact inertia scaling back to the game's " + scalingOrig.ToString("F2") + (ContactInertiaScaling ? " (contact_inertia_scaling on)" : " (gravity " + Ecs.Len(g).ToString("F3") + " m/s2)"));
+            }
+        }
+        /// <summary>0.31.26 (U1/U2): below this |gravity| (m/s²) the world counts as vacuum.</summary>
+        const float VacuumG = 0.05f;
+        static Entity stepEntity;
+        /// <summary>0.31.26: the PhysicsStep singleton (cached entity; null when there is none).</summary>
+        static unsafe PhysicsStep* StepPtr(EntityManager em, bool rw)
+        {
+            if (!stepOk) { tiStep = TypeManager.GetTypeIndex(Il2CppInterop.Runtime.Il2CppType.Of<PhysicsStep>()); var a = new Il2CppStructArray<ComponentType>(1); a[0] = ComponentType.ReadOnly(tiStep); qStep = em.CreateEntityQuery(a); stepOk = true; }
+            if (Ecs.IsNull(stepEntity) || !Ecs.Alive(em, stepEntity) || !Ecs.HasC(em, stepEntity, tiStep))
+            {
+                stepEntity = Entity.Null;
+                foreach (var e in Ecs.QueryList(qStep)) if (Ecs.HasC(em, e, tiStep)) { stepEntity = e; break; }
+                if (Ecs.IsNull(stepEntity)) return null;
+            }
+            return (PhysicsStep*)(rw ? em.GetComponentDataRawRW(stepEntity, tiStep) : Ecs.RO(em, stepEntity, tiStep));
+        }
+        /// <summary>0.31.26 (U2): is the world's gravity (the game's own value, not the mod's launch zero) below VacuumG?</summary>
+        static unsafe bool Vacuum(EntityManager em)
+        {
+            var ps = StepPtr(em, false); if (ps == null) return false;
+            float3 g = gravSaved ? gravOrig : ps->Gravity;
+            return Ecs.Len(g) < VacuumG;
         }
 
         // 0.26.2 (Andre: "what if we freeze the physics at the start ... why doesn't the physics stay frozen during those 3s?"). The right idea, except
@@ -353,36 +466,47 @@ namespace CrapMechanics
         // the window spans the long frames; and (2) it comes back on a ramp of GravRamp s, instead of the whole weight in a single step.
         const int GravFrames = 10; const float GravRamp = 0.5f;
         static int frameGravOff; static float tRamp = -1f;
-        static unsafe void GravityControl(EntityManager em)
+        // 0.31.26 (U7). Up to 0.31.25 this ran in the frame (Update), and it did nothing: the game's UniverseGravitySystem (FixedStep,
+        // OrderFirst) schedules PhysicsStep.Gravity = sum of the planets' gravity EVERY tick, before the physics [recon/
+        // UniverseEntitiesFixedUpdateGravity.cs:7-8, 56-67, 136-140], and the simulation reads PhysicsStep when it runs [UP ECS/Base/Systems/
+        // UnityPhysicsSimulationSystems.cs:187-196] — the zero written in the frame was overwritten before any solver saw it. Now it is
+        // written INSIDE the tick, after the game's own write and before the physics world is built: at the start of PhysicsSystemGroup
+        // (it is not OrderFirst, so every OrderFirst system of the FixedStep group — UniverseGravitySystem and PhysicsPreGroup — has run;
+        // the raw access completes the game's job first). The order between UniverseGravitySystem and PhysicsPreGroup (both OrderFirst)
+        // is not fixed by any attribute, which is why the end of PhysicsPreGroup is only the fallback when PhysicsSystemGroup is not found.
+        // gravOrig is read in the same place, every tick of the window: it is always the game's value (whichever order, what is in
+        // PhysicsStep at that point is the game's latest write).
+        static bool gravSeenLogged;
+        internal static unsafe void GravityInTick(EntityManager em)
         {
             float now = UnityEngine.Time.time;
             bool wants = tGravOff > 0f && now < tGravMax && (now < tGravOff || UnityEngine.Time.frameCount < frameGravOff);
             if (!wants && !gravSaved) { if (tGravOff > 0f) tGravOff = 0f; return; }
             if (!wants && tRamp < 0f) tRamp = now;
             float f = wants ? 0f : System.Math.Min(1f, (now - tRamp) / GravRamp);
-            if (!stepOk) { tiStep = TypeManager.GetTypeIndex(Il2CppInterop.Runtime.Il2CppType.Of<PhysicsStep>()); var a = new Il2CppStructArray<ComponentType>(1); a[0] = ComponentType.ReadOnly(tiStep); qStep = em.CreateEntityQuery(a); stepOk = true; }
-            foreach (var e in Ecs.QueryList(qStep))
-            {
-                var ps = (Ecs.HasC(em, e, tiStep) ? (PhysicsStep*)em.GetComponentDataRawRW(e, tiStep) : null); if (ps == null) continue;
-                if (wants) { if (!gravSaved) { gravOrig = ps->Gravity; gravSaved = true; ModLog.Info("physics: gravity held at zero while the launch settles (pieces stay put, joints are born square)"); } ps->Gravity = float3.zero; }
-                else ps->Gravity = Ecs.Mul(gravOrig, f);
-            }
-            if (!wants && gravSaved && f >= 1f) { gravSaved = false; tGravOff = 0f; tRamp = -1f; ModLog.Info("physics: gravity restored (ramped back over " + GravRamp.ToString("F1") + " s)"); }
+            var ps = StepPtr(em, true); if (ps == null) return;
+            gravOrig = ps->Gravity;
+            if (!gravSaved) { gravSaved = true; gravSeenLogged = false; ModLog.Info("physics: gravity held at zero while the launch settles (pieces stay put, joints are born square)"); }
+            if (!gravSeenLogged) { gravSeenLogged = true; ModLog.Info("physics: the game's gravity this tick is " + Ecs.Len(gravOrig).ToString("F3") + " m/s2; the mod writes " + (Ecs.Len(gravOrig) * f).ToString("F3") + " right before the solver" + (Ecs.PtrPhysicsSystem == IntPtr.Zero ? " (fallback: end of PhysicsPreGroup — PhysicsSystemGroup not found)" : "")); }
+            ps->Gravity = Ecs.Mul(gravOrig, f);
+            if (!wants && f >= 1f) { gravSaved = false; tGravOff = 0f; tRamp = -1f; ModLog.Info("physics: gravity restored (ramped back over " + GravRamp.ToString("F1") + " s)"); }
         }
 
         static void Discover(EntityManager em)
         {
             bool newMotor = false;
-            foreach (var e in Ecs.Components(em))
+            // 0.31.15: only the mod's own blocks, from the block index (it went through every block of the ship twice a second)
+            foreach (var (e, _) in Ecs.Launched(em, true).mod)
             {
                 long key = Ecs.K(e);
-                if (allJoints.ContainsKey(key) || motors.ContainsKey(key) || Couplers.Has(key) || Levers.Has(key) || HasTurret(key) || Radio.Has(key) || ignored.Contains(key)) continue;   // 0.12.3: HasTurret (the turret was recreated on every scan: the aim went back to the start)
+                if (allJoints.ContainsKey(key) || motors.ContainsKey(key) || Couplers.Has(key) || Levers.Has(key) || HasTurret(key) || Radio.Has(key) || RemoteComputer.Has(key) || ignored.Contains(key)) continue;   // 0.12.3: HasTurret (the turret was recreated on every scan: the aim went back to the start)
                 ulong h = Ecs.Prefab(em, e);
                 if (!byHash.TryGetValue(h, out var i)) { ignored.Add(key); continue; }
                 bool mir = hashMirror.Contains(h); string nameP = PREFABS[i].name + (mir ? " M" : "");
                 if (PREFABS[i].kind != Kind.Motor && Ecs.IsGameDecoupler(em, e)) { ignored.Add(key); continue; }
-                if (PREFABS[i].kind == Kind.Transmission || PREFABS[i].kind == Kind.End) { ignored.Add(key); continue; }   // 0.15.0: only read by MapAxes; 0.20.0: the Piston End is only searched for by the piston
+                if (PREFABS[i].kind == Kind.Transmission || PREFABS[i].kind == Kind.End || PREFABS[i].kind == Kind.Seal) { ignored.Add(key); continue; }   // 0.15.0: only read by MapAxes; 0.20.0: the Piston End is only searched for by the piston
                 if (PREFABS[i].kind == Kind.Radio) { Radio.Track(e); continue; }   // 0.18.0
+                if (PREFABS[i].kind == Kind.Remote) { RemoteComputer.Track(e, PREFABS[i].stroke == 1f); continue; }   // remote control (delivery 1)
                 if (PREFABS[i].kind == Kind.Recoupler) { Couplers.NewRecoupler(e); continue; }
                 if (PREFABS[i].kind == Kind.Beacon) { Couplers.NewBeacon(e); continue; }
                 if (PREFABS[i].kind == Kind.Levers) { Levers.Track(e, PREFABS[i].name); continue; }
@@ -396,7 +520,7 @@ namespace CrapMechanics
                     ModLog.Info(nameP + " found: block " + e.Index + ":" + e.Version);
                     continue;
                 }
-                var j = new Joint { block = e, kind = PREFABS[i].kind, stroke = PREFABS[i].stroke, strokeMax = PREFABS[i].stroke, name = nameP, state = 0, mirror = mir, spin = PREFABS[i].kind == Kind.Bearing && PREFABS[i].stroke == 1f, scale = ScaleFromName(PREFABS[i].name) };
+                var j = new Joint { block = e, kind = PREFABS[i].kind, stroke = PREFABS[i].stroke, strokeMax = PREFABS[i].stroke, name = nameP, state = 0, mirror = mir, spin = PREFABS[i].kind == Kind.Bearing && PREFABS[i].stroke == 1f, scale = ScaleFromName(PREFABS[i].name), selfRing = SlipRings.SelfRing(nameP) };
                 allJoints[key] = j;
                 ModLog.Info(j.name + " found: block " + e.Index + ":" + e.Version);
                 if (j.kind == Kind.Piston) RetractInGarage(em, j);   // 0.19.5 (Andre: "piston extended outside the simulation")
@@ -462,7 +586,7 @@ namespace CrapMechanics
                     tiCombo = TypeManager.GetTypeIndex(Il2CppInterop.Runtime.Il2CppType.Of<FuelComboSingleton>());
                     var a = new Il2CppStructArray<ComponentType>(1); a[0] = ComponentType.ReadOnly(tiCombo); qCombo = em.CreateEntityQuery(a);
                 }
-                if (!em.HasComponent(m.block, ComponentType.ReadOnly(tiFuel))) { if (m.fuelLog != "no FuelData") { m.fuelLog = "no FuelData"; ModLog.Warn(m.name + " " + m.block.Index + ": block has no FuelData (the game didn't connect it to the pipes?)"); } return 0f; }
+                if (!Ecs.Has(em, m.block, tiFuel)) { if (m.fuelLog != "no FuelData") { m.fuelLog = "no FuelData"; ModLog.Warn(m.name + " " + m.block.Index + ": block has no FuelData (the game didn't connect it to the pipes?)"); } return 0f; }
                 var fd = (Ecs.HasC(em, m.block, tiFuel) ? (byte*)em.GetComponentDataRawRW(m.block, tiFuel) : null);
                 double* cur = (double*)(fd + 24);
                 double sum = System.Math.Max(0.0, cur[0]) + System.Math.Max(0.0, cur[1]) + System.Math.Max(0.0, cur[2]);
@@ -483,7 +607,7 @@ namespace CrapMechanics
                         try
                         {
                             var list = Ecs.QueryList(qCombo);
-                            if (list.Count > 0) { var combo = *(Ecs.HasC(em, list[0], tiCombo) ? (FuelComboSingleton*)em.GetComponentDataRawRO(list[0], tiCombo) : null); perf = Efficiency(t, System.Math.Min(1f, usage), &combo); }
+                            if (list.Count > 0) { var combo = *(Ecs.HasC(em, list[0], tiCombo) ? (FuelComboSingleton*)Ecs.RO(em, list[0], tiCombo) : null); perf = Efficiency(t, System.Math.Min(1f, usage), &combo); }
                         }
                         catch (Exception ex) { perfFailed = true; ModLog.Warn("fuel motor: the game's efficiency calculation failed (using 100%): " + ex.Message); }
                     }
@@ -547,7 +671,7 @@ namespace CrapMechanics
                 j.tState = j.kind == Kind.Piston ? -0.001f : -1f; return;
             }
             int broken = 0; Entity nbr = Entity.Null; float bestPick = 99f;
-            j.broken.Clear();
+            ForgetBreaks(em, j.broken);   // 0.31.26: (also drops any index still pending from an earlier attempt)
             var mineSet = TopJoints(em, j.block, joints, n, out nbr);
             if (mineSet.Count == 0 || Ecs.IsNull(nbr))
             {
@@ -575,7 +699,7 @@ namespace CrapMechanics
                         j.tEnd = 0f; j.endWaitLog = false; j.tState = -30f; return;
                     }
                     j.tEnd = 0f; j.endWaitLog = false;
-                    j.didWarnStuck = false; j.welded = false; j.broken.Clear();
+                    j.didWarnStuck = false; j.welded = false; ForgetBreaks(em, j.broken);
                     j.neighbor = endBlock; j.endBlock = endBlock; j.withEnd = true; j.partA = pa; j.partB = pp; j.extBase = gap; j.stroke = gap; j.locNeighbor = -1;
                     deferred = false;
                     if (Create(em, j)) { j.state = 2; j.tState = 0f; Reinforce(em, j); ModLog.Info(j.name + " " + j.block.Index + ": Piston End " + endBlock.Index + " at " + gap.ToString("F2") + " m — stroke = " + gap.ToString("F2") + " m, rod born extended (part " + pa.Index + " -> part " + pp.Index + ")"); }
@@ -591,6 +715,9 @@ namespace CrapMechanics
             // closes a ring around the piston), breaking the joints separates nothing — the ship doesn't become two parts, and each
             // attempt (every 5 s) made the game rebuild all the parts, messing up the other pistons/bearings. The top-face joints
             // of ALL the mod's joints in this part count as "will break" (pistons side by side).
+            // 0.31.36: a Bearing with Slip Ring waits until its ring knows its mode (normally the same frame; about 1 s if its renderers are not found, never more than 3 s), so the cable
+            // cells on the ring ports can be handed to the top block BEFORE the split (RingCables.Follow, below)
+            if (j.selfRing && !RingVisual.Decided(j.block)) { j.tState = -0.001f; return; }
             var willBreak = new HashSet<int>(mineSet);
             foreach (var o in allJoints.Values)
                 if (o != j && o.state == 0 && Ecs.Alive(em, o.block) && Same(Ecs.Parent(em, o.block), pa))
@@ -623,18 +750,24 @@ namespace CrapMechanics
                   j.poseRelNb = math.mul(math.inverse(new RigidTransform(rP0, pP0)), new RigidTransform(rV0, pV0)); j.poseRelNbOk = true; }
             catch (Exception) { j.poseRelNbOk = false; }
             if (StayWhole(em, j, pa, nbr)) return;   // 0.26.4: a piston without a target doesn't separate at launch
+            // 0.31.26 (item 1): with GameOverrides._destructibleJoints off, SpaceshipCheckJoints breaks nothing [recon/SpaceshipCheckJoints.cs:38]:
+            // releasing would only repeat "did not separate" forever. Stay whole (logged once) and look again in 30 s.
+            if (!JointsCanBreak(em)) { j.tState = -30f; return; }
             // 0.26.12 (Andre's log, 23/10: on the 1st launch after loading, the game ran 18 physics ticks in a 677 ms frame right
             // after the car's bearings broke the game's joints and BEFORE the mod created its own — the pieces were loose and under
             // gravity for 0.3 s and the car scattered). The launch zero gravity was only requested by the pistons, and only on the next
             // frame. Now it applies to every just-launched joint and kicks in before the next physics.
-            if (JustLaunchedJ(j)) { RequestZeroGrav(); try { GravityControl(em); } catch (Exception) { } }
+            if (JustLaunchedJ(j)) RequestZeroGrav();   // 0.31.26 (U7): written inside the next tick by GravityInTick
+            // 0.31.36: everything is still one part and the top joints break next: the ring cables' cells go with the top block (host / solo;
+            // this method only runs where Multi.MyJoint)
+            if (j.selfRing) { try { RingCables.Follow(em, j, nbr); } catch (Exception exR) { if (j.warnings++ < 3) ModLog.Warn(j.name + " " + j.block.Index + ": built-in ring cables: " + exR.Message); } }
             foreach (var k in mineSet) { Break(j, &joints[k], k); broken++; }
             j.neighbor = nbr; j.partA = pa; j.state = 1; j.tState = 0f;
             ModLog.Info(j.name + " " + j.block.Index + ": separating (" + broken + " joint(s), neighbor " + nbr.Index + ")");
         }
 
-        /// <summary>0.20.2: while the motor of the piston with a Piston End doesn't exist, the end's part moves together with the base (velocity copied,
-        /// spin zeroed) — instead of falling until the joint is born.</summary>
+        /// <summary>0.20.2: while the motor of the piston with a Piston End doesn't exist, the end's part moves together with the base (0.31.26: as one
+        /// rigid body, see HoldPart) — instead of falling until the joint is born.</summary>
         static void HoldEnd(EntityManager em, Joint j, Entity pa)
         {
             try
@@ -645,14 +778,13 @@ namespace CrapMechanics
             }
             catch (Exception) { }
         }
+        /// <summary>0.31.26 (item 9): the piece moves rigidly with the base (CarryAlong: Linear + w x r, the base's spin in the piece's own inertia
+        /// frame) — copying Linear and zeroing Angular stopped it while the ship turned. Never on the base itself (p2_solda N1: with the Piston End
+        /// still in the base's part, the call in WaitingTop zeroed the whole ship's spin every frame for 3 s, every 33 s).</summary>
         static unsafe void HoldPart(EntityManager em, Entity piece, Entity base_)
         {
-            try
-            {
-                var va = (Ecs.HasC(em, base_, Ecs.tiVel) ? (PhysicsVelocity*)em.GetComponentDataRawRO(base_, Ecs.tiVel) : null);
-                var vb = (Ecs.HasC(em, piece, Ecs.tiVel) ? (PhysicsVelocity*)em.GetComponentDataRawRW(piece, Ecs.tiVel) : null);
-                if (va != null && vb != null) { vb->Linear = va->Linear; vb->Angular = float3.zero; }
-            }
+            if (piece.Index == base_.Index) return;
+            try { CarryAlong(em, piece, base_); }
             catch (Exception) { }
         }
 
@@ -703,9 +835,9 @@ namespace CrapMechanics
         }
         static void RedoJoint(EntityManager em, Joint j)
         {
-            try { if (Ecs.Alive(em, j.joint)) em.DestroyEntity(j.joint); } catch (Exception) { }
-            try { if (Ecs.Alive(em, j.joint2)) em.DestroyEntity(j.joint2); } catch (Exception) { }
-            try { if (Ecs.Alive(em, j.joint3)) em.DestroyEntity(j.joint3); } catch (Exception) { }
+            try { if (Ecs.Alive(em, j.joint)) Ecs.Destroy(em, j.joint); } catch (Exception) { }
+            try { if (Ecs.Alive(em, j.joint2)) Ecs.Destroy(em, j.joint2); } catch (Exception) { }
+            try { if (Ecs.Alive(em, j.joint3)) Ecs.Destroy(em, j.joint3); } catch (Exception) { }
             j.joint = Entity.Null; j.joint2 = Entity.Null; j.joint3 = Entity.Null; DeleteRails(em, j);
             if (j.kind == Kind.Bearing) { j.mode = -1; j.impulseMode = 0f; }
             deferred = false;
@@ -808,11 +940,12 @@ namespace CrapMechanics
                 else if (!Ecs.IsNull(o.neighbor) && Ecs.Alive(em, o.neighbor)) doneOnes.Add(o);
             }
             if (cand.Count == 0) return;
+            var live = LiveSet(em, n);
             for (int k = 0; k < n; k++)
             {
                 if (skip.Contains(k)) continue;
                 var sj = &joints[k];
-                if (sj->_breakForce < 0f) continue;   // already broken by us
+                if (!IsLive(live, sj, k)) continue;   // 0.31.26 (item 7): broken (by the game, or released by us) = no link [recon/SpaceshipCheckJoints.cs:113-122]
                 UnionB(Ecs.K(sj->_a), Ecs.K(sj->_b));
             }
             // 0.12.1: rigid groups BEFORE the joints (to find parallel pistons between the same two pieces)
@@ -849,25 +982,31 @@ namespace CrapMechanics
 
         /// <summary>Indices of the game joints between the block and whatever is glued to its top face (+Y of the block); nbr = the
         /// nearest upper block.</summary>
-        static unsafe List<int> TopJoints(EntityManager em, Entity block, SpaceshipJoint* joints, int n, out Entity nbr)
+        static unsafe List<int> TopJoints(EntityManager em, Entity block, SpaceshipJoint* joints, int n, out Entity nbr, bool liveOnly = true)
         {
             var r = new List<int>(); nbr = Entity.Null; float bestPick = 99f;
+            // 0.31.26 (item 7): skip the joints the GAME broke (strain, decoupler, ClimaBomb: out of _connectedJoints, _breakForce untouched
+            // [recon/SpaceshipCheckJoints.cs:113-122]) — otherwise debris torn off the top face became the "neighbour" the joint is welded to.
+            // The ones the mod itself released still count (IsMine), so a re-wait after a failed Create re-links the same piece as before.
+            // liveOnly = false: the old behaviour (PistonMerge looks for the released joints on purpose).
+            var live = liveOnly ? LiveSet(em, n) : null;
             Ecs.Axes(em, block, out _, out var ey, out _); var pb = Ecs.Position(em, block);
             // 0.26.4 (Andre's log: a foot that sank 1 m moved to the OTHER side of the piston and the top face's joint "vanished"): the face
             // of a joint is GARAGE geometry, not where the pieces are now. With GarageTransform on both sides, decide by it.
             RigidTransform gB = default; bool hasGB = false;
             try { if (!tiGTok) { tiGTok = true; tiGT = TypeManager.GetTypeIndex(Il2CppInterop.Runtime.Il2CppType.Of<GarageTransform>()); }
-                  if (em.HasComponent(block, ComponentType.ReadOnly(tiGT))) { gB = *(RigidTransform*)em.GetComponentDataRawRO(block, tiGT); hasGB = true; } } catch (Exception) { }
+                  if (Ecs.Has(em, block, tiGT)) { gB = *(RigidTransform*)Ecs.RO(em, block, tiGT); hasGB = true; } } catch (Exception) { }
             for (int k = 0; k < n; k++)
             {
                 var sj = &joints[k];
                 bool a = Same(sj->_a, block), b = Same(sj->_b, block);
                 if (!a && !b) continue;
+                if (liveOnly && !IsMine(live, sj, k)) continue;
                 var other = a ? sj->_b : sj->_a;
                 float3 po; try { if (!Ecs.Alive(em, other)) continue; po = Ecs.Position(em, other); } catch (Exception) { continue; }
-                if (hasGB && em.HasComponent(other, ComponentType.ReadOnly(tiGT)))
+                if (hasGB && Ecs.Has(em, other, tiGT))
                 {
-                    var gO = *(RigidTransform*)em.GetComponentDataRawRO(other, tiGT);
+                    var gO = *(RigidTransform*)Ecs.RO(em, other, tiGT);
                     var dg = Ecs.Sub(gO.pos, gB.pos); float cg = Ecs.Len(dg); if (cg < 1e-4f) continue;
                     if (Ecs.Dot(dg, Ecs.Rot(gB.rot, Ecs.UY)) / cg < 0.5f) continue;   // joint of another face (in the garage)
                     r.Add(k);
@@ -887,11 +1026,14 @@ namespace CrapMechanics
         {
             steps = 0;
             var nbr = new Dictionary<long, List<long>>();
+            var live = LiveSet(em, n);
             for (int k = 0; k < n; k++)
             {
                 if (skip.Contains(k)) continue;
                 var sj = &joints[k];
-                if (sj->_breakForce < 0f) continue;   // already broken (by us)
+                // 0.31.26 (item 7): a joint the game broke stays in _joints with its _breakForce [recon/SpaceshipCheckJoints.cs:113-122] — it was
+                // found as a dead "other path" ("still attached..." every 30 s forever). Live = in _connectedJoints and not pending release.
+                if (!IsLive(live, sj, k)) continue;
                 long ka = Ecs.K(sj->_a), kb = Ecs.K(sj->_b);
                 if (!nbr.TryGetValue(ka, out var la)) nbr[ka] = la = new List<long>(); la.Add(kb);
                 if (!nbr.TryGetValue(kb, out var lb)) nbr[kb] = lb = new List<long>(); lb.Add(ka);
@@ -910,7 +1052,9 @@ namespace CrapMechanics
 
         static unsafe void ActivePiston(EntityManager em, Joint j, float dt)
         {
+            j.tickFrame = -10;   // 0.31.26 (U3): set again below only when the command should move
             Watch(em, j);
+            if (FarPaused(em, j)) return;   // 0.31.26 (U5): switched off by the 100 km rule — kept, recreated when it comes back
             if (!Valid(em, j)) { if (Rebuild(em, j)) return; Undo(em, j, "part/joint changed (time rewind, load or break)"); j.state = 0; j.tState = -1f; return; }
             Alignment(em, j, dt);
             try { PistonVisual(em, j, dt); } catch (Exception ex) { if (j.warnings++ < 3) ModLog.Warn(j.name + " " + j.block.Index + ": rod visual: " + ex.Message); }
@@ -934,8 +1078,19 @@ namespace CrapMechanics
             // 0.23.0 (Andre: "now all pistons have the maximum stroke ... I was only using 1..2 m and it still consumed 20 P/s"):
             // the consumption follows the stroke the piston REALLY makes (distance to the Piston End, or the maximum, x the knob's fraction)
             Ecs.SetConsumption(em, j.block, wants && !j.tilted ? PistonConsumptionPerM * j.stroke * j.strokeFraction : IdleConsumption);
-            if (MaybeMerge(em, j, wants, dt)) return;   // 0.26.3: still = becomes a single part with the lower one
             if (!wants || !power) return;   // no power: holds where it is
+            // 0.31.26 (U3): the rigid weld is rebuilt from PhysicsJoint on every tick [UP ECS/Base/Systems/PhysicsWorldBuilder.cs:225-243], so a
+            // command advanced once per FRAME held still for the N ticks of the frame and then jumped PistonSpeed·dt_frame at once (the mod
+            // logs frames of 4-18 ticks); with ~61% of the error closed per tick and no force ceiling, each jump was a jolt. The frame now only
+            // leaves the request here; CommandsInTick advances it by PistonSpeed/60 in every tick.
+            if (Rigid) { j.tickRequest = request; j.tickFrame = UnityEngine.Time.frameCount; return; }
+            PistonAdvance(em, j, request, dt);   // the soft position motor (rigid_joints off) keeps going per frame: its Target is a spring set-point
+        }
+
+        /// <summary>Moves the piston's command one step of PistonSpeed·dt toward the request and writes it into the joint. Rigid: called once per
+        /// physics tick by CommandsInTick (dt = 1/60); soft: once per frame by ActivePiston.</summary>
+        static unsafe void PistonAdvance(EntityManager em, Joint j, float request, float dt)
+        {
             float step = PistonSpeed * dt;
             float target = request > j.currentTarget + step ? j.currentTarget + step : request < j.currentTarget - step ? j.currentTarget - step : request;
             // 0.26.0b COLLAR (redone). The first version PULLED the command behind the measurement: with a damper below, the measured stroke
@@ -1061,6 +1216,7 @@ namespace CrapMechanics
                 if (!Ecs.IsNull(j.extra)) { DropLoad(em, j, "recoupler released"); }
                 return;
             }
+            if (targetPartE.Index == j.partA.Index) return;   // 0.31.26 (U6): never the same part on both ends of a pair
             if (!Ecs.IsNull(j.extra) && j.extraPart.Index == targetPartE.Index && Ecs.Alive(em, j.extra)) return;
             if (!Ecs.IsNull(j.extra)) DropLoad(em, j, "piece changed");
             try
@@ -1080,7 +1236,7 @@ namespace CrapMechanics
                 var pair = new PhysicsConstrainedBodyPair(); pair.Entities = new EntityPair { EntityA = j.partA, EntityB = targetPartE }; pair.EnableCollision = 0;
                 var kinds = new Il2CppStructArray<ComponentType>(3);
                 kinds[0] = ComponentType.ReadWrite(Ecs.tiPar); kinds[1] = ComponentType.ReadWrite(Ecs.tiJoint); kinds[2] = ComponentType.ReadWrite(Ecs.tiPWI);
-                var e = em.CreateEntity(kinds);
+                var e = Ecs.Create(em, kinds);
                 *(Ecs.HasC(em, e, Ecs.tiPar) ? (PhysicsConstrainedBodyPair*)em.GetComponentDataRawRW(e, Ecs.tiPar) : null) = pair;
                 *(Ecs.HasC(em, e, Ecs.tiJoint) ? (PhysicsJoint*)em.GetComponentDataRawRW(e, Ecs.tiJoint) : null) = pj;
                 j.extra = e; j.extraPart = targetPartE;
@@ -1097,6 +1253,8 @@ namespace CrapMechanics
         /// from before the separation (same part), it goes back to the start (separates again). Detected by the Load button patch (InventoryTab.cs) and,
         /// as a fallback, by the physics tick (UniverseCoreSingleton._physicsTickID) going backwards.</summary>
         public static bool RewindRequested; static int lastTick = -1, ticksLogged; static TypeIndex tiUniv; static EntityQuery qUniv; static bool univOk, univFailed;
+        /// <summary>Remote control, delivery 2: the last physics tick read (UniverseCoreSingleton._physicsTickID), -1 = unknown.</summary>
+        public static int CurrentTick => lastTick;
         static unsafe void WatchTick(EntityManager em)
         {
             if (univFailed) return;
@@ -1104,7 +1262,7 @@ namespace CrapMechanics
             {
                 if (!univOk) { univOk = true; tiUniv = TypeManager.GetTypeIndex(Il2CppInterop.Runtime.Il2CppType.Of<UniverseCoreSingleton>()); var a = new Il2CppStructArray<ComponentType>(1); a[0] = ComponentType.ReadOnly(tiUniv); qUniv = em.CreateEntityQuery(a); }
                 var l = Ecs.QueryList(qUniv); if (l.Count == 0) { lastTick = -1; return; }
-                int tick = ((Ecs.HasC(em, l[0], tiUniv) ? (UniverseCoreSingleton*)em.GetComponentDataRawRO(l[0], tiUniv) : null))->_physicsTickID;
+                int tick = ((Ecs.HasC(em, l[0], tiUniv) ? (UniverseCoreSingleton*)Ecs.RO(em, l[0], tiUniv) : null))->_physicsTickID;
                 if (lastTick >= 0 && tick < lastTick - 5 && !RewindRequested) { RewindRequested = true; ModLog.Info("time rewind: physics tick went back " + lastTick + " -> " + tick); }
                 // 0.26.11 (Andre's log, 23/10: on the FIRST launch after loading, the car blew up in a ~300 ms frame without the
                 // mod running — the axle split and the rear 8 m away when the mod came back). Diagnostics: how many physics ticks the game
@@ -1115,17 +1273,23 @@ namespace CrapMechanics
             catch (Exception ex) { univFailed = true; ModLog.Warn("time rewind: can't read the physics tick (" + ex.Message + ") — only the Load button is detected"); }
         }
 
-        static void Rewind(EntityManager em)
+        static unsafe void Rewind(EntityManager em)
         {
+            Ecs.ForgetPaths(); Ecs.ForgetBlocks(); Garage.ForgetBlocks();   // 0.31.15: the rewind recreates entities — nothing kept about cables or blocks holds
+            // 0.31.26 (item 1): the rewind memcpy's _joints and _connectedJoints back as they were saved [recon/TimeRewindSystem__05_rewind_02.cs:486-490]:
+            // a pending release must not break a joint after a rewind to before the separation. What the mod had released and is still out of
+            // the restored list stays marked as the mod's (StrainWatch / TopJoints); anything the rewind re-linked is forgotten.
+            pendingBreak.Clear(); InvalidateLive(); StrainWatch.Forget();   // (StrainWatch: the restored list is not a wave of breaks)
+            try { var jl = Ecs.Joints(em, out int nj); var lv = jl != null ? LiveSet(em, nj) : null; if (lv == null) modBroken.Clear(); else modBroken.RemoveWhere(k => k < 0 || k >= nj || lv[k]); } catch (Exception) { modBroken.Clear(); }
             int recreated = 0, since0 = 0, deferredList = 0;
             foreach (var j in allJoints.Values)
             {
                 j.letGo = false;   // 0.26.10: the rewind may have gone back to before the piece was let go
                 if (j.state == 1) { j.broken.Clear(); j.state = 0; j.tState = 0f; j.unmerging = false; since0++; continue; }   // was separating: start over
                 if (j.state != 2 && j.state != 4) continue;   // 0.26.3: merged too (if the rewind went back to before the merge, the parts are separate)
-                try { if (Ecs.Alive(em, j.joint)) em.DestroyEntity(j.joint); } catch (Exception) { }
-                try { if (Ecs.Alive(em, j.joint2)) em.DestroyEntity(j.joint2); } catch (Exception) { }
-                try { if (Ecs.Alive(em, j.joint3)) em.DestroyEntity(j.joint3); } catch (Exception) { }
+                try { if (Ecs.Alive(em, j.joint)) Ecs.Destroy(em, j.joint); } catch (Exception) { }
+                try { if (Ecs.Alive(em, j.joint2)) Ecs.Destroy(em, j.joint2); } catch (Exception) { }
+                try { if (Ecs.Alive(em, j.joint3)) Ecs.Destroy(em, j.joint3); } catch (Exception) { }
                 j.joint = Entity.Null; j.joint2 = Entity.Null; j.joint3 = Entity.Null; DeleteRails(em, j); DropLoad(em, j, "time rewind");
                 j.broken.Clear(); j.deferrals = 0; j.tPullT = -1f; j.alignLog = null; j.angServo = 999f; j.angLog = 999f;
                 var pa = Ecs.Parent(em, j.block); var pb = Ecs.Parent(em, j.neighbor);
@@ -1222,7 +1386,7 @@ namespace CrapMechanics
             {
                 var c = noCol[i];
                 bool ok = Ecs.Alive(em, c.e) && Ecs.IsPart(em, c.wheel) && Ecs.IsPart(em, c.above) && c.j.state == 2 && c.j.partB.Index == c.wheel.Index;
-                if (!ok) { try { if (Ecs.Alive(em, c.e)) em.DestroyEntity(c.e); } catch (Exception) { } noCol.RemoveAt(i); }
+                if (!ok) { try { if (Ecs.Alive(em, c.e)) Ecs.Destroy(em, c.e); } catch (Exception) { } noCol.RemoveAt(i); }
             }
             if (tRelinked >= 0f)
             {
@@ -1256,7 +1420,7 @@ namespace CrapMechanics
                                 var pj = PhysicsJoint.CreateLimitedDistance(float3.zero, float3.zero, new Unity.Physics.Math.FloatRange { Min = 0f, Max = 1e6f });
                                 var kinds = new Il2CppStructArray<ComponentType>(3);
                                 kinds[0] = ComponentType.ReadWrite(Ecs.tiPar); kinds[1] = ComponentType.ReadWrite(Ecs.tiJoint); kinds[2] = ComponentType.ReadWrite(Ecs.tiPWI);
-                                var e = em.CreateEntity(kinds);
+                                var e = Ecs.Create(em, kinds);
                                 *(Ecs.HasC(em, e, Ecs.tiPar) ? (PhysicsConstrainedBodyPair*)em.GetComponentDataRawRW(e, Ecs.tiPar) : null) = pair;
                                 *(Ecs.HasC(em, e, Ecs.tiJoint) ? (PhysicsJoint*)em.GetComponentDataRawRW(e, Ecs.tiJoint) : null) = pj;
                                 noCol.Add(new NoCol { e = e, wheel = j.partB, above = above, j = j });
@@ -1284,7 +1448,7 @@ namespace CrapMechanics
                     relinked.Add(c.j);
                     try { Measure(em, c.j, out var t, out var ax, out var la, out var an); ModLog.Info(c.j.name + " " + c.j.block.Index + ": re-enabling collision wheel x part " + c.above.Index + " — the wheel is now at " + (t * 100f).ToString("F0") + " cm (" + AxisText(ax, la) + "), tilted " + an.ToString("F1") + " degrees"); } catch (Exception) { }
                 }
-                try { if (Ecs.Alive(em, c.e)) em.DestroyEntity(c.e); } catch (Exception) { }
+                try { if (Ecs.Alive(em, c.e)) Ecs.Destroy(em, c.e); } catch (Exception) { }
             }
             ModLog.Info("start: wheel x chassis collision re-enabled (" + noCol.Count + " pair(s))");
             noCol.Clear(); tRelinked = 0f;
@@ -1361,7 +1525,7 @@ namespace CrapMechanics
                         if (j.kind == Kind.Piston) sb.Append(", actual stroke ").Append((ax + j.extBase).ToString("F2")).Append(" m");
                         unsafe
                         {
-                            var va = (Ecs.HasC(em, j.partA, Ecs.tiVel) ? (PhysicsVelocity*)em.GetComponentDataRawRO(j.partA, Ecs.tiVel) : null); var vb = (Ecs.HasC(em, j.partB, Ecs.tiVel) ? (PhysicsVelocity*)em.GetComponentDataRawRO(j.partB, Ecs.tiVel) : null);
+                            var va = (Ecs.HasC(em, j.partA, Ecs.tiVel) ? (PhysicsVelocity*)Ecs.RO(em, j.partA, Ecs.tiVel) : null); var vb = (Ecs.HasC(em, j.partB, Ecs.tiVel) ? (PhysicsVelocity*)Ecs.RO(em, j.partB, Ecs.tiVel) : null);
                             if (va != null && vb != null) sb.Append(", vel A ").Append(Ecs.Len(va->Linear).ToString("F1")).Append(" m/s spin ").Append(Ecs.Len(va->Angular).ToString("F1")).Append(" | vel B ").Append(Ecs.Len(vb->Linear).ToString("F1")).Append(" m/s spin ").Append(Ecs.Len(vb->Angular).ToString("F1")).Append(" rad/s");
                         }
                     }
@@ -1381,13 +1545,13 @@ namespace CrapMechanics
 
         static void DeleteRails(EntityManager em, Joint j)
         {
-            foreach (var g in j.rails) { try { if (Ecs.Alive(em, g)) em.DestroyEntity(g); } catch (Exception) { } }
+            foreach (var g in j.rails) { try { if (Ecs.Alive(em, g)) Ecs.Destroy(em, g); } catch (Exception) { } }
             j.rails.Clear();
         }
 
         static void DropLoad(EntityManager em, Joint j, string reason)
         {
-            try { if (Ecs.Alive(em, j.extra)) em.DestroyEntity(j.extra); } catch (Exception) { }
+            try { if (Ecs.Alive(em, j.extra)) Ecs.Destroy(em, j.extra); } catch (Exception) { }
             if (!Ecs.IsNull(j.extra) && DetailedLog) ModLog.Info(j.name + " " + j.block.Index + ": extra load motor removed (" + reason + ")");
             j.extra = Entity.Null; j.extraPart = Entity.Null; j.idxExtra = -1; j.extraWeld = false;
         }
@@ -1477,7 +1641,9 @@ namespace CrapMechanics
         // ================================================================ bearing (quarter 0.5 m: bottom face glues, top face releases and turns)
         static unsafe void ActiveBearing(EntityManager em, Joint j, float dt)
         {
+            j.tickFrame = -10;   // 0.31.26 (U3): ServoStep sets it again while the rigid servo is in charge
             Watch(em, j);
+            if (FarPaused(em, j)) return;   // 0.31.26 (U5): switched off by the 100 km rule — kept, recreated when it comes back
             if (!Valid(em, j)) { if (Rebuild(em, j)) return; Undo(em, j, "part/joint changed (time rewind, load or break)"); j.state = 0; j.tState = -1f; return; }
             BearingAlignment(em, j, dt);
             if (j.tStart > 0f) { Pulling(em, j, dt); return; }   // soft start: locked (fixed) until the queue releases it (0.7.12)
@@ -1488,11 +1654,22 @@ namespace CrapMechanics
             float valMotor = 0f; Net net = null;
             // 0.17.0: network of motors (they add up); value = average weighted by force; conflicting signals = locked
             if (driven.TryGetValue(Ecs.K(j.block), out var ac) && ac.net != null && ac.net.rep != null) { net = ac.net; mot = net.rep; valMotor = ac.val; origin = ac.path + (net.motors.Count > 1 ? " [" + net.name + "]" : ""); }
-            foreach (var p in Ecs.Ports(em, j.block))
+            // 0.31.15: which ports can carry the servo signal comes from the prefab — worked out once per bearing (it was ~15 calls into the
+            // game per port, every frame, to throw the same ports away each time)
+            if (j.servoPorts == null)
             {
-                if (!Ecs.Port(em, p, out var t, out _, out _) || (t != Ecs.PortInput && t != PortUntyped)) continue;
+                var all = Ecs.Ports(em, j.block); var keep = new List<Entity>();
+                foreach (var p in all)
+                {
+                    if (!Ecs.Port(em, p, out var t, out _, out _) || (t != Ecs.PortInput && t != PortUntyped)) continue;
+                    if (SlipRings.IsPassThrough(em, j.block, p, j.name)) continue;   // 0.22.0: pass-through ports (slip ring) aren't servo
+                    keep.Add(p);
+                }
+                if (all.Length > 0) j.servoPorts = keep.ToArray();
+            }
+            foreach (var p in j.servoPorts ?? new Entity[0])
+            {
                 if (PortOnAxisCache(em, p)) continue;
-                if (SlipRings.IsPassThrough(em, j.block, p, j.name)) continue;   // 0.22.0: pass-through ports (slip ring) aren't servo
                 if (!Ecs.ReadInput(em, p, out var v, out _, out var trail)) continue;
                 if (!servo) { servo = true; valServo = v; servoOrigin = "direct signal, port " + p.Index + trail; }
             }
@@ -1627,6 +1804,7 @@ namespace CrapMechanics
         /// so you can feed the output into your math and send the result back to the input. Without an active joint (garage) the output stays at 0.</summary>
         static void AngleOutput(EntityManager em, Joint j, float dt)
         {
+            j.ringThOk = false;   // 0.31.36: what this frame measured, for RingVisual (set below)
             j.tSwAng += dt;
             if (j.tSwAng >= 3f) { j.tSwAng = 0f; if (!Ecs.Alive(em, j.swAng)) j.swAng = Knobs.FindSwitch(em, j.block); }
             var ports = Ecs.Ports(em, j.block); if (ports == null || ports.Length == 0) return;
@@ -1635,6 +1813,7 @@ namespace CrapMechanics
             float v = 0f; float th = 0f; bool measured = false;
             if (j.state == 2 && !Ecs.IsNull(j.joint)) { try { th = ServoAngle(em, j); measured = true; } catch (Exception) { return; } }
             else if (j.cAngleOk) { th = j.cAngle; measured = true; }   // 0.28.0: on a client, from the server's poses (ClientView.cs)
+            j.ringTh = th; j.ringThOk = measured;
             if (measured)
             {
                 bool degrees = Knobs.SwitchOn(em, j.swAng);
@@ -1706,6 +1885,35 @@ namespace CrapMechanics
             float err = thTarget - j.angCont;
             if (Rigid)
             {
+                // 0.31.26 (U3): the command advances in the physics tick (CommandsInTick -> ServoAdvance, dt = 1/60), for the same reason as the
+                // piston: the weld is rebuilt every tick [UP PhysicsWorldBuilder.cs:225-243], so a per-frame command held still for the N ticks of a
+                // frame and then jumped. Here only the goal is left for the ticks; the first time, the weld is laid at the current angle right away
+                // (dt = 0: no step, so the joint never starts from the garage angle).
+                if (!j.angCmdOk) ServoAdvance(em, j, pj, thTarget, 0f);
+                j.tickGoal = thTarget; j.tickFrame = UnityEngine.Time.frameCount;
+            }
+            else
+            {
+                float w = System.Math.Max(-ServoSpeed, System.Math.Min(ServoSpeed, ServoGain * err));
+                float motorTarget = -w;
+                if (System.Math.Abs(motorTarget - j.currentTarget) > 1e-3f && j.idxMotor >= 0)
+                {
+                    ConstraintAt(pj, j.idxMotor)->Target.x = motorTarget; pj->m_Version++; j.currentTarget = motorTarget;
+                }
+            }
+            j.tAngLog += dt;
+            if (DetailedLog && j.tAngLog >= 0.5f && System.Math.Abs(th - j.angLog) >= 5f / 57.2958f)
+            {
+                j.tAngLog = 0f; j.angLog = th;
+                ModLog.Info(j.name + " " + j.block.Index + ": servo angle " + (j.angCont * 57.2958f).ToString("F0") + " degrees (requested " + (thTarget * 57.2958f).ToString("F0") + ")");
+            }
+        }
+
+        /// <summary>0.31.26 (U3): the rigid servo's command profile (was inside ServoStep), one step of dt. CommandsInTick calls it every physics
+        /// tick with dt = 1/60; ServoStep calls it once with dt = 0 to lay the first weld at the current angle.</summary>
+        static unsafe void ServoAdvance(EntityManager em, Joint j, PhysicsJoint* pj, float thTarget, float dt)
+        {
+            {
                 // 0.26.0: weld at the requested angle. The command moves at most ServoSpeed rad/s and, like the piston, never more than
                 // RigidSlackAng ahead of the measured angle: stuck, it stops; released, it continues. Exact angle at rest — it's what
                 // was missing for a door to close tight and for the piston + bearing set not to get out of square.
@@ -1742,20 +1950,47 @@ namespace CrapMechanics
                 var fr = new BodyFrame { Axis = j.fa.Axis, Position = j.fa.Position, PerpendicularAxis = Ecs.Rot(quaternion.AxisAngle(j.fa.Axis, cmd), j.fa.PerpendicularAxis) };
                 int vr = pj->m_Version; var nr = PhysicsJoint.CreateFixed(fr, j.fb); nr.m_Version = (byte)(vr + 1); *pj = nr;
             }
-            else
+        }
+
+        /// <summary>0.31.26 (U3): start of every physics tick (prefix of PhysicsPreGroup, after SplitsInTick): the rigid pistons and servos the
+        /// frame left in motion advance their command by one tick (1/60 s, the game's fixed step) and rewrite the weld, so each tick's solver
+        /// gets its own small step instead of N ticks of the same target followed by one big jump.</summary>
+        internal static unsafe void CommandsInTick(EntityManager em)
+        {
+            if (!Rigid || allJoints.Count == 0) return;
+            int frame = UnityEngine.Time.frameCount;
+            const float dtTick = 1f / 60f;
+            foreach (var j in allJoints.Values)
             {
-                float w = System.Math.Max(-ServoSpeed, System.Math.Min(ServoSpeed, ServoGain * err));
-                float motorTarget = -w;
-                if (System.Math.Abs(motorTarget - j.currentTarget) > 1e-3f && j.idxMotor >= 0)
+                if (j.state != 2 || j.tickFrame < 0 || frame - j.tickFrame > 1 || j.tStart > 0f) continue;   // the frame stopped asking: hold
+                // 0.31.27 (performance): a joint with nothing to do in this tick is skipped from the mod's own numbers, before any call into the
+                // game. A rigid servo is handed its goal by ServoStep EVERY frame, moving or not, so every servo read its angle and opened its
+                // PhysicsJoint for writing on every tick (a writable pointer also makes the game finish its jobs on that type first). At the goal
+                // with the command speed at zero, ServoAdvance computes missing = 0, keeps the speed at 0 and returns before writing: skipping
+                // it changes nothing. The angle it would have tracked is read again by the frame's ServoStep (the turn is unwrapped the same way).
+                if (j.kind == Kind.Piston) { if (System.Math.Abs(j.tickRequest - j.currentTarget) <= 1e-4f) continue; }
+                else if (j.kind == Kind.Bearing && j.mode == 2 && j.angCmdOk && !j.rail) { if (j.tickGoal == j.angCmd && j.angVelCmd == 0f) continue; }
+                else continue;
+                try
                 {
-                    ConstraintAt(pj, j.idxMotor)->Target.x = motorTarget; pj->m_Version++; j.currentTarget = motorTarget;
+                    if (Ecs.IsNull(j.joint) || !Ecs.Alive(em, j.joint) || !Ecs.Has(em, j.joint, Ecs.tiJoint)) { j.tickFrame = -10; continue; }
+                    if (j.kind == Kind.Piston)
+                    {
+                        PistonAdvance(em, j, j.tickRequest, dtTick);
+                    }
+                    else
+                    {
+                        // the measured angle follows the tick too (the collar compares the command with it); same unwrapping as ServoStep
+                        float th = ServoAngle(em, j);
+                        if (j.angServo > 900f) continue;
+                        const float PI2 = 2f * (float)System.Math.PI;
+                        float d = th - j.angServo; if (d > (float)System.Math.PI) d -= PI2; else if (d < -(float)System.Math.PI) d += PI2;
+                        j.angCont += d; j.angServo = th;
+                        var pj = (PhysicsJoint*)em.GetComponentDataRawRW(j.joint, Ecs.tiJoint);
+                        ServoAdvance(em, j, pj, j.tickGoal, dtTick);
+                    }
                 }
-            }
-            j.tAngLog += dt;
-            if (DetailedLog && j.tAngLog >= 0.5f && System.Math.Abs(th - j.angLog) >= 5f / 57.2958f)
-            {
-                j.tAngLog = 0f; j.angLog = th;
-                ModLog.Info(j.name + " " + j.block.Index + ": servo angle " + (j.angCont * 57.2958f).ToString("F0") + " degrees (requested " + (thTarget * 57.2958f).ToString("F0") + ")");
+                catch (Exception ex) { j.tickFrame = -10; if (j.warnings++ < 5) ModLog.Warn(j.name + " " + j.block.Index + ": command in the tick: " + ex.Message); }
             }
         }
 
@@ -1802,7 +2037,7 @@ namespace CrapMechanics
         static unsafe void Weld(EntityManager em, Entity part, BodyFrame fa, BodyFrame fb, float d, PhysicsJoint* pj)
         {
             float s = 1f;
-            var lt = (Ecs.HasC(em, part, Ecs.tiLT) ? (LocalTransform*)em.GetComponentDataRawRO(part, Ecs.tiLT) : null);
+            var lt = (Ecs.HasC(em, part, Ecs.tiLT) ? (LocalTransform*)Ecs.RO(em, part, Ecs.tiLT) : null);
             if (lt != null && lt->Scale != 0f) s = lt->Scale;
             var f = new BodyFrame { Axis = fa.Axis, PerpendicularAxis = fa.PerpendicularAxis, Position = Ecs.Add(fa.Position, Ecs.Mul(fa.Axis, d / s)) };
             int v = pj->m_Version; var newVal = PhysicsJoint.CreateFixed(f, fb); newVal.m_Version = (byte)(v + 1); *pj = newVal;
@@ -1811,7 +2046,7 @@ namespace CrapMechanics
         static unsafe BodyFrame ElapsedFrame(EntityManager em, Entity part, BodyFrame fa, float d)
         {
             float s = 1f;
-            var lt = (Ecs.HasC(em, part, Ecs.tiLT) ? (LocalTransform*)em.GetComponentDataRawRO(part, Ecs.tiLT) : null);
+            var lt = (Ecs.HasC(em, part, Ecs.tiLT) ? (LocalTransform*)Ecs.RO(em, part, Ecs.tiLT) : null);
             if (lt != null && lt->Scale != 0f) s = lt->Scale;
             return new BodyFrame { Axis = fa.Axis, PerpendicularAxis = fa.PerpendicularAxis, Position = Ecs.Add(fa.Position, Ecs.Mul(fa.Axis, d / s)) };
         }
@@ -1851,17 +2086,247 @@ namespace CrapMechanics
         // ================================================================ common
         static bool Same(Entity a, Entity b) => a.Index == b.Index && a.Version == b.Version;
 
-        /// <summary>Forces a ship joint to break on the next tick. SCTick_Decoupler writes _currentStrain=1e9, but it runs
-        /// INSIDE the physics tick (after SpaceshipPhysicsFrameInit, which zeroes _currentStrain, and before SpaceshipCheckJoints).
-        /// We run in Update: lower _breakForce to -1 (the check is "_currentStrain >= _breakForce") and give it back afterwards.</summary>
-        static unsafe void Break(Joint j, SpaceshipJoint* sj, int k)
+        // ---------------------------------------------------------------- 0.31.26: releasing game joints the way the decoupler does
+        // Until 0.31.25 the mod wrote _breakForce = -1 and _currentStrain = 1e9 from Update. The game ignores both whenever "Indestructible
+        // Joints" is on: SpaceshipCheckJoints tests `indestructible ? 1e35 : _breakForce` [recon/SpaceshipCheckJoints.cs:104-106], and
+        // SpaceshipPhysicsFrameInit zeroes the strain of every connected joint at the start of each tick [recon/SpaceshipPhysicsFrameInit.cs:32].
+        // Only the 1e35 the decoupler writes INSIDE the tick breaks a joint in every world [recon/EPC_SCDecoupler.cs:51; EPC_SCClimaBomb.cs:121].
+        // So now Break only marks the index as pending; BreakInTick (prefix of SpaceshipComponentsTickPostGroup, after the FrameInit and before
+        // ApplyJointsStrain/CheckJoints, nothing in between lowers the strain [recon/Spaceship__part_a.cs:88,106; SpaceshipCheckJoints.cs:6])
+        // writes 1e35 on every pending index still in _connectedJoints, on every tick, until CheckJoints takes it out of the list. The game then
+        // splits the parts in that same tick, with its own sound. _breakForce is never touched, so there is nothing to give back.
+        static readonly HashSet<int> pendingBreak = new HashSet<int>();   // to break: 1e35 on every tick while the index is in _connectedJoints
+        static readonly HashSet<int> modBroken = new HashSet<int>();      // released by the mod (pending or already out of the list): StrainWatch / TopJoints
+        /// <summary>The index was released on purpose by the mod (pending, or it already left _connectedJoints because of the mod).</summary>
+        internal static bool ModReleased(int k) => pendingBreak.Contains(k) || modBroken.Contains(k);
+        static unsafe void Break(Joint j, SpaceshipJoint* sj, int k) => BreakInto(j.broken, sj, k);
+        static unsafe void BreakInto(List<(int idx, Entity a, Entity b, float breakForce)> list, SpaceshipJoint* sj, int k)
         {
-            if (sj->_breakForce > 0f) j.broken.Add((k, sj->_a, sj->_b, sj->_breakForce));
-            sj->_breakForce = -1f; sj->_currentStrain = 1e9f;
+            list.Add((k, sj->_a, sj->_b, sj->_breakForce));
+            pendingBreak.Add(k); modBroken.Add(k);
         }
 
+        /// <summary>Prefix of SpaceshipComponentsTickPostGroup, every tick: 1e35 on the pending joints that are still connected (what
+        /// SCTick_Decoupler does). Only on the authoritative side: ApplyJointsStrain is server-only [recon/Spaceship__part_a.cs:62].</summary>
+        internal static unsafe void BreakInTick(EntityManager em)
+        {
+            if (pendingBreak.Count == 0) return;
+            if (!Multi.Authoritative(em) && !Multi.BreakOnClient) return;
+            try
+            {
+                // SpaceshipPhysicsFrameInit only completes its dependencies, not its own job [SpaceshipPhysicsFrameInit.cs:16-24]: wait for it, or
+                // its zeroing could land after our write. The game itself calls this from managed code [UITimebackMenu.cs:34; rewind_01.cs:77].
+                em.CompleteAllTrackedJobs();
+                var joints = Ecs.Joints(em, out int n); if (joints == null) return;
+                InvalidateLive(); var live = LiveSet(em, n); if (live == null) return;
+                List<int> gone = null;
+                foreach (var k in pendingBreak)
+                {
+                    if (k < 0 || k >= n || !live[k]) { (gone ??= new List<int>()).Add(k); continue; }   // CheckJoints already took it out
+                    joints[k]._currentStrain = 1e35f;   // ">=" in CheckJoints: 1e35 also breaks with Indestructible Joints (1e35 >= 1e35)
+                }
+                if (gone != null) foreach (var k in gone) pendingBreak.Remove(k);
+            }
+            catch (Exception ex) { WarnLimited("releasing game joints in the tick: " + ex.Message); }
+        }
+
+        /// <summary>GameOverrides._destructibleJoints (+6). False in the Earth tutorial intro [recon_managed/GameOverrides.cs;
+        /// Core__g3_core_04.cs:242]: then SpaceshipCheckJoints runs nothing at all [recon/SpaceshipCheckJoints.cs:38], not even decouplers,
+        /// so the mod can't release anything either and the piston/bearing/turret stays whole (logged once).</summary>
+        static TypeIndex tiOverrides; static EntityQuery qOverrides; static bool overridesOk, overridesFailed, overridesWarned;
+        internal static unsafe bool JointsCanBreak(EntityManager em)
+        {
+            if (overridesFailed) return true;
+            try
+            {
+                if (!overridesOk) { tiOverrides = TypeManager.GetTypeIndex(Il2CppInterop.Runtime.Il2CppType.Of<GameOverrides>()); var a = new Il2CppStructArray<ComponentType>(1); a[0] = ComponentType.ReadOnly(tiOverrides); qOverrides = em.CreateEntityQuery(a); overridesOk = true; }
+                var l = Ecs.QueryList(qOverrides); if (l.Count == 0) return true;   // no singleton: GameOverrides.Default (destructible)
+                var p = Ecs.HasC(em, l[0], tiOverrides) ? (byte*)Ecs.RO(em, l[0], tiOverrides) : null;
+                bool can = p == null || p[6] != 0;
+                if (!can && !overridesWarned) { overridesWarned = true; ModLog.Warn("this world has breakable joints turned off (GameOverrides._destructibleJoints = false, e.g. the tutorial intro): the game breaks no joint at all, so pistons, bearings and turret seats stay WHOLE (nothing separates)"); }
+                return can;
+            }
+            catch (Exception ex) { overridesFailed = true; ModLog.Warn("could not read GameOverrides (" + ex.Message + ") — assuming joints can break"); return true; }
+        }
+
+        // ---- 0.31.26 (item 7): live joints = _connectedJoints. A joint broken by strain, a decoupler or a ClimaBomb stays in _joints with its
+        // positive _breakForce and only leaves _connectedJoints and the SCConnectedJoint buffers [recon/SpaceshipCheckJoints.cs:113-122]. The list is
+        // RemoveAtSwapBack'ed, so positions are never kept: a set is rebuilt once per frame (and once more after every physics tick or mod write).
+        static bool[] liveArr; static int liveN = -1, liveFrame = -1, liveTicks = -1, ticksSeen; static bool liveNull;
+        /// <summary>Called at the start of every physics tick (PhysicsPreGroup prefix): whatever CheckJoints did in the last tick invalidates the set.</summary>
+        internal static void TickSeen() => ticksSeen++;
+        internal static void InvalidateLive() => liveFrame = -1;
+        /// <summary>live[k] = joint k is in _connectedJoints; null if the list can't be read (then callers keep the old test).</summary>
+        internal static unsafe bool[] LiveSet(EntityManager em, int n)
+        {
+            int f = UnityEngine.Time.frameCount;
+            if (f == liveFrame && liveTicks == ticksSeen && liveN == n) return liveNull ? null : liveArr;
+            liveFrame = f; liveTicks = ticksSeen; liveN = n; liveNull = true;
+            try
+            {
+                var q = Ecs.QueryList(Ecs.QSing); if (q.Count == 0) return null;
+                var sing = Ecs.HasC(em, q[0], Ecs.tiSing) ? (SpaceshipSingleton*)Ecs.RO(em, q[0], Ecs.tiSing) : null; if (sing == null) return null;
+                var l = (Ecs.UnsafeListHeader*)sing->_connectedJoints;   // SpaceshipSingleton +8, UnsafeList<int>* (same read as Couplers.ActivateJoint)
+                if (l == null || l->Ptr == null || l->Length < 0 || l->Length > l->Capacity || l->Capacity > 10000000) return null;
+                if (liveArr == null || liveArr.Length < n) liveArr = new bool[System.Math.Max(n, 64)]; else System.Array.Clear(liveArr, 0, liveArr.Length);
+                var p = (int*)l->Ptr;
+                for (int i = 0; i < l->Length; i++) { int k = p[i]; if (k >= 0 && k < n) liveArr[k] = true; }
+                liveNull = false; return liveArr;
+            }
+            catch (Exception) { return null; }
+        }
+        /// <summary>Joint k still links its two blocks: in _connectedJoints and not about to be released by the mod. Without the list, the old test.</summary>
+        static unsafe bool IsLive(bool[] live, SpaceshipJoint* sj, int k) => !pendingBreak.Contains(k) && (live != null ? live[k] : sj->_breakForce >= 0f);
+        /// <summary>Joint k is "ours to use": alive, or released by the mod itself (pending / already out). Only joints the GAME broke (strain,
+        /// decoupler, ClimaBomb) are left out — so a piece the mod released can be re-linked through WaitingTop/TurretWaiting as before, but
+        /// debris the game tore off is no longer tied back to the block.</summary>
+        static unsafe bool IsMine(bool[] live, SpaceshipJoint* sj, int k) => live == null || live[k] || ModReleased(k);
+        internal static unsafe bool IsConnected(EntityManager em, int k)
+        {
+            var joints = Ecs.Joints(em, out int n); if (joints == null || k < 0 || k >= n) return false;
+            var live = LiveSet(em, n); return live != null && live[k];
+        }
+
+        /// <summary>Drops the record of the joints a separation released (success): they stay out of the lists; anything still connected (never
+        /// broke) is simply no longer pending.</summary>
+        static unsafe void ForgetBreaks(EntityManager em, List<(int idx, Entity a, Entity b, float breakForce)> list)
+        {
+            if (list.Count == 0) return;
+            bool[] live = null; try { var joints = Ecs.Joints(em, out int n); if (joints != null) live = LiveSet(em, n); } catch (Exception) { }
+            foreach (var q in list) { pendingBreak.Remove(q.idx); if (live != null && q.idx >= 0 && q.idx < live.Length && live[q.idx]) modBroken.Remove(q.idx); }
+            list.Clear();
+        }
+
+        /// <summary>0.31.26 (item 8): the separation failed. Giving _breakForce back (until 0.31.25) re-linked nothing: the joint had already left
+        /// _connectedJoints and both SCConnectedJoint buffers, and nothing in the game puts it back (only the launch and the rewind write that list)
+        /// [recon/SpaceshipCheckJoints.cs:113-122; TimeRewindSystem__05_rewind_02.cs:490]. Here each released joint whose two blocks are still in
+        /// the SAME part is put back for real — the reverse of CheckJoints, like Couplers.MergeParts/ActivateJoint: index back in _connectedJoints
+        /// and in both buffers, strain 0, and SCRecalculateStrainDistribution on both blocks so SpaceshipPostCheckConsistency_3 rebuilds their
+        /// SCStrainAffectedJoint with it (the ConsistencyCheck of the break rebuilt them without it) [recon/Spaceship__part_b.cs:290,324-359].
+        /// Blocks that did end up in different parts are left apart. Pending ones still in the list are just cancelled.</summary>
+        static TypeIndex tiConnJ, tiRecalcStrain; static bool tiRelinkOk;
+        static unsafe int RelinkBroken(EntityManager em, List<(int idx, Entity a, Entity b, float breakForce)> list, string who)
+        {
+            int back = 0;
+            try
+            {
+                if (list.Count == 0) return 0;
+                if (!tiRelinkOk) { tiConnJ = TypeManager.GetTypeIndex(Il2CppInterop.Runtime.Il2CppType.Of<SCConnectedJoint>()); tiRecalcStrain = TypeManager.GetTypeIndex(Il2CppInterop.Runtime.Il2CppType.Of<SCRecalculateStrainDistribution>()); tiRelinkOk = true; }
+                var joints = Ecs.Joints(em, out int n);
+                InvalidateLive(); var live = joints != null ? LiveSet(em, n) : null;
+                foreach (var q in list)
+                {
+                    pendingBreak.Remove(q.idx);
+                    if (joints == null || live == null || q.idx < 0 || q.idx >= n) continue;
+                    var sj = &joints[q.idx];
+                    if (sj->_a.Index != q.a.Index || sj->_b.Index != q.b.Index) continue;
+                    if (live[q.idx]) { modBroken.Remove(q.idx); continue; }   // never broke: nothing to undo
+                    if (!Ecs.Alive(em, q.a) || !Ecs.Alive(em, q.b)) continue;
+                    var pa = Ecs.Parent(em, q.a); var pb = Ecs.Parent(em, q.b);
+                    if (!Ecs.IsPart(em, pa) || pa.Index != pb.Index) continue;   // the blocks did split apart: re-linking them would tie two bodies
+                    var ca = Couplers.Header(em, q.a, tiConnJ); var cb = Couplers.Header(em, q.b, tiConnJ);
+                    if (ca == null || cb == null) { ModLog.Warn(who + ": game joint " + q.idx + " not linked again (SCConnectedJoint buffer has an unexpected format)"); continue; }
+                    string act = Couplers.ActivateJoint(em, q.idx);
+                    if (act != "active again" && act != "was already active") { ModLog.Warn(who + ": game joint " + q.idx + " not linked again (" + act + ")"); continue; }   // never leave it in the buffers but out of the list
+                    sj->_currentStrain = 0f;
+                    int k = q.idx;
+                    ca = Couplers.Header(em, q.a, tiConnJ); if (ca != null && !Couplers.HasInt(ca, k)) Couplers.Attach(ca, &k, 4);
+                    cb = Couplers.Header(em, q.b, tiConnJ); if (cb != null && !Couplers.HasInt(cb, k)) Couplers.Attach(cb, &k, 4);
+                    try { Ecs.Add(em, q.a, ComponentType.ReadWrite(tiRecalcStrain)); Ecs.Add(em, q.b, ComponentType.ReadWrite(tiRecalcStrain)); } catch (Exception) { }
+                    modBroken.Remove(q.idx); back++;
+                }
+            }
+            catch (Exception ex) { ModLog.Warn(who + ": linking the game joints again failed: " + ex.Message); }
+            list.Clear(); InvalidateLive();
+            return back;
+        }
+        /// <summary>0.31.26: every joint the mod released for this separation has left _connectedJoints (CheckJoints ran on it). The game splits
+        /// the parts in that SAME tick [recon/SpaceshipCheckJoints.cs:65,120-122; Spaceship__part_b.cs:252-283], so if the two sides are still one
+        /// part now, the separation failed for good — no need for the old 3 s wait.</summary>
+        static unsafe bool BreaksConsumed(EntityManager em, List<(int idx, Entity a, Entity b, float breakForce)> list)
+        {
+            if (list.Count == 0) return false;
+            var joints = Ecs.Joints(em, out int n); if (joints == null) return false;
+            var live = LiveSet(em, n); if (live == null) return false;
+            foreach (var q in list) if (q.idx >= 0 && q.idx < n && live[q.idx]) return false;
+            return true;
+        }
+
+        /// <summary>0.31.26 (item 9): the piece moves rigidly with the base. The game's split hands the new part the original's Linear AND
+        /// Angular [recon/Spaceship__part_a.cs:157,174]; Angular is in each body's inertia frame and Linear is the velocity of its centre of mass
+        /// [recon/SpaceshipInertiaToShockwaveSystem.cs:48-49; UP PhysicsComponents.cs:197-205]. Zeroing the spin (until 0.31.25) stopped the piece
+        /// and the solver handed the difference back as a jolt (strain).
+        /// Review juntas-03: writing only the piece (Linear = base.Linear + w x r) created linear momentum while the ship turned. Now BOTH bodies
+        /// get the common rigid motion that keeps the pair's P and L (same method as Couplers.MergedMotion, real masses via RealBook): pair centre
+        /// C, V = P/M, w = I_pair⁻¹·L (full tensor about C), Linear_i = V + w × (c_i − C), Angular_i = rot(inv(R_i), w). A side with zero inverse
+        /// inertia (turret plate with TurretInertia): only the linear part is shared by mass (P kept, piece.Angular as before). A side the physics
+        /// does not move (no mass): the old one-sided write.</summary>
+        static unsafe void CarryAlong(EntityManager em, Entity piece, Entity base_)
+        {
+            if (piece.Index == base_.Index) return;   // p2_solda N1: never on the base itself (it would zero the whole ship's spin)
+            if (!Ecs.HasC(em, base_, Ecs.tiVel) || !Ecs.HasC(em, piece, Ecs.tiVel) || !Ecs.HasC(em, base_, Ecs.tiMass) || !Ecs.HasC(em, piece, Ecs.tiMass) || !Ecs.HasC(em, base_, Ecs.tiLT) || !Ecs.HasC(em, piece, Ecs.tiLT)) return;
+            var va = (PhysicsVelocity*)em.GetComponentDataRawRW(base_, Ecs.tiVel); var vb = (PhysicsVelocity*)em.GetComponentDataRawRW(piece, Ecs.tiVel);
+            var ma = (PhysicsMass*)Ecs.RO(em, base_, Ecs.tiMass); var mb = (PhysicsMass*)Ecs.RO(em, piece, Ecs.tiMass);
+            var la = Ecs.LT(em, base_); var lb = Ecs.LT(em, piece);
+            float sa = la.Scale == 0f ? 1f : la.Scale, sb = lb.Scale == 0f ? 1f : lb.Scale;
+            var Ra = Ecs.QMul(la.Rotation, ma->Transform.rot); var Rb = Ecs.QMul(lb.Rotation, mb->Transform.rot);
+            var wA = Ecs.Rot(Ra, va->Angular);
+            var comA = Ecs.Add(la.Position, Ecs.Rot(la.Rotation, Ecs.Mul(ma->Transform.pos, sa)));   // centre the solver uses (Linear is its velocity)
+            var comB = Ecs.Add(lb.Position, Ecs.Rot(lb.Rotation, Ecs.Mul(mb->Transform.pos, sb)));
+            RealBook(base_, ma, out float invMa, out float3 invIa, out float3 cLa);
+            RealBook(piece, mb, out float invMb, out float3 invIb, out float3 cLb);
+            if (!(invMa > 0f) || !(invMb > 0f))
+            {   // one side is not moved by the physics: nothing to share — the piece follows the base as before
+                vb->Linear = Ecs.Add(va->Linear, Ecs.Cross(wA, Ecs.Sub(comB, comA)));
+                vb->Angular = Ecs.Rot(Ecs.Inv(Rb), wA);
+                return;
+            }
+            float mA = 1f / invMa, mB = 1f / invMb, M = mA + mB;
+            bool inertiaOk = invIa.x > 0f && invIa.y > 0f && invIa.z > 0f && invIb.x > 0f && invIb.y > 0f && invIb.z > 0f;
+            if (inertiaOk)
+            {
+                var IA = 1f / invIa; var IB = 1f / invIb;
+                var wB = math.rotate(Rb, vb->Angular);
+                // real centres (RealBook may move the centre of mass) and their velocities
+                var cA = la.Position + math.rotate(la.Rotation, cLa * sa); var cB = lb.Position + math.rotate(lb.Rotation, cLb * sb);
+                var vA = va->Linear + math.cross(wA, cA - comA); var vB = vb->Linear + math.cross(wB, cB - comB);
+                var C = (cA * mA + cB * mB) / M; var V = (vA * mA + vB * mB) / M;
+                var L = math.rotate(Ra, IA * va->Angular) + math.rotate(Rb, IB * vb->Angular) + math.cross(cA - C, vA) * mA + math.cross(cB - C, vB) * mB;
+                var I = Tensor(Ra, IA) + Tensor(Rb, IB) + Parallel(mA, cA - C) + Parallel(mB, cB - C);
+                var w = math.mul(math.inverse(I), L);
+                if (math.all(math.isfinite(w)) && math.all(math.isfinite(V)))
+                {
+                    va->Linear = V + math.cross(w, comA - C); va->Angular = math.rotate(math.inverse(Ra), w);
+                    vb->Linear = V + math.cross(w, comB - C); vb->Angular = math.rotate(math.inverse(Rb), w);
+                    return;
+                }
+            }
+            // linear only, shared by mass: keeps P and still gives vb − va = w × r
+            var dv = Ecs.Sub(Ecs.Add(va->Linear, Ecs.Cross(wA, Ecs.Sub(comB, comA))), vb->Linear);
+            vb->Linear = Ecs.Add(vb->Linear, Ecs.Mul(dv, mA / M));
+            va->Linear = Ecs.Sub(va->Linear, Ecs.Mul(dv, mB / M));
+            vb->Angular = Ecs.Rot(Ecs.Inv(Rb), wA);
+        }
+        /// <summary>R diag(I) Rᵀ (world inertia tensor of a body).</summary>
+        static float3x3 Tensor(quaternion q, float3 I)
+        {
+            var R = new float3x3(q);
+            return math.mul(math.mul(R, float3x3.Scale(I)), math.transpose(R));
+        }
+        /// <summary>Parallel axes: m (|d|² E − d dᵀ).</summary>
+        static float3x3 Parallel(float m, float3 d)
+        {
+            float dd = math.dot(d, d);
+            return new float3x3(
+                m * (dd - d.x * d.x), -m * d.x * d.y, -m * d.x * d.z,
+                -m * d.y * d.x, m * (dd - d.y * d.y), -m * d.y * d.z,
+                -m * d.z * d.x, -m * d.z * d.y, m * (dd - d.z * d.z));
+        }
+
+        // 0.31.26 (U6): Unity Physics accepts a pair with the same body on both ends in a player build (the Assert is stripped) and solves it
+        // against itself, keeping only side B's impulse — a spurious force every tick [UP PhysicsWorldBuilder.cs:879,894-906; Solver.cs:1101-1131].
         static bool Valid(EntityManager em, Joint j) =>
-            Ecs.Alive(em, j.joint) && Ecs.IsPart(em, j.partA) && Ecs.IsPart(em, j.partB) && Ecs.Parent(em, j.block).Index == j.partA.Index && Ecs.Parent(em, j.neighbor).Index == j.partB.Index;
+            Ecs.Alive(em, j.joint) && Ecs.IsPart(em, j.partA) && Ecs.IsPart(em, j.partB) && j.partA.Index != j.partB.Index && Ecs.Parent(em, j.block).Index == j.partA.Index && Ecs.Parent(em, j.neighbor).Index == j.partB.Index;
 
         static unsafe Constraint* ConstraintAt(PhysicsJoint* pj, int idx) => idx == 0 ? &pj->m_Constraints.A : idx == 1 ? &pj->m_Constraints.B : &pj->m_Constraints.C;
         static int FindMotor(PhysicsJoint pj, ConstraintType t)
@@ -1899,7 +2364,10 @@ namespace CrapMechanics
                     {
                         // common case (active joint, nothing changed): only the two Parents and the live joint — this runs on every tick
                         var pa = Ecs.Parent(em, j.block); var pb = Ecs.Parent(em, j.neighbor);
-                        if (Ecs.IsNull(pa) || Ecs.IsNull(pb) || pa.Index == pb.Index) continue;
+                        if (Ecs.IsNull(pa) || Ecs.IsNull(pb)) continue;
+                        // 0.31.26 (item 8): the game splits in the same tick it breaks [recon/SpaceshipCheckJoints.cs:65; Spaceship__part_b.cs:252-283],
+                        // so "every released joint left _connectedJoints and both sides are still one part" here is a failure for good: re-link now, before the solver
+                        if (pa.Index == pb.Index) { if (j.state == 1 && Ecs.IsPart(em, pa) && BreaksConsumed(em, j.broken)) SplitFailed(em, j, false); continue; }
                         if (j.state == 2 && Same(pa, j.partA) && Same(pb, j.partB) && Ecs.Alive(em, j.joint)) continue;
                         if (!Ecs.IsPart(em, pa) || !Ecs.IsPart(em, pb)) continue;
                         if (j.state == 1) Separating(em, j);
@@ -1920,7 +2388,7 @@ namespace CrapMechanics
             var pa = Ecs.Parent(em, j.block); var pb = Ecs.Parent(em, j.neighbor);
             if (Ecs.IsPart(em, pa) && Ecs.IsPart(em, pb) && pa.Index != pb.Index)
             {
-                RestoreBreakForce(em, j);   // already separated: gives back the original _breakForce
+                ForgetBreaks(em, j.broken);   // 0.31.26: already separated; _breakForce was never changed, nothing to give back
                 j.partA = pa; j.partB = pb; j.splitFailures = 0;
                 deferred = false;
                 bool undone = j.unmerging; float tSep = j.tState;   // 0.26.3: leaving the merge: born at the current length and moves right away (no start queue)
@@ -1929,14 +2397,19 @@ namespace CrapMechanics
                 else { j.state = 0; j.tState = -5f; j.unmerging = false; }
                 return;
             }
-            if (j.tState > 3f)
-            {
-                RestoreBreakForce(em, j);
-                j.splitFailures++;
-                bool giveUp = j.splitFailures >= 3;   // 0.11.1: 3 attempts and then stops for 2 min (each break made the game rebuild the parts of the whole ship)
-                ModLog.Warn(j.name + " " + j.block.Index + ": the ship did not separate within 3 s (partA=" + pa.Index + " partB=" + pb.Index + ") — the top block must also be attached to the ship through another path; " + (giveUp ? "3 attempts, pausing for 2 min" : "retrying"));
-                j.state = 0; j.tState = giveUp ? -120f : -2f; j.unmerging = false; if (giveUp) j.splitFailures = 0;
-            }
+            // 0.31.26 (item 8): the released joints are all out of _connectedJoints and the sides are still one part — failed for good
+            if (Ecs.IsPart(em, pa) && pa.Index == pb.Index && BreaksConsumed(em, j.broken)) { SplitFailed(em, j, false); return; }
+            if (j.tState > 3f) SplitFailed(em, j, true);   // fallback (e.g. a strain that came out NaN and never broke [recon/Spaceship__part_a.cs:105])
+        }
+        /// <summary>0.31.26: separation failed — the released game joints are linked again for real (RelinkBroken), then the old retry/pause.</summary>
+        static void SplitFailed(EntityManager em, Joint j, bool timeout)
+        {
+            var pa = Ecs.Parent(em, j.block); var pb = Ecs.Parent(em, j.neighbor);
+            int back = RelinkBroken(em, j.broken, j.name + " " + j.block.Index);
+            j.splitFailures++;
+            bool giveUp = j.splitFailures >= 3;   // 0.11.1: 3 attempts and then stops for 2 min (each break made the game rebuild the parts of the whole ship)
+            ModLog.Warn(j.name + " " + j.block.Index + ": the ship did not separate " + (timeout ? "within 3 s" : "(the game broke the joints but the top block is still in the same part)") + " (partA=" + pa.Index + " partB=" + pb.Index + ") — the top block must also be attached to the ship through another path; " + back + " game joint(s) linked again; " + (giveUp ? "3 attempts, pausing for 2 min" : "retrying"));
+            j.state = 0; j.tState = giveUp ? -120f : -2f; j.unmerging = false; if (giveUp) j.splitFailures = 0;
         }
 
         /// <summary>The block (bearing/piston) stays attached to the base by game joints (breakForce ~3300). Multiplies the breakForce
@@ -1950,12 +2423,13 @@ namespace CrapMechanics
             try
             {
                 var joints = Ecs.Joints(em, out int n); if (joints == null) return;
+                var live = LiveSet(em, n);   // 0.31.26 (item 7): a joint the game already broke is neither watched nor reinforced
                 int c = 0, already = 0; float before = 0f, after = 0f;
                 for (int k = 0; k < n; k++)
                 {
                     var sj = &joints[k];
                     if (!Same(sj->_a, j.block) && !Same(sj->_b, j.block)) continue;
-                    if (sj->_breakForce <= 0f) continue;
+                    if (sj->_breakForce <= 0f || !IsLive(live, sj, k)) continue;
                     j.watched.Add((k, sj->_a, sj->_b));
                     if (BaseReinforce <= 1f) continue;
                     var key = (Ecs.K(sj->_a), Ecs.K(sj->_b));
@@ -1988,27 +2462,6 @@ namespace CrapMechanics
             catch (Exception) { }
         }
 
-        static unsafe void RestoreBreakForce(EntityManager em, Joint j)
-        {
-            if (j.broken.Count == 0) return;
-            try
-            {
-                var joints = Ecs.Joints(em, out int n);
-                int ok = 0;
-                if (joints != null)
-                    foreach (var q in j.broken)
-                    {
-                        if (q.idx < 0 || q.idx >= n) continue;
-                        var sj = &joints[q.idx];
-                        if (sj->_a.Index != q.a.Index || sj->_b.Index != q.b.Index || sj->_breakForce != -1f) continue;
-                        sj->_breakForce = q.breakForce; sj->_currentStrain = 0f; ok++;
-                    }
-                if (DetailedLog) ModLog.Info(j.name + " " + j.block.Index + ": _breakForce restored on " + ok + "/" + j.broken.Count + " joint(s)");
-            }
-            catch (Exception ex) { if (j.warnings++ < 5) ModLog.Warn(j.name + " " + j.block.Index + ": restoring _breakForce failed: " + ex.Message); }
-            j.broken.Clear();
-        }
-
         static float3 ToLocal(float3 v, float3 ex, float3 ey, float3 ez) => new float3 { x = Ecs.Dot(v, ex), y = Ecs.Dot(v, ey), z = Ecs.Dot(v, ez) };
         static float3 ToWorld(float3 l, float3 ex, float3 ey, float3 ez) => Ecs.Add(Ecs.Add(Ecs.Mul(ex, l.x), Ecs.Mul(ey, l.y)), Ecs.Mul(ez, l.z));
 
@@ -2032,9 +2485,9 @@ namespace CrapMechanics
                 try
                 {
                     if (!tiGTok) { tiGTok = true; tiGT = TypeManager.GetTypeIndex(Il2CppInterop.Runtime.Il2CppType.Of<GarageTransform>()); }
-                    if (em.HasComponent(j.block, ComponentType.ReadOnly(tiGT)) && em.HasComponent(j.neighbor, ComponentType.ReadOnly(tiGT)))
+                    if (Ecs.Has(em, j.block, tiGT) && Ecs.Has(em, j.neighbor, tiGT))
                     {
-                        var gb = *(Ecs.HasC(em, j.block, tiGT) ? (RigidTransform*)em.GetComponentDataRawRO(j.block, tiGT) : null); var gv = *(Ecs.HasC(em, j.neighbor, tiGT) ? (RigidTransform*)em.GetComponentDataRawRO(j.neighbor, tiGT) : null);
+                        var gb = *(Ecs.HasC(em, j.block, tiGT) ? (RigidTransform*)Ecs.RO(em, j.block, tiGT) : null); var gv = *(Ecs.HasC(em, j.neighbor, tiGT) ? (RigidTransform*)Ecs.RO(em, j.neighbor, tiGT) : null);
                         var qi = Ecs.Inv(gv.rot);
                         var eyG = Ecs.Rot(gb.rot, Ecs.UY);
                         j.bLocP = Ecs.Rot(qi, Ecs.Sub(Ecs.Add(gb.pos, Ecs.Mul(eyG, j.middle)), gv.pos));
@@ -2055,6 +2508,37 @@ namespace CrapMechanics
         /// <summary>The game rebuilt the parts (decoupler released, something broke, scraped...), but the block and the neighbour are still in different
         /// parts: recreates the joint NOW, at the current pose, keeping mode/target. Before (up to 0.7.3) it undid it and went the slow
         /// way (several frames with the wheel/piston top loose -> it fell, hit, broke more things -> cascade of explosions).</summary>
+        /// <summary>0.31.26 (review U5): a part that comes back into the physics world (KeepFar gives PhysicsWorldIndex back) makes its joints
+        /// valid again in that same tick, with every bit of pose error built up while it was out and no impulse cap — Unity Physics only
+        /// skipped the pair while a body was missing [UP/ECS/Base/Systems/PhysicsWorldBuilder.cs:894-906]. The active joints on those parts are
+        /// recreated at the CURRENT pose with the same path the game's split uses (Rebuild: piston measures the stroke, servo the angle).
+        /// Runs in the PhysicsPreGroup prefix, before SplitsInTick and before the world is built. Authoritative side only (KeepFar is solo only).</summary>
+        /// <summary>0.31.26 (U5): the joint is intact but one of its parts is switched off by the mod's 100 km rule (KeepFar). Without
+        /// PhysicsWorldIndex Ecs.IsPart is false and Valid would undo the joint for good (the vehicle came back in pieces); here it just waits.</summary>
+        static bool FarPaused(EntityManager em, Joint j)
+        {
+            if (!Far.SwitchedOffHere(em, j.partA) && !Far.SwitchedOffHere(em, j.partB)) return false;
+            return Ecs.Alive(em, j.joint) && Ecs.Alive(em, j.partA) && Ecs.Alive(em, j.partB) && j.partA.Index != j.partB.Index
+                && Ecs.Parent(em, j.block).Index == j.partA.Index && Ecs.Parent(em, j.neighbor).Index == j.partB.Index;
+        }
+        internal static void RecreateOnParts(EntityManager em, HashSet<long> parts, string why)
+        {
+            if (!Ecs.Ok || MenuBP || !Multi.Authoritative(em)) return;
+            int n = 0;
+            insideTick = true;
+            try
+            {
+                foreach (var j in allJoints.Values)
+                {
+                    if (j.state != 2 || Ecs.IsNull(j.partA) || Ecs.IsNull(j.partB)) continue;
+                    if (!parts.Contains(Ecs.K(j.partA)) && !parts.Contains(Ecs.K(j.partB))) continue;
+                    try { if (Rebuild(em, j)) n++; }   // if it fails, Valid is false and the frame cycle redoes or undoes it (as after a split)
+                    catch (Exception ex) { if (j.warnings++ < 5) ModLog.Warn(j.name + " " + j.block.Index + ": recreating after coming back: " + ex.Message); }
+                }
+            }
+            finally { insideTick = false; }
+            if (n > 0) ModLog.Info("joints: " + n + " joint(s) recreated at the current pose — " + why);
+        }
         static bool Rebuild(EntityManager em, Joint j)
         {
             try
@@ -2063,9 +2547,9 @@ namespace CrapMechanics
                 var pa = Ecs.Parent(em, j.block); var pb = Ecs.Parent(em, j.neighbor);
                 if (!Ecs.IsPart(em, pa) || !Ecs.IsPart(em, pb) || pa.Index == pb.Index) return false;
                 string before = j.partA.Index + "/" + j.partB.Index;
-                try { if (Ecs.Alive(em, j.joint)) em.DestroyEntity(j.joint); } catch (Exception) { }
-                try { if (Ecs.Alive(em, j.joint2)) em.DestroyEntity(j.joint2); } catch (Exception) { }
-                try { if (Ecs.Alive(em, j.joint3)) em.DestroyEntity(j.joint3); } catch (Exception) { }
+                try { if (Ecs.Alive(em, j.joint)) Ecs.Destroy(em, j.joint); } catch (Exception) { }
+                try { if (Ecs.Alive(em, j.joint2)) Ecs.Destroy(em, j.joint2); } catch (Exception) { }
+                try { if (Ecs.Alive(em, j.joint3)) Ecs.Destroy(em, j.joint3); } catch (Exception) { }
                 j.joint = Entity.Null; j.joint2 = Entity.Null; j.joint3 = Entity.Null; DeleteRails(em, j);
                 DropLoad(em, j, "parts rebuilt");   // Payload() recreates it on the next frame if the recoupler is still locked
                 j.partA = pa; j.partB = pb;
@@ -2083,8 +2567,8 @@ namespace CrapMechanics
         {
             try
             {
-                var va = (Ecs.HasC(em, j.partA, Ecs.tiVel) ? (PhysicsVelocity*)em.GetComponentDataRawRO(j.partA, Ecs.tiVel) : null);
-                var vb = (Ecs.HasC(em, j.partB, Ecs.tiVel) ? (PhysicsVelocity*)em.GetComponentDataRawRO(j.partB, Ecs.tiVel) : null);
+                var va = (Ecs.HasC(em, j.partA, Ecs.tiVel) ? (PhysicsVelocity*)Ecs.RO(em, j.partA, Ecs.tiVel) : null);
+                var vb = (Ecs.HasC(em, j.partB, Ecs.tiVel) ? (PhysicsVelocity*)Ecs.RO(em, j.partB, Ecs.tiVel) : null);
                 if (va == null || vb == null) return "";
                 return "; the piece moves at " + Ecs.Len(Ecs.Sub(vb->Linear, va->Linear)).ToString("F1") + " m/s and spins at " + (Ecs.Len(Ecs.Sub(vb->Angular, va->Angular)) * 57.2958f).ToString("F0") + " degrees/s relative to the base";
             }
@@ -2096,6 +2580,9 @@ namespace CrapMechanics
         {
             try
             {
+                // 0.31.26 (U6): never a PhysicsConstrainedBodyPair with the same part on both ends (solved against itself, spurious force each tick
+                // [UP PhysicsWorldBuilder.cs:879,894-906; Solver.cs:1101-1131])
+                if (Ecs.IsNull(j.partA) || j.partA.Index == j.partB.Index) { if (j.warnings++ < 5) ModLog.Warn(j.name + " " + j.block.Index + ": both ends in the same part " + j.partA.Index + " — no joint created"); return false; }
                 Fits(em, j, out var pA, out var eA, out var qA, out var pB, out var eB, out var qB);
                 // 0.7.10: both sides have to be together (bearing: same point; piston: on the same axis). If they aren't, it's because
                 // the game has just rebuilt the parts and the positions don't match yet (the wheel ran off the axle after recoupling or
@@ -2221,7 +2708,7 @@ namespace CrapMechanics
                 pair.EnableCollision = (byte)(j.kind == Kind.Piston && PistonCollides ? 1 : 0);
                 var kinds = new Il2CppStructArray<ComponentType>(3);
                 kinds[0] = ComponentType.ReadWrite(Ecs.tiPar); kinds[1] = ComponentType.ReadWrite(Ecs.tiJoint); kinds[2] = ComponentType.ReadWrite(Ecs.tiPWI);
-                var e = em.CreateEntity(kinds);
+                var e = Ecs.Create(em, kinds);
                 *(Ecs.HasC(em, e, Ecs.tiPar) ? (PhysicsConstrainedBodyPair*)em.GetComponentDataRawRW(e, Ecs.tiPar) : null) = pair;
                 *(Ecs.HasC(em, e, Ecs.tiJoint) ? (PhysicsJoint*)em.GetComponentDataRawRW(e, Ecs.tiJoint) : null) = joint;
                 j.joint = e;
@@ -2243,7 +2730,7 @@ namespace CrapMechanics
                         var ga = Ecs.Frame(em, j.partA, pg, eA, qA); var gbf = Ecs.Frame(em, j.partB, snapEnd ? Ecs.Add(pB, off) : pg, eB, qB);   // 0.20.1: rails at the garage pose too
                         var range = new Unity.Physics.Math.FloatRange { Min = -1000f, Max = 1000f };
                         var pr = PhysicsJoint.CreatePrismatic(ga, gbf, range);
-                        var eg = em.CreateEntity(kinds);
+                        var eg = Ecs.Create(em, kinds);
                         *(Ecs.HasC(em, eg, Ecs.tiPar) ? (PhysicsConstrainedBodyPair*)em.GetComponentDataRawRW(eg, Ecs.tiPar) : null) = pair;
                         *(Ecs.HasC(em, eg, Ecs.tiJoint) ? (PhysicsJoint*)em.GetComponentDataRawRW(eg, Ecs.tiJoint) : null) = pr;
                         j.rails.Add(eg);
@@ -2260,7 +2747,7 @@ namespace CrapMechanics
                         var a2 = Ecs.Frame(em, j.partA, p2A, eA, qA).Position; var b2 = Ecs.Frame(em, j.partB, p2B, eB, qB).Position;
                         j.apA1[ia] = a2; j.apA0[ia] = Ecs.Frame(em, j.partA, p2B, eA, qA).Position; j.apB[ia] = b2; ia++;
                         var bs = PhysicsJoint.CreateBallAndSocket(pull ? j.apA0[ia - 1] : a2, b2);
-                        var e2 = em.CreateEntity(kinds);
+                        var e2 = Ecs.Create(em, kinds);
                         *(Ecs.HasC(em, e2, Ecs.tiPar) ? (PhysicsConstrainedBodyPair*)em.GetComponentDataRawRW(e2, Ecs.tiPar) : null) = pair;
                         *(Ecs.HasC(em, e2, Ecs.tiJoint) ? (PhysicsJoint*)em.GetComponentDataRawRW(e2, Ecs.tiJoint) : null) = bs;
                         extras.Add(e2);
@@ -2272,12 +2759,9 @@ namespace CrapMechanics
                 {
                     if (!pull) j.tStart = StartTime;
                     tQueue = 0f; tNextQueue = 0f;   // the queue waits StartTime after the last one born
-                    // the piece just released is born with the base's velocity (no spin): the separation jolt doesn't become rotation
-                    try
-                    {
-                        var va = (Ecs.HasC(em, j.partA, Ecs.tiVel) ? (PhysicsVelocity*)em.GetComponentDataRawRO(j.partA, Ecs.tiVel) : null); var vb = (Ecs.HasC(em, j.partB, Ecs.tiVel) ? (PhysicsVelocity*)em.GetComponentDataRawRW(j.partB, Ecs.tiVel) : null);
-                        if (va != null && vb != null) { vb->Linear = va->Linear; vb->Angular = float3.zero; }
-                    }
+                    // the piece just released is born moving with the base: 0.31.26 (item 9) as one rigid body (CarryAlong: Linear + w x r and the
+                    // base's spin in the piece's inertia frame) instead of the base's Linear with no spin, which the solver turned into a jolt
+                    try { CarryAlong(em, j.partB, j.partA); }
                     catch (Exception) { }
                 }
                 if (!proceed) ModLog.Info(j.name + " " + j.block.Index + ": joint created (" + e.Index + ")" + (insideTick ? " inside the physics tick" : "") + " between part " + j.partA.Index + " (" + Ecs.Mass(em, j.partA).ToString("F0") + " kg) and part " + j.partB.Index + " (" + Ecs.Mass(em, j.partB).ToString("F0") + " kg)" + (j.kind == Kind.Bearing ? ", locked until the start queue releases it" : ", motor at index " + j.idxMotor + ", current stroke " + j.currentTarget.ToString("F2") + " m"));
@@ -2288,12 +2772,13 @@ namespace CrapMechanics
 
         static void Undo(EntityManager em, Joint j, string reason)
         {
-            try { if (Ecs.Alive(em, j.joint)) em.DestroyEntity(j.joint); } catch (Exception) { }
-            try { if (Ecs.Alive(em, j.joint2)) em.DestroyEntity(j.joint2); } catch (Exception) { }
-            try { if (Ecs.Alive(em, j.joint3)) em.DestroyEntity(j.joint3); } catch (Exception) { }
+            try { if (Ecs.Alive(em, j.joint)) Ecs.Destroy(em, j.joint); } catch (Exception) { }
+            try { if (Ecs.Alive(em, j.joint2)) Ecs.Destroy(em, j.joint2); } catch (Exception) { }
+            try { if (Ecs.Alive(em, j.joint3)) Ecs.Destroy(em, j.joint3); } catch (Exception) { }
             j.joint2 = Entity.Null; j.joint3 = Entity.Null;
             if (j.state == 2) ModLog.Info(j.name + " " + j.block.Index + ": joint removed (" + reason + ")" + (j.strainMaxIdx >= 0 ? " — highest strain seen around it: " + j.strainMax.ToString("F0") + " of " + j.strainMaxBf.ToString("F0") + " (" + (100f * j.strainMax / j.strainMaxBf).ToString("F0") + "%, joint " + j.strainMaxIdx + " between " + j.strainA.Index + " e " + j.strainB.Index + ")" : ""));
             j.watched.Clear(); j.strainMax = 0f; j.strainMaxBf = 0f; j.strainMaxIdx = -1;
+            try { ForgetBreaks(em, j.broken); } catch (Exception) { j.broken.Clear(); }   // 0.31.26: nothing of this joint stays pending
             DropLoad(em, j, reason); DeleteRails(em, j);
             j.joint = Entity.Null; j.idxMotor = -1; j.partA = Entity.Null; j.partB = Entity.Null; j.signalLogged = -999f; j.signalReason = null; j.mode = -1; j.powerState = 254;
             if (j.withEnd) { j.withEnd = false; j.extBase = 0f; j.stroke = j.strokeMax; j.endBlock = Entity.Null; }   // 0.20.0: WaitingTop finds the end again
@@ -2340,6 +2825,7 @@ namespace CrapMechanics
         public static void ForgetAll()
         {
             allJoints.Clear(); motors.Clear(); motorByOutput.Clear(); ignored.Clear(); noCol.Clear(); relinked.Clear(); tRelinked = -1f; ticksLogged = 0;
+            pendingBreak.Clear(); modBroken.Clear(); liveFrame = -1; liveArr = null; overridesOk = false; overridesWarned = false;   // 0.31.26 (recall / unload)
             try { Couplers.Forget(); } catch (Exception) { }
             try { Radio.Forget(); } catch (Exception) { }
             try { Levers.Forget(); } catch (Exception) { }
@@ -2347,10 +2833,16 @@ namespace CrapMechanics
             try { Signal.Forget(); } catch (Exception) { }   // 0.24.0
             try { Garage.Forget(); } catch (Exception) { }   // 0.20.0
             try { SlipRings.Forget(); } catch (Exception) { }   // 0.22.0
+            try { DragWatch.Forget(); } catch (Exception) { }   // 0.31.17
+            try { MomentumWatch.Forget(); } catch (Exception) { }   // 0.31.18
+            try { RubberSeal.Forget(); } catch (Exception) { }   // 0.31.28
+            try { ForgetWeldFirst(); } catch (Exception) { }   // 0.31.23
             try { Multi.Forget(); ModNet.Forget(); } catch (Exception) { }   // 0.28.0
             try { ForgetTurrets(); } catch (Exception) { }
             try { Thrusters.Forget(); } catch (Exception) { }   // 0.30.0
             try { BlackBox.Forget(); } catch (Exception) { }   // 0.31.1
+            try { Hotbar.Forget(); RemoteComputer.Forget(); Phone.Forget(); } catch (Exception) { }   // remote control (delivery 1; delivery 2: the hotbar first, every carried phone is back on its dock)
+            try { RingVisual.WorldGone(); RingCables.WorldGone(); } catch (Exception) { }   // 0.31.36: built-in rings (the world is gone: nothing to put back)
             ModLog.Info("after world unload: mod state cleared (joints, motors, beacons, radios, levers, turrets)");
         }
         public static void Clean(EntityManager em)
@@ -2358,10 +2850,10 @@ namespace CrapMechanics
             try { SlipRings.Shutdown(em); } catch (Exception) { }   // 0.21.4 / 0.22.0: the circuits' ghosts
             foreach (var j in allJoints.Values) Undo(em, j, "cleaning up");
             CleanTurrets(em);
-            foreach (var c in noCol) { try { if (Ecs.Alive(em, c.e)) em.DestroyEntity(c.e); } catch (Exception) { } }
+            foreach (var c in noCol) { try { if (Ecs.Alive(em, c.e)) Ecs.Destroy(em, c.e); } catch (Exception) { } }
             noCol.Clear(); relinked.Clear(); tRelinked = -1f;
             Couplers.Clean(em);
-            allJoints.Clear(); motors.Clear(); motorByOutput.Clear(); ignored.Clear();
+            allJoints.Clear(); motors.Clear(); motorByOutput.Clear(); ignored.Clear(); pendingBreak.Clear(); modBroken.Clear();
         }
     }
 }

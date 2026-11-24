@@ -5,6 +5,7 @@ using Il2CppInterop.Runtime;
 using Il2CppInterop.Runtime.InteropTypes.Arrays;
 using Steamworks;
 using Unity.Entities;
+using Unity.Mathematics;
 
 namespace CrapMechanics
 {
@@ -16,12 +17,18 @@ namespace CrapMechanics
     /// makes Steam accept the other side's messages, so no session callback is needed.
     /// What goes through it: the turret seat AIM of a player seated on a CLIENT (only the server moves the turret; it never saw that
     /// player's mouse). [Multiplayer] test_loopback sends the aim through the same encode/decode path in a solo game, so the
-    /// server side can be tested alone; net_log logs every message.</summary>
+    /// server side can be tested alone; net_log logs every message.
+    /// 0.31.26 (p2_torre N1): also the LAYOUT of the mod's joints, server -> clients. A client gets the SpaceshipSingleton with
+    /// _joints = null and _connectedJoints = null [recon_managed/NetcoreDoIncomingEventsSystem.cs:745], so it can never find, from the
+    /// game's joint list, which blocks hang from a turret seat's plates or sit on a piston/bearing's top. The server sends, whenever it
+    /// changes (and to a player the first time they say hello, and every 10 s), the SCGuid of each turret / piston / bearing block and the
+    /// SCGuid of one block per piece on the other side; the client finds those blocks by SCGuid (the id the aim already relies on).
+    /// New message type, so the protocol went from 1 to 2.</summary>
     internal static class ModNet
     {
         public const int Channel = 7741;
-        const byte M0 = 0x43, M1 = 0x4D, Protocol = 1;   // "CM" + protocol version
-        const byte THello = 1, TAim = 2;
+        const byte M0 = 0x43, M1 = 0x4D, Protocol = 2;   // "CM" + protocol version (0.31.26: 2 = + TTopo)
+        const byte THello = 1, TAim = 2, TTopo = 3;
         const int SendReliable = 8 | 32, SendFast = 1 | 32;   // k_nSteamNetworkingSend_Reliable / _NoNagle, + _AutoRestartBrokenSession
         public static bool Log, Loopback;   // [Multiplayer] net_log / test_loopback
 
@@ -37,6 +44,16 @@ namespace CrapMechanics
         static readonly HashSet<string> aimLogged = new HashSet<string>();
         static uint seqOut; static float tAimOut; static string aimGuidOut; static bool seatedOut;
 
+        // 0.31.26 (p2_torre N1): the joint layout the server sends. mode of a turret seat: 0 nothing turns (waiting / separating / welded),
+        // 1 pieces on the plates (one per part), 2 WHOLE until aimed, 3 the whole ship turns, 4 active with nothing on the plates
+        internal sealed class TopoPiece { public string guid, faces; public quaternion rn0; }
+        internal sealed class TopoTurret { public string guid, sig; public byte mode; public int ver; public List<TopoPiece> pieces = new List<TopoPiece>(); }
+        internal sealed class TopoJoint { public string guid, nbr, sig; public bool withEnd; public float extBase; public int ver; }
+        static Dictionary<string, TopoTurret> topoTurrets = new Dictionary<string, TopoTurret>();   // turret block SCGuid -> layout (client)
+        static Dictionary<string, TopoJoint> topoJoints = new Dictionary<string, TopoJoint>();      // piston/bearing block SCGuid -> top block (client)
+        static int topoCounter; static bool topoHeard, topoFromLoop;
+        static float tTopo = 9f, tTopoFull; static byte[] topoLast; static bool topoForce;
+
         // ---------------------------------------------------------------- cycle (once per frame, main thread)
         public static void Step(EntityManager em, float dt)
         {
@@ -46,6 +63,14 @@ namespace CrapMechanics
             {
                 if (peers.Count > 0) { ModLog.Info("multiplayer: mod channel closed (left the network)"); peers.Clear(); }
                 if (!Loopback) aims.Clear();
+                // [Multiplayer] test_loopback: the joint layout goes through the same encode/decode path (only decoded and logged: a solo game
+                // draws from its own joints)
+                if (Loopback && !Multi.Networked(em) && !Multi.IAmClient(em)) { try { TopologyStep(em, dt); } catch (Exception ex) { if (readErrors++ < 3) ModLog.Warn("multiplayer: joint layout (test_loopback): " + ex.Message); } }
+                else
+                {
+                    if (topoTurrets.Count + topoJoints.Count > 0) { topoTurrets = new Dictionary<string, TopoTurret>(); topoJoints = new Dictionary<string, TopoJoint>(); }
+                    topoLast = null; topoHeard = false;
+                }
                 return;
             }
             try
@@ -57,7 +82,9 @@ namespace CrapMechanics
                     p.tHello += dt;
                     if (p.tHello >= (p.heard ? 30f : 2f)) { p.tHello = 0f; SendHello(p.id); }
                 }
+                if (topoFromLoop) { topoFromLoop = false; topoHeard = false; topoTurrets = new Dictionary<string, TopoTurret>(); topoJoints = new Dictionary<string, TopoJoint>(); }   // (left over from test_loopback)
                 Receive(em);
+                if (!Multi.IAmClient(em)) TopologyStep(em, dt);   // 0.31.26 (p2_torre N1): the server tells the clients where the mod's joints are
             }
             catch (Exception ex) { if (readErrors++ < 3) ModLog.Warn("multiplayer: mod channel: " + ex.Message); if (readErrors > 50) { dead = true; ModLog.Warn("multiplayer: mod channel switched off after repeated errors — the turret seat of a client won't aim"); } }
         }
@@ -77,9 +104,10 @@ namespace CrapMechanics
             foreach (var p in peers.Values) p.listed = false;
             foreach (var e in Ecs.QueryList(qClients))
             {
-                var c = (byte*)em.GetComponentDataRawRO(e, tiClient); if (c == null) continue;
+                var c = (byte*)Ecs.RO(em, e, tiClient); if (c == null) continue;
                 ulong id = *(ulong*)c;   // NetcoreClient._steamID (+0)
                 if (id == 0 || id == me) continue;
+                if (c[220] == 0) continue;   // 0.31.26 (item 23): _isOnline (+220) false = dropped, entity kept for a reconnect [recon_managed/Netcore.cs:322-331] — no HELLO to them
                 if (!peers.TryGetValue(id, out var p))
                 {
                     peers[id] = p = new Peer { id = id, name = Fixed128(c + 8) };   // _username (+8, FixedString128Bytes)
@@ -156,6 +184,77 @@ namespace CrapMechanics
             yaw = a.yaw; pitch = a.pitch; return true;
         }
 
+        // ---------------------------------------------------------------- 0.31.26 (p2_torre N1): joint layout, server -> clients
+        /// <summary>Server side, every 0.25 s: builds the layout and sends it (reliable) when it changed, when a player was just heard and
+        /// every 10 s anyway. The bytes carry no counter, so an unchanged layout is recognised by comparing them.</summary>
+        static void TopologyStep(EntityManager em, float dt)
+        {
+            tTopoFull += dt; tTopo += dt; if (tTopo < 0.25f) return; tTopo = 0f;
+            bool loop = Loopback && !Multi.Networked(em);
+            if (!loop && peers.Count == 0) { topoLast = null; return; }
+            var ts = new List<TopoTurret>(); var js = new List<TopoJoint>();
+            JointSystem.TopologyOut(em, ts, js);
+            int cap = 8 + js.Count * 40;
+            foreach (var t in ts) { cap += 20; foreach (var p in t.pieces) cap += 16 + 2 + Encoding.UTF8.GetByteCount(p.faces ?? "") + 16; }
+            var w = new Writer(Header(TTopo, cap), 4);
+            w.U16(ts.Count);
+            foreach (var t in ts)
+            {
+                w.Guid(t.guid); w.Byte(t.mode); w.Byte((byte)t.pieces.Count);
+                foreach (var p in t.pieces) { w.Guid(p.guid); w.Str(p.faces); w.F(p.rn0.value.x); w.F(p.rn0.value.y); w.F(p.rn0.value.z); w.F(p.rn0.value.w); }
+            }
+            w.U16(js.Count);
+            foreach (var j in js) { w.Guid(j.guid); w.Guid(j.nbr); w.Byte((byte)(j.withEnd ? 1 : 0)); w.F(j.extBase); }
+            bool same = topoLast != null && topoLast.Length == w.n;
+            if (same) for (int i = 0; i < w.n; i++) if (topoLast[i] != w.b[i]) { same = false; break; }
+            if (same && !topoForce && tTopoFull < 10f) return;
+            topoLast = new byte[w.n]; Array.Copy(w.b, topoLast, w.n); topoForce = false; tTopoFull = 0f;
+            if (loop) { Handle(em, meOk ? me : 1UL, w.b, w.n); }
+            else foreach (var p in peers.Values) Send(p.id, w.b, w.n, SendReliable);
+            if (!same || Log) ModLog.Info("multiplayer: joint layout " + (same ? "sent again" : "changed") + " — " + ts.Count + " turret seat(s), " + js.Count + " piston/bearing(s) " + (loop ? "(test_loopback: through the network path)" : "-> " + peers.Count + " player(s)"));
+        }
+
+        /// <summary>Client side: the server's layout for this turret block (null when it sent none — an older Crap Mechanics there).</summary>
+        public static TopoTurret TopoTurretOf(string guid) => guid != null && topoTurrets.TryGetValue(guid, out var t) ? t : null;
+        /// <summary>Client side: the server's top block for this piston/bearing block (null when it sent none).</summary>
+        public static TopoJoint TopoJointOf(string guid) => guid != null && topoJoints.TryGetValue(guid, out var j) ? j : null;
+        /// <summary>Did a layout arrive from the server in this game? (the client then trusts it over its own guesses)</summary>
+        public static bool TopoHeard => topoHeard;
+
+        static void ReadTopology(EntityManager em, ulong from, Reader r)
+        {
+            var nt = new Dictionary<string, TopoTurret>(); var nj = new Dictionary<string, TopoJoint>();
+            int ct = r.U16();
+            for (int i = 0; i < ct; i++)
+            {
+                var t = new TopoTurret { guid = r.Guid(), mode = r.Byte() }; int np = r.Byte();
+                var sig = new StringBuilder().Append(t.mode);
+                for (int k = 0; k < np; k++)
+                {
+                    var p = new TopoPiece { guid = r.Guid(), faces = r.Str() };
+                    float x = r.F(), y = r.F(), z = r.F(), qw = r.F(); p.rn0 = new quaternion(x, y, z, qw);
+                    t.pieces.Add(p); sig.Append('|').Append(p.guid).Append(p.faces).Append(x.ToString("R")).Append(y.ToString("R")).Append(z.ToString("R")).Append(qw.ToString("R"));
+                }
+                t.sig = sig.ToString(); nt[t.guid] = t;
+            }
+            int cj = r.U16();
+            for (int i = 0; i < cj; i++)
+            {
+                var j = new TopoJoint { guid = r.Guid(), nbr = r.Guid(), withEnd = r.Byte() == 1, extBase = r.F() };
+                j.sig = j.nbr + (j.withEnd ? "E" : "") + j.extBase.ToString("R"); nj[j.guid] = j;
+            }
+            bool loop = Loopback && !Multi.Networked(em);
+            if (!Multi.IAmClient(em) && !loop) return;   // only a client draws from it
+            // a record that did not change keeps its version, so the client re-resolves only what really changed
+            int changed = 0;
+            foreach (var t in nt.Values) { if (topoTurrets.TryGetValue(t.guid, out var o) && o.sig == t.sig) t.ver = o.ver; else { t.ver = ++topoCounter; changed++; } }
+            foreach (var j in nj.Values) { if (topoJoints.TryGetValue(j.guid, out var o) && o.sig == j.sig) j.ver = o.ver; else { j.ver = ++topoCounter; changed++; } }
+            changed += Math.Max(0, topoTurrets.Count - nt.Count) + Math.Max(0, topoJoints.Count - nj.Count);
+            topoTurrets = nt; topoJoints = nj; topoFromLoop = loop;
+            if (!topoHeard || changed > 0 || Log) ModLog.Info("multiplayer: joint layout from " + Name(from) + ": " + nt.Count + " turret seat(s), " + nj.Count + " piston/bearing(s)" + (changed > 0 ? ", " + changed + " changed" : "") + (loop ? " (test_loopback: decoded only)" : " — drawn from it"));
+            topoHeard = true;
+        }
+
         // ---------------------------------------------------------------- receive
         static unsafe void Receive(EntityManager em)
         {
@@ -200,6 +299,7 @@ namespace CrapMechanics
                     if (ver != PluginInfo.PluginVersion) ModLog.Warn("multiplayer: " + p.name + " has Crap Mechanics " + ver + " and this machine " + PluginInfo.PluginVersion + " — part names and behaviour may not match; everyone should run the same version");
                     ComparePlugins(p.name, plugins);
                     p.tHello = 99f;   // answers right away, so the other side doesn't wait 2 s
+                    topoForce = true;   // 0.31.26 (p2_torre N1): a player just heard gets the joint layout right away
                 }
                 if (Log) ModLog.Info("net: HELLO <- " + from + " (" + ver + ")");
                 return;
@@ -214,7 +314,9 @@ namespace CrapMechanics
                 if (aimLogged.Add(guid + from)) ModLog.Info("multiplayer: turret seat " + guid.Substring(0, 8) + "… is aimed by player " + Name(from) + (Loopback && !Multi.Networked(em) ? " (test_loopback: the local aim goes through the network path)" : ""));
                 if (!seated) { aimLogged.Remove(guid + from); ModLog.Info("multiplayer: player " + Name(from) + " left turret seat " + guid.Substring(0, 8) + "…"); }
                 if (Log) ModLog.Info("net: AIM <- " + from + ": " + guid.Substring(0, 8) + " yaw " + yaw.ToString("F1") + " pitch " + pitch.ToString("F1") + " #" + seq);
+                return;
             }
+            if (d[3] == TTopo) { ReadTopology(em, from, r); return; }   // 0.31.26 (p2_torre N1)
         }
         static string Name(ulong id) => peers.TryGetValue(id, out var p) ? p.name + " (" + id + ")" : id.ToString();
 
@@ -234,7 +336,7 @@ namespace CrapMechanics
             return d;
         }
 
-        public static void Forget() { aims.Clear(); aimLogged.Clear(); aimGuidOut = null; seatedOut = false; }
+        public static void Forget() { aims.Clear(); aimLogged.Clear(); aimGuidOut = null; seatedOut = false; topoLast = null; }   // 0.31.26: the layout is sent again (a client keeps the one it has: it is keyed by SCGuid)
 
         // ---------------------------------------------------------------- tiny little-endian writer/reader
         struct Writer
@@ -244,6 +346,8 @@ namespace CrapMechanics
             public void Byte(byte v) { b[n++] = v; }
             public void U(uint v) { BitConverter.TryWriteBytes(new Span<byte>(b, n, 4), v); n += 4; }
             public void F(float v) { BitConverter.TryWriteBytes(new Span<byte>(b, n, 4), v); n += 4; }
+            public void U16(int v) { b[n++] = (byte)v; b[n++] = (byte)(v >> 8); }
+            public void Guid(string hex) { for (int i = 0; i < 16; i++) b[n++] = hex != null && hex.Length == 32 ? Convert.ToByte(hex.Substring(i * 2, 2), 16) : (byte)0; }   // SCGuid, 16 bytes
             public void Str(string s)
             {
                 var u = Encoding.UTF8.GetBytes(s ?? ""); int l = Math.Min(u.Length, Math.Min(ushort.MaxValue, b.Length - n - 2));
@@ -258,6 +362,8 @@ namespace CrapMechanics
             public byte Byte() { Need(1); return b[n++]; }
             public uint U() { Need(4); var v = BitConverter.ToUInt32(b, n); n += 4; return v; }
             public float F() { Need(4); var v = BitConverter.ToSingle(b, n); n += 4; return v; }
+            public int U16() { Need(2); int v = b[n] | (b[n + 1] << 8); n += 2; return v; }
+            public string Guid() { Need(16); var sb = new StringBuilder(32); for (int i = 0; i < 16; i++) sb.Append(b[n + i].ToString("x2")); n += 16; return sb.ToString(); }
             public string Str() { Need(2); int l = b[n] | (b[n + 1] << 8); n += 2; Need(l); var s = Encoding.UTF8.GetString(b, n, l); n += l; return s; }
         }
     }

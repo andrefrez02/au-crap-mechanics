@@ -361,8 +361,13 @@ def switch_panel(c, pos, axis_v, scl=1.0, sfx="Switch"):
 
 
 GYRO_GREEN = (56, 168, 96, 54)   # 0.19.14: Gyro Bearing ring
-def bearing(ports=None, spin=False, s=1.0):
-    """s = scale (1 = 0.5 m; 0.5 = Mini Bearing / Mini Gyro Bearing of 0.25 m, 0.20.0 — a single input, knob and LED at real size)."""
+BEARING_RING_Y = 0.1875   # 0.31.36: centre of the built-in ring plate of SC_BearingRing (block y 0.125..0.25); the plugin (RingVisual.RingY) looks for the two ring renderers at (0, this, 0)
+def bearing(ports=None, spin=False, s=1.0, ring=False):
+    """s = scale (1 = 0.5 m; 0.5 = Mini Bearing / Mini Gyro Bearing of 0.25 m, 0.20.0 — a single input, knob and LED at real size).
+    ring (0.31.36, Andre: "a bearing with the slip ring built in", s = 1 only): the still disc stops at y 0.124 and the top quarter of the
+    block (y 0.125..0.25) is a Slip Ring plate (slip_ring(), the same look as SC_SlipRing) with the 4 ring ports on its +-X faces. The plate
+    is two EXTRA renderers ("Ring", "RingPaint", the last two, placed at (0, BEARING_RING_Y, 0)): the plugin draws them (and the 4 plugs)
+    turned with the piece on top. A hidden still core inside the plate gives that row its collider (the plate itself turns: no hull)."""
     c, p = Mesh(), Mesh()
     h = 0.25 * s
     rec_y = ports_on_face(c, ports, 1, -1, -h)   # the inputs are on the bottom face
@@ -390,13 +395,23 @@ def bearing(ports=None, spin=False, s=1.0):
         a = 2 * math.pi * i / 12
         c.sphere((0.1925 * s * math.cos(a), -0.02 * s if s >= 1 else ypc, 0.1925 * s * math.sin(a)), 0.02 * s if s >= 1 else 0.004, LIGHT, n=8, m=4)
     # top disc (paintable) + dark cap with screw holes and a hub
-    p.lathe([(0.19 * s, y0d), (0.225 * s, y0d + 0.03 * s), (0.225 * s, 0.20 * s), (0.205 * s, 0.22 * s)], 1, (0, 0, 0), PAINT, n=16, rot0=math.pi / 16)
-    c.cylinder(1, (0, 0.235 * s, 0), 0.215 * s, 0.03 * s, MEDIUM, n=16, rot0=math.pi / 16, chamfer=0.008 * s)
-    for i in range(6):
-        a = math.pi / 6 + i * math.pi / 3
-        screw_hole(c, (0.16 * s * math.cos(a), 0.25 * s, 0.16 * s * math.sin(a)), 1, 1, 0.016 * s)
-    c.cylinder(1, (0, 0.2503 * s, 0), 0.06 * s, 0.0006, BODY, n=8, rot0=math.pi / 8)
-    if spin:
+    if ring:
+        # 0.31.36: short disc (top at y 0.124, 1 mm under the ring plate); no screw holes and no hub (the plate covers them)
+        yt = 0.124
+        p.lathe([(0.19, y0d), (0.225, y0d + 0.03), (0.225, yt - 0.05), (0.205, yt - 0.03)], 1, (0, 0, 0), PAINT, n=16, rot0=math.pi / 16)
+        c.cylinder(1, (0, yt - 0.015, 0), 0.215, 0.03, MEDIUM, n=16, rot0=math.pi / 16, chamfer=0.008)
+        # hidden still core (y 0.128..0.2475, r 0.20: inside the plate — its port pockets end at |x| 0.23, its top/bottom recesses at
+        # y 0.248 / 0.127): only there so gen_meshes.hulls gives the ring row a collider that does not turn
+        c.cylinder(1, (0, 0.18775, 0), 0.20, 0.1195, BLACK, n=16, rot0=math.pi / 16)
+    else:
+        p.lathe([(0.19 * s, y0d), (0.225 * s, y0d + 0.03 * s), (0.225 * s, 0.20 * s), (0.205 * s, 0.22 * s)], 1, (0, 0, 0), PAINT, n=16, rot0=math.pi / 16)
+        c.cylinder(1, (0, 0.235 * s, 0), 0.215 * s, 0.03 * s, MEDIUM, n=16, rot0=math.pi / 16, chamfer=0.008 * s)
+        for i in range(6):
+            a = math.pi / 6 + i * math.pi / 3
+            screw_hole(c, (0.16 * s * math.cos(a), 0.25 * s, 0.16 * s * math.sin(a)), 1, 1, 0.016 * s)
+        c.cylinder(1, (0, 0.2503 * s, 0), 0.06 * s, 0.0006, BODY, n=8, rot0=math.pi / 8)
+    if ring: spin_arrows(c, 0.2255, 0.047, wid=0.009)   # 0.31.36: the arrows fit on what is left of the disc's side (y 0.02..0.074)
+    elif spin:
         # 0.19.14: Gyro Bearing — instead of the arrows, a green ring on the side of the disc (the horizon line) and one on the track:
         # the top side aims by itself to stay level, it has no turning "direction"
         c.ring(1, (0, 0.11 * s, 0), 0.2255 * s, 0.2295 * s, 0.014 * s, GYRO_GREEN, n=16, rot0=math.pi / 16)
@@ -416,6 +431,11 @@ def bearing(ports=None, spin=False, s=1.0):
     extras_.append(knob_panel(c, (kx, ky, h - 0.006 * s), 1))   # 0.19.2: servo angle knob
     sx, sy = BEARING_SWITCH_S[s]
     extras_.append(switch_panel(c, (sx, sy, h - 0.006 * s), 1, 1.0 if s >= 1 else 0.85))
+    if ring:
+        # 0.31.36: the ring plate = slip_ring() as it is, with the +-X ports brought to the plate's own space. Two extras, ALWAYS the last two.
+        rb, rp, _ = slip_ring([((q[0], q[1] - BEARING_RING_Y, q[2]), d, t) for q, d, t in (ports or []) if d in (0, 1)], 0.5)
+        extras_.append(("Ring", rb, (0, BEARING_RING_Y, 0), (1, 1, 1)))
+        extras_.append(("RingPaint", rp, (0, BEARING_RING_Y, 0), (1, 1, 1)))
     return c, p, extras_
 
 
@@ -1172,6 +1192,13 @@ WHEELS = {"SC_WheelSportsSmall": (1.0, False), "SC_WheelSportsMedium": (1.5, Fal
          "SC_WheelOffroadSmall": (1.0, True), "SC_WheelOffroadMedium": (1.5, True), "SC_WheelOffroadLarge": (2.0, True)}
 
 
+# 0.31.28 (seal redo, Andre 22/11: "the grid of the minis is all wrong", "the normal one did not fit my gate"): (name, cross-section, length;
+# None = corner). Normal = the game's pipes (SC_PipeFull/Half/Quarter: 0.25 x 0.25, length 1 / 0.5 / 0.25 along Z, pivot at the centre);
+# mini = the same proportions on the MicroFrames grid (0.125 x 0.125, length 0.5 / 0.25 / 0.125 along Z, like SC_MFA1x4 / 1x2 / 1x1).
+SEALS = [("SC_RubberSeal4", 0.25, 1.0), ("SC_RubberSeal2", 0.25, 0.5), ("SC_RubberSeal1", 0.25, 0.25), ("SC_RubberSealCorner", 0.25, None),
+         ("SC_MiniRubberSeal4", 0.125, 0.5), ("SC_MiniRubberSeal2", 0.125, 0.25), ("SC_MiniRubberSeal1", 0.125, 0.125), ("SC_MiniRubberSealCorner", 0.125, None)]
+
+
 def parts(mod):
     """(body, paintable, extras) of an item of models(); extras = [(suffix, mesh, pos, scale)] (separate renderers)."""
     return (mod[0], mod[1], mod[2] if len(mod) > 2 else [])
@@ -1285,6 +1312,289 @@ def mini_solar(ports=None):
     return c, p, []
 
 
+# ------------------------------------------------------------------ 0.31.28 Rubber Seal (Andre: "visual simples, parecido com as rodas")
+# Straight piece s x s x L (length along Z, like the game's pipes) or corner s x s x s. Mounting face -Y (thin paintable base, the face that
+# glues); the rest is dark rubber (the wheels' TIRE). On +Y the LIP: a plain rubber fin, SEAL_LIP[s] = (height past the face, thickness),
+# centred in X, the whole length — the visual is exactly the collision box the plugin keeps (RubberSeal.cs), so what the player sees
+# covering a gap is what blocks the air.
+# Corner (seal redo, Andre: "the L must turn INWARD, into the opening, not out to the sides"): it sits in the inside corner of the opening,
+# glued on -Y AND -X (the two walls); its lip is one L over the two opposite faces, +Y and +X, thin in Z, through the outer corner
+# (h + lip, h + lip) — the same height and thickness as the straight pieces' lips, so it lines up with them (see revisao/seal2_impl.md).
+SEAL_LIP = {0.25: (0.03, 0.04), 0.125: (0.02, 0.025)}
+SEAL_BASE = {0.25: 0.016, 0.125: 0.01}
+def seal_lip_boxes(s, w=None):
+    """Lip boxes ((x0, x1), (y0, y1), (z0, z1)) in block coordinates; w = length (None = corner). Shared with gen_prefabs (colliders)."""
+    lh, lw = SEAL_LIP[s]; h = s / 2; t = lw / 2
+    if w is not None: return [((-t, t), (h, h + lh), (-w / 2, w / 2))]
+    return [((-h, h + lh), (h, h + lh), (-t, t)),    # arm over the +Y face, out to the outer corner
+            ((h, h + lh), (-h, h), (-t, t))]         # arm over the +X face (no overlap with the first)
+SEAL_SLABS = 8   # 0.31.30: the body's collider in 8 layers away from the glued face(s), so the plugin can make the layers nearest the lip soft
+def seal_body_boxes(s, w=None):
+    """0.31.30 ([Cheats] rubber_seal_solid_percent): the body as SEAL_SLABS boxes ((x0, x1), (y0, y1), (z0, z1)). Straight: layers along Y from the
+    glued face (-Y). Corner: L-shaped layers away from its two walls (-X, -Y) — layer k = the square [-h, t(k+1)]^2 minus [-h, t(k)]^2, as two boxes.
+    Each box's nearest edge to the glue sits at k/SEAL_SLABS of the block (RubberSeal.cs reads that as the box's depth)."""
+    h = s / 2; hz = (w if w is not None else s) / 2; t = [-h + s * k / SEAL_SLABS for k in range(SEAL_SLABS + 1)]
+    if w is not None: return [((-h, h), (t[k], t[k + 1]), (-hz, hz)) for k in range(SEAL_SLABS)]
+    r = [((-h, t[1]), (-h, t[1]), (-hz, hz))]
+    for k in range(1, SEAL_SLABS):
+        r.append(((t[k], t[k + 1]), (-h, t[k + 1]), (-hz, hz)))    # the layer's column on the +X side
+        r.append(((-h, t[k]), (t[k], t[k + 1]), (-hz, hz)))        # the layer's row on the +Y side
+    return r
+# 0.31.30 (Andre: "deixa tudo pintável... todas as cores mais escuras que o normal, pra diferenciar o vermelho de um frame do vermelho da
+# borracha"): the whole seal is paintable (no fixed body). The game's paint is the chosen colour times the paintable mesh's vertex grey (its
+# own paintables use 255 / 218 / 179 / 119 / 64 and 31 for darker details; the frames have no vertex colour = 255). The rubber uses 110
+# (about 43 % of a frame's brightness) and the glue base 72; alpha 54 = the matte of the game's rubber-like parts (TIRE, Pipe Corner Paintable).
+SEAL_PAINT, SEAL_PAINT_BASE = (110, 110, 110, 54), (72, 72, 72, 54)
+def rubber_seal(s, w=None):
+    c, p = Mesh(), Mesh()
+    h = s / 2; hz = (w if w is not None else s) / 2
+    tb = SEAL_BASE[s]
+    p.box(-h, h, -h, -h + tb, -hz, hz, SEAL_PAINT_BASE)                         # mounting base -Y (glue face)
+    if w is None:
+        p.box(-h, -h + tb, -h + tb, h, -hz, hz, SEAL_PAINT_BASE)                # corner: second base, -X (glue face)
+        p.box(-h + tb, h, -h + tb, h, -hz, hz, SEAL_PAINT)                      # rubber body
+    else:
+        p.box(-h, h, -h + tb, h, -hz, hz, SEAL_PAINT)                           # rubber body (plain: the lips of two pieces meet flush)
+    for (x0, x1), (y0, y1), (z0, z1) in seal_lip_boxes(s, w):
+        p.box(x0, x1, y0, y1, z0, z1, SEAL_PAINT)                               # lip
+    return c, p, []
+
+
+
+# ------------------------------------------------------------------ 0.32.0 remote control, delivery 1 (Andre, 22/11)
+# Remote Computer: a PC tower 0.5 (X) x 1.25 (Y) x 0.75 (Z). Narrow faces = front (+Z: power, main channel display, status LED) and
+# back (-Z: 10 rows). Big sides: +X = side panel with a frame, -X = two fan grilles. Every clickable thing is a game actionable
+# (gen_prefabs): channel displays = EPC_Actionable_Lever like the Wireless Transmitter's (100 steps, drag), switches = ActionableToggle,
+# LEDs = renderers with the LED mark (the plugin paints them). The digits on the displays are the game's 3D text (the plugin writes them).
+RC_BOUNDS = (0.5, 1.25, 0.75)
+RC_HX, RC_HY, RC_HZ = 0.25, 0.625, 0.375
+RC_PANEL_DEPTH, RC_PLATE = 0.006, 0.002          # panel recess in the case, dark plate on its bottom
+RC_ZB = -(RC_HZ - RC_PANEL_DEPTH + RC_PLATE)      # back control plane (front of the back plates): -0.371
+RC_ZF = -RC_ZB                                    # front control plane: +0.371
+RC_ROWS = 10
+RC_ROW_Y = tuple(round(0.6875 - 0.125 * n, 4) for n in range(1, RC_ROWS + 1))   # row 1 at the top (y 0.5625) .. row 10 (y -0.5625)
+# back face, seen from behind (+X on the viewer's right): number | display | DEST | TYPE | VALUE | DIRECTION | LED | data port
+# 0.31.35 (Andre: a 4th switch per row, DIRECTION = output / input): the 4 switches 48 mm apart, the LED a little to the right
+RC_X_NUM, RC_X_DISP, RC_X_DST, RC_X_TYP, RC_X_VAL, RC_X_DIR, RC_X_LED, RC_X_PORT = -0.236, -0.155, -0.083, -0.035, 0.013, 0.061, 0.100, 0.1875
+RC_DIR_UP, RC_DIR_DOWN = (235, 200, 20, 0), (40, 120, 230, 0)   # DIRECTION ticks in the game's port colours: up = input (yellow), down = output (blue)
+RC_ROW_LCD = (0.074, 0.050)                       # row display (LCD) w x h
+RC_MAIN_Y, RC_MAIN_X, RC_MAIN_LED_X = 0.465, 0.025, -0.150   # front: main display centre, status LED (viewer's right = -X)
+RC_MAIN_LCD = (0.130, 0.090)
+RC_LCD_DEPTH = 0.003                              # the LCD sticks out 3 mm from its plate; the 3D text sits 0.4 mm above it
+RC_LED_R, RC_LED_H, RC_LED_OUT = 0.0058, 0.0035, 0.0012   # LED: radius, length, centre 1.2 mm out of the plate
+RC_SWITCH_SCL = 0.8
+RC_PORT_POWER = ((0.1875, -0.5625, 0.3125), 4, 2)                       # index 0: power (red), front, bottom cell on the viewer's left
+RC_PORT_ROWS = [((RC_X_PORT, y, -0.3125), 5, 3) for y in RC_ROW_Y]      # indices 1..10: data in/out (blue + yellow; 0.31.35: the row's DIRECTION switch decides), back, row N = index N
+RC_PORTS = [RC_PORT_POWER] + RC_PORT_ROWS
+# 0.31.36 (Andre: "the mirrored version of the computer is missing"): "SC_RemoteComputer M" (V in the garage). The CASE is mirrored in X:
+# every port on the other side (x -> -x, same order: index 0 = power, row N = index N), the fans and the side panel swap sides, the row
+# plates sit on the other side of the port column. The CONTROLS are not mirrored: a panel must not read backwards, so each row's group
+# (number, display, DESTINATION, TYPE, VALUE, DIRECTION, LED) keeps its left-to-right order and is only moved along X by RC_M_DX to sit on
+# the mirrored plate; the front panel (CH, display, LED) stays as it is. Nothing is drawn with a negative scale: the painted digits, the
+# "CH" and the 3D texts read normally. It is a model of its own (remote_computer(mirrored=True)), not gen_prefabs.mirror().
+RC_M_DX = round((RC_HX - 0.006) - (RC_X_PORT - 0.0625 - 0.004), 4)       # 0.123: plate [-0.244, 0.121] -> [-0.121, 0.244]
+RC_PORTS_M = [((-p_[0], p_[1], p_[2]), d_, t_) for p_, d_, t_ in RC_PORTS]
+LCD = (150, 170, 140, 54)                         # light grey-green LCD (the digits are dark 3D text)
+LED_WHITE = (235, 235, 235, 0)                    # LED renderers: white vertex colour, the plugin paints the colour (CRPUnlit material)
+
+
+def seg_text(c, text, x0, y0, z, h, sign, color=LIGHT, w=None, t=None, step=None):
+    """Small 7-segment glyphs (digits, C, H) lying on a face of normal (0, 0, sign), 0.6 mm proud. (x0, y0) = bottom corner of the FIRST
+    character on the viewer's left; the text runs to the viewer's right (+X on a -Z face, -X on a +Z face)."""
+    seg = {"0": "abcdef", "1": "bc", "2": "abged", "3": "abgcd", "4": "fgbc", "5": "afgcd", "6": "afgedc", "7": "abc", "8": "abcdefg", "9": "abcdfg",
+           "C": "adef", "H": "bcefg"}
+    w = w or h * 0.5; t = t or h * 0.14; step = step or w + h * 0.16
+    r = -sign   # viewer's right along X
+    za, zb_ = sorted((z, z + sign * 0.0006))
+    for i, ch in enumerate(text):
+        xl = x0 + r * i * step; xr = xl + r * w
+        xa, xb = min(xl, xr), max(xl, xr)
+        y1 = y0 + h; ym = y0 + h / 2
+        # segments in "viewer" coordinates: left/right mapped onto xa/xb by the side
+        L, R = (xa, xa + t) if r > 0 else (xb - t, xb), (xb - t, xb) if r > 0 else (xa, xa + t)
+        bars = {"a": (xa, xb, y1 - t, y1), "d": (xa, xb, y0, y0 + t), "g": (xa, xb, ym - t / 2, ym + t / 2),
+                "f": (L[0], L[1], ym, y1), "e": (L[0], L[1], y0, ym), "b": (R[0], R[1], ym, y1), "c": (R[0], R[1], y0, ym)}
+        for s_ in seg.get(ch, ""):
+            a0, a1, b0, b1 = bars[s_]
+            c.box(a0, a1, b0, b1, za, zb_, color)
+
+
+def _rc_lcd(lw, lh, sign):
+    """LCD of a channel display (the lever's renderer), pivot on the plate: box w x h, RC_LCD_DEPTH out of the plate (normal (0,0,sign))."""
+    m = Mesh()
+    za, zb_ = sorted((0.0, sign * RC_LCD_DEPTH))
+    m.box(-lw / 2, lw / 2, -lh / 2, lh / 2, za, zb_, LCD)
+    return m
+
+
+def _rc_bezel(c, x, y, z, lw, lh, sign, rim=0.005, hgt=0.004):
+    """Frame (body) around a display, on the plate."""
+    za, zb_ = sorted((z, z + sign * hgt))
+    X0, X1, Y0, Y1 = x - lw / 2 - rim, x + lw / 2 + rim, y - lh / 2 - rim, y + lh / 2 + rim
+    c.box(X0, X1, Y1 - rim, Y1, za, zb_, MEDIUM); c.box(X0, X1, Y0, Y0 + rim, za, zb_, MEDIUM)
+    c.box(X0, X0 + rim, Y0 + rim, Y1 - rim, za, zb_, MEDIUM); c.box(X1 - rim, X1, Y0 + rim, Y1 - rim, za, zb_, MEDIUM)
+
+
+def _rc_switch(c, x, y, z, sign, scl=RC_SWITCH_SCL, ticks=None):
+    """Base of a two-position switch on a plate of normal (0,0,sign) (body) + the rod (returned: the toggle's renderer, pivot on the plate).
+    The rod sticks out along the normal; the prefab tilts it +-20 degrees in X (on = up)."""
+    lu, lv = 0.050 * scl, 0.032 * scl
+    za, zb_ = sorted((z, z + sign * 0.002))
+    c.box(x - lu / 2, x + lu / 2, y - lv / 2, y + lv / 2, za, zb_, MEDIUM)                                   # foot plate
+    za, zb_ = sorted((z + sign * 0.002, z + sign * 0.0025))
+    c.box(x - 0.012 * scl, x + 0.012 * scl, y - 0.0075 * scl, y + 0.0075 * scl, za, zb_, BLACK)               # slot
+    for yy in (y + lv / 2 + 0.004, y - lv / 2 - 0.004):                                                       # up / down ticks
+        za, zb_ = sorted((z, z + sign * 0.0006)); c.box(x - 0.004, x + 0.004, yy - 0.0012, yy + 0.0012, za, zb_, (ticks or (LIGHT, MEDIUM))[0 if yy > y else 1])   # ticks = (up, down) colours
+    sw = Mesh()
+    sw.box(-0.010 * scl, 0.010 * scl, -0.0065 * scl, 0.0065 * scl, *sorted((sign * 0.001, sign * 0.0055)), color=MEDIUM)   # pivot nub
+    sw.box(-0.0068 * scl, 0.0068 * scl, -0.0045 * scl, 0.0045 * scl, *sorted((sign * 0.0045, sign * 0.0195)), color=LIGHT)  # rod
+    return sw
+
+
+def _rc_led_socket(c, x, y, z, sign):
+    c.ring(2, (x, y, z + sign * 0.001), RC_LED_R + 0.0004, RC_LED_R + 0.0045, 0.002, BLACK, n=12)
+
+
+def remote_computer(ports=None, mirrored=False):
+    """mirrored (0.31.36) = the "SC_RemoteComputer M" model: see RC_M_DX. The normal model is built exactly as before."""
+    c, p = Mesh(), Mesh()
+    hx, hy, hz = RC_HX, RC_HY, RC_HZ
+    ch = 0.006   # case chamfers (small: the corner port pockets must stay inside the faces)
+    dx = RC_M_DX if mirrored else 0.0                       # the rows' controls: moved, never mirrored
+    # ---- back face (-Z): one dark plate per row, the output port beside it at face level
+    rec_back = ports_on_face(c, ports, 2, -1, -hz)
+    rec_front = ports_on_face(c, ports, 2, 1, hz)
+    px0, px1 = -hx + ch, RC_X_PORT - 0.0625 - 0.004         # row plate x: case edge .. 4 mm before the port cell
+    if mirrored: px0, px1 = -px1, -px0                      # the port column is on -X: 4 mm after the port cell .. the other case edge
+    for y in RC_ROW_Y:
+        rec_back.append(recess(px0, px1, y - 0.054, y + 0.054, RC_PANEL_DEPTH, PAINT, DARK))
+    # ---- front face (+Z): main panel (display + LED), two drive bays, a vented panel, the power port
+    mp = (-0.21, 0.21, RC_MAIN_Y - 0.085, RC_MAIN_Y + 0.085)
+    rec_front.append(recess(mp[0], mp[1], mp[2], mp[3], RC_PANEL_DEPTH, PAINT, DARK))
+    for yb in (0.30, 0.225):
+        rec_front.append(centered_recess(0.0, yb, 0.40, 0.06, 0.004, PAINT, DARK, [centered_recess(0.0, yb - 0.008, 0.30, 0.008, 0.003, BLACK, DARK)]))
+    slots = [centered_recess(0.0, y, 0.36, 0.012, 0.004, BLACK, DARK) for y in np.arange(-0.40, 0.125, 0.04)]
+    rec_front.append(recess(-0.21, 0.21, -0.43, 0.15, 0.004, PAINT, DARK, slots))
+    # ---- +X: side panel with a frame (window) ; -X: two fan grilles ; top: vent slots
+    rec_px = [centered_recess(0.0, 0.0, 1.12, 0.62, 0.008, PAINT, DARK, [centered_recess(0.0, 0.0, 1.00, 0.50, 0.004, DARK, MEDIUM)])]
+    rec_nx = [centered_recess(yy, 0.0, 0.33, 0.33, 0.010, BLACK, DARK) for yy in (0.25, -0.25)]
+    rec_top = [centered_recess(0.0, z, 0.36, 0.014, 0.004, BLACK, DARK) for z in (-0.20, -0.16, -0.12, 0.12, 0.16, 0.20)]
+    p.chamfered_box(-hx, hx, -hy, hy, -hz, hz, PAINT, top=ch, base=ch, vert=ch,
+                    recesses={"-z": rec_back, "+z": rec_front, "+x": rec_nx if mirrored else rec_px, "-x": rec_px if mirrored else rec_nx, "+y": rec_top})   # (both side layouts are symmetric about the face's centre lines)
+    extras_ = []
+    plate_back = -hz + RC_PANEL_DEPTH          # recess bottom (-0.369); plate in front of it up to RC_ZB
+    # ---- rows
+    for n, y in enumerate(RC_ROW_Y, start=1):
+        c.box(px0 + 0.003, px1 - 0.003, y - 0.051, y + 0.051, RC_ZB, plate_back - 0.0002, DARK)
+        seg_text(c, str(n), RC_X_NUM + dx, y - 0.013, RC_ZB, 0.026, -1)
+        lw, lh = RC_ROW_LCD
+        _rc_bezel(c, RC_X_DISP + dx, y, RC_ZB, lw, lh, -1)
+        extras_.append(("ch_r%d" % n, _rc_lcd(lw, lh, -1), (RC_X_DISP + dx, y, RC_ZB), (1, 1, 1), (0, 0, 0), "LcdRow"))
+        for key, x in (("dst", RC_X_DST + dx), ("typ", RC_X_TYP + dx), ("val", RC_X_VAL + dx), ("dir", RC_X_DIR + dx)):
+            extras_.append(("%s_r%d" % (key, n), _rc_switch(c, x, y, RC_ZB, -1, ticks=(RC_DIR_UP, RC_DIR_DOWN) if key == "dir" else None), (x, y, RC_ZB), (1, 1, 1), (0, 0, 0), "SwitchBack"))
+        _rc_led_socket(c, RC_X_LED + dx, y, RC_ZB, -1)
+        extras_.append(("led_r%d" % n, _rc_led(), (RC_X_LED + dx, y, RC_ZB - RC_LED_OUT), (1, 1, 1), (0, 0, 0), "Led"))
+    # ---- front: main panel
+    c.box(mp[0] + 0.003, mp[1] - 0.003, mp[2] + 0.003, mp[3] - 0.003, hz - RC_PANEL_DEPTH + 0.0002, RC_ZF, DARK)
+    lw, lh = RC_MAIN_LCD
+    _rc_bezel(c, RC_MAIN_X, RC_MAIN_Y, RC_ZF, lw, lh, 1, rim=0.007, hgt=0.005)
+    extras_.append(("ch_main", _rc_lcd(lw, lh, 1), (RC_MAIN_X, RC_MAIN_Y, RC_ZF), (1, 1, 1), (0, 0, 0), "LcdMain"))
+    seg_text(c, "CH", 0.192, RC_MAIN_Y - 0.014, RC_ZF, 0.028, 1)
+    _rc_led_socket(c, RC_MAIN_LED_X, RC_MAIN_Y, RC_ZF, 1)
+    extras_.append(("led_main", _rc_led(), (RC_MAIN_LED_X, RC_MAIN_Y, RC_ZF + RC_LED_OUT), (1, 1, 1), (0, 0, 0), "Led"))
+    # ---- +X frame: 4 thumb screws in the frame's corners (0.31.36: the side decoration in a mesh of its own, mirrored in X for the M)
+    d = Mesh()
+    for yy in (-0.53, 0.53):
+        for zz in (-0.28, 0.28):
+            d.screw((hx - 0.008, yy, zz), 0, 1, 0.012, 0.005, LIGHT)
+    # ---- -X fans: hub + 7 blades on the black bottom, grille rings + cross bars in front
+    xb = -hx + 0.010
+    for yy in (0.25, -0.25):
+        d.cylinder(0, (xb - 0.003, yy, 0.0), 0.035, 0.006, DARK, n=16)
+        for k in range(7):
+            blade = Mesh(); blade.rotated_box(0, 2 * math.pi * k / 7, (0.09, 0.026, 0.002), 0.08, DARK)
+            _shift(d, blade.tris, np.array([xb - 0.002, yy, 0.0]))
+        for r_ in (0.055, 0.095, 0.135):
+            d.ring(0, (xb - 0.0075, yy, 0.0), r_ - 0.004, r_, 0.003, MEDIUM, n=24)
+        for ang in (math.pi / 4, 3 * math.pi / 4):
+            bar = Mesh(); bar.rotated_box(0, ang, (0.29, 0.006, 0.003), 0.0, MEDIUM)
+            _shift(d, bar.tris, np.array([xb - 0.0075, yy, 0.0]))
+        for sy in (-1, 1):
+            for sz in (-1, 1):
+                screw_hole(d, (-hx, yy + sy * 0.185, sz * 0.185), 0, -1, 0.008)
+    if mirrored: d.mirror(0)
+    c.tris.extend(d.tris)
+    return c, p, extras_
+
+
+def _rc_led():
+    led = Mesh(); led.cylinder(2, (0, 0, 0), RC_LED_R, RC_LED_H, LED_WHITE, n=10, chamfer=0.001)
+    return led
+
+
+# Phone Dock: a small wireless-charger stand (0.25 block) with a smartphone resting on it, screen facing -Z (the cockpit side, like the
+# steering wheel and the pedals). The phone is the renderer of a game ActionableToggle (the game outlines it and shows the hint when aimed at;
+# the plugin opens the phone screen on a short E). Both toggle poses are the same: clicking never moves the phone.
+DOCK_TILT = 22.0                       # phone leaning back (degrees from vertical)
+DOCK_PIVOT = (0.0, -0.090, -0.030)     # bottom-centre of the phone's screen = the toggle's pivot
+DOCK_PHONE = (0.078, 0.162, 0.0085)    # w, h, thickness
+DOCK_BASE = (-0.10, 0.10, -0.125, -0.105, -0.10, 0.10)
+PHONE_BODY, PHONE_GLASS = (40, 42, 48, 54), (8, 10, 16, 80)
+
+
+def _dock_frame_to_block(m):
+    m.rotate(0, DOCK_TILT); return m
+
+
+def dock_click_box():
+    """(offset, rotation, scale) of the phone toggle's click box, relative to the pivot: a slab over the screen, 4 mm in front of it."""
+    w, h, t = DOCK_PHONE
+    a = math.radians(DOCK_TILT)
+    yv, zv = h / 2, -0.004
+    return ((0.0, round(yv * math.cos(a) - zv * math.sin(a), 5), round(yv * math.sin(a) + zv * math.cos(a), 5)), (DOCK_TILT, 0.0, 0.0), (w + 0.006, h + 0.006, 0.014))
+
+
+def phone_dock(ports=None):
+    c, p = Mesh(), Mesh()
+    x0, x1, y0, y1, z0, z1 = DOCK_BASE
+    p.chamfered_box(x0, x1, y0, y1, z0, z1, PAINT, top=0.006, base=0.002, vert=0.012)
+    c.cylinder(1, (0.07, y1 + 0.0004, -0.07), 0.004, 0.0008, GREEN_LIGHT, n=8)   # little "charging" dot (decoration) on the front-right corner
+    w, h, t = DOCK_PHONE
+    P = np.array(DOCK_PIVOT, float)
+    # stand (body, in the phone's frame: x across, y up the plane, z = behind the screen), then tilted and moved to the pivot
+    st = Mesh()
+    st.chamfered_box(-0.048, 0.048, -0.006, 0.150, t + 0.0003, t + 0.012, MEDIUM, c=0.003)           # charging pad behind the phone
+    st.ring(2, (0.0, 0.07, t + 0.0003), 0.022, 0.026, 0.0006, DARK, n=16)                                 # coil ring (seen only around the phone)
+    st.chamfered_box(-0.046, 0.046, -0.016, 0.0, -0.011, t + 0.010, DARK, c=0.002)                       # ledge the phone stands on
+    st.box(-0.046, 0.046, 0.0, 0.006, -0.011, -0.0065, DARK)                                             # front lip
+    _dock_frame_to_block(st); _shift(c, st.tris, P)
+    # two legs from the pad's back down to the base, and a foot block under the ledge
+    a = math.radians(DOCK_TILT)
+    def to_block(v): return P + np.array([v[0], v[1] * math.cos(a) - v[2] * math.sin(a), v[1] * math.sin(a) + v[2] * math.cos(a)])
+    for xl in (-0.03, 0.03):
+        top = to_block((xl, 0.12, t + 0.011))
+        c.cylinder_between(top, np.array([xl, y1 - 0.002, top[2] + 0.035]), 0.006, MEDIUM, n=8)
+    lo = to_block((0.0, -0.016, 0.0))
+    c.chamfered_box(-0.05, 0.05, y1 - 0.002, lo[1] + 0.004, lo[2] - 0.016, lo[2] + 0.03, MEDIUM, c=0.003)
+    # the phone (the toggle's renderer), pivot = P
+    ph = Mesh()
+    ph.chamfered_box(-w / 2, w / 2, 0.0, h, 0.0, t, PHONE_BODY, c=0.0025)
+    ph.box(-w / 2 + 0.0025, w / 2 - 0.0025, 0.004, h - 0.004, -0.0004, 0.0, PHONE_GLASS)                 # glass
+    ph.cylinder(2, (0.0, h - 0.009, -0.0006), 0.0022, 0.0004, BLACK, n=8)                                # punch-hole camera
+    cols = [(70, 120, 200, 54), (90, 180, 120, 54), (210, 160, 60, 54), (200, 80, 80, 54)]
+    for i in range(4):                                                                                    # app icons
+        for j in range(4):
+            xx = -0.024 + 0.016 * i; yy = 0.050 + 0.018 * j
+            ph.box(xx - 0.0055, xx + 0.0055, yy - 0.0055, yy + 0.0055, -0.0008, -0.0004, cols[(i + j) % 4])
+    ph.box(-0.020, 0.020, h - 0.040, h - 0.028, -0.0008, -0.0004, (190, 195, 205, 54))                    # clock
+    ph.box(-0.012, 0.012, 0.010, 0.012, -0.0008, -0.0004, (150, 150, 155, 54))                            # home bar
+    ph.chamfered_box(-w / 2 + 0.006, -w / 2 + 0.030, h - 0.036, h - 0.006, t, t + 0.0025, (60, 62, 68, 54), c=0.002)   # camera bump (back)
+    for yy in (h - 0.014, h - 0.028):
+        ph.cylinder(2, (-w / 2 + 0.018, yy, t + 0.0027), 0.005, 0.0006, BLACK, n=10)
+    _dock_frame_to_block(ph)
+    return c, p, [("phone", ph, tuple(float(v) for v in P), (1, 1, 1), (0, 0, 0))]
+
+
 def models(ports_per_block):
     """ports_per_block: name -> [(pos, direction, kind)] (comes from gen_prefabs)."""
     P = lambda n: ports_per_block.get(n, [])
@@ -1294,6 +1604,7 @@ def models(ports_per_block):
     r["SC_PistonEnd"] = piston_end(0.5); r["SC_MiniPistonEnd"] = piston_end(0.25)   # 0.22.4: Piston End as a plate (the cube SC_PistaoPonta stays for old BPs)
     r["SC_Bearing"] = bearing(P("SC_Bearing")); r["SC_GyroBearing"] = bearing(P("SC_GyroBearing"), spin=True)   # 0.19.14
     r["SC_MiniBearing"] = bearing(P("SC_MiniBearing"), s=0.5); r["SC_MiniGyroBearing"] = bearing(P("SC_MiniGyroBearing"), spin=True, s=0.5)   # 0.20.0
+    r["SC_BearingRing"] = bearing(P("SC_BearingRing"), ring=True)   # 0.31.36: Bearing with Slip Ring (the ring plate is two extras; the plugin turns them)
     for sfx, (be, bc) in MOTORS.items():
         r["SC_Motor" + sfx] = motor(be, False, P("SC_Motor" + sfx)); r["SC_MotorFuel" + sfx] = motor(bc, True, P("SC_MotorFuel" + sfx))
     r["SC_Recoupler"] = recoupler(P("SC_Recoupler")); r["SC_Beacon"] = beacon(P("SC_Beacon"))
@@ -1305,4 +1616,7 @@ def models(ports_per_block):
     r["SC_SingleCellBattery"] = cell(P("SC_SingleCellBattery")); r["SC_MiniElectricThruster"] = mini_thruster(); r["SC_LongRangeTransmitter"] = radio_()   # 0.18.0
     r["SC_SolarPanelMini"] = mini_solar([((SOLAR_PORT_X, 0.0, -0.1875), 5, 2), ((SOLAR_PORT_X, 0.0, 0.1875), 4, 2)])   # 0.19.0; 0.22.5: a model of our own
     for name, (d, off) in WHEELS.items(): r[name] = wheel(d, off)
+    for name, s, w in SEALS: r[name] = rubber_seal(s, w)   # 0.31.28
+    r["SC_RemoteComputer"] = remote_computer(P("SC_RemoteComputer")); r["SC_PhoneDock"] = phone_dock()   # 0.32.0: remote control (delivery 1)
+    r["SC_RemoteComputer M"] = remote_computer(P("SC_RemoteComputer M"), mirrored=True)   # 0.31.36: mirrored version with a model of its own (gen_meshes: "<block> M")
     return r

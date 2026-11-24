@@ -15,7 +15,7 @@ namespace CrapMechanics
     {
         static TypeIndex tiPaint, tiRend, tiMem, tiCell, tiTransm; static bool ok, failed;
         static EntityQuery qCells, qTransm; static float t = 9f; static ulong hCable, hT, hTM;
-        static readonly HashSet<long> doneSet = new HashSet<long>(); static int loggedSet;
+        static readonly HashSet<long> doneSet = new HashSet<long>(); static int loggedSet; static bool gameFnFailed;
 
         static bool Prepare(EntityManager em)
         {
@@ -72,12 +72,22 @@ namespace CrapMechanics
             {
                 var p = (byte*)em.GetComponentDataRawRW(e, tiPaint); if (p == null) return false;
                 byte color = p[0], defaultValue = p[8];
-                if (color == 0 && defaultValue != 0) { for (int i = 0; i < 8; i++) p[i] = defaultValue; color = defaultValue; }
+                if (color == 0 && defaultValue != 0) color = defaultValue;
+                // 0.31.26 (item 52): the game's own call for "this block has this colour" — what a blueprint load runs on every block
+                // [recon_managed/EPC_SpaceshipComponent.cs:109-116,157]: GarageGrabber.SetSpaceshipComponentColor with the colour in all 8 slots,
+                // which writes SCPaintableColor and the renderers' colour memory (frames included). The manual write below is only the fallback.
+                if (!gameFnFailed)
+                {
+                    try { EPC_SpaceshipComponent.BlueprintFunctions.LoadSpaceshipComponentColor(em, e, (SpaceshipComponentColor)color); doneSet.Add(k); return true; }
+                    catch (Exception ex) { gameFnFailed = true; ModLog.Warn("paint: the game's LoadSpaceshipComponentColor failed (" + ex.Message + ") — painting by hand from now on"); }
+                    p = (byte*)em.GetComponentDataRawRW(e, tiPaint); if (p == null) return false;   // (re-read after the call)
+                }
+                if (p[0] == 0 && defaultValue != 0) for (int i = 0; i < 8; i++) p[i] = defaultValue;
                 SpaceshipComponentExtensions.GetProperties((SpaceshipComponentColor)color, out float4 c, out SpecularSetup s);
                 var mem = new CRPRendererMemory_Color(c, s);
                 int writtenSet = 0;
                 if (Ecs.HasC(em, e, tiMem)) { *(CRPRendererMemory_Color*)em.GetComponentDataRawRW(e, tiMem) = mem; writtenSet++; }
-                if (em.HasComponent(e, ComponentType.ReadOnly(tiRend)))
+                if (Ecs.Has(em, e, tiRend))
                 {
                     int len = em.GetBufferLength(e, tiRend); var buf = (Entity*)em.GetBufferRawRO(e, tiRend);
                     for (int i = 0; i < len && buf != null; i++)

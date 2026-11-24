@@ -53,6 +53,13 @@ namespace CrapMechanics
         // on a client: cNbr/cRn0 = a block on a plate and its garage rotation relative to the turret, to draw the seat from the server's poses
         public bool localAim, remoteSeated, sentSeated, lbActive; public float remoteYaw, remotePitch, lbYaw, lbPitch;
         public Entity cNbr; public quaternion cRn0 = quaternion.identity; public float tCNbr; public bool cPlates, cLogged;
+        // 0.31.26 (p2_torre N1): on a client, the layout the server sent (ModNet TTopo): this block's SCGuid, the version of the record the
+        // movs (drawing only: no joint, no inertia) were built from, and the retry clock while a piece's block isn't found yet
+        public string cGuid; public int topoVer = -1; public float tTopo; public int topoMode = -1;
+        // 0.31.26 (p2_torre N5): server side — the aim of a player who sits down on another machine continues from where the turret points
+        public bool remoteWas; public float offYaw, offPitch;
+        // review massa_voo-1: when the block was first seen out of the garage (-1 = in the garage) — zero gravity only right after a launch
+        public float tLaunched = -1f;
     }
 
     internal static partial class JointSystem
@@ -83,6 +90,20 @@ namespace CrapMechanics
             ModLog.Info(name + " found: block " + e.Index + ":" + e.Version + " (turret seat)");
         }
         public static bool HasTurret(long k) => turrets.ContainsKey(k);
+        /// <summary>0.31.16: see LinkSignature.</summary>
+        static long TurretSignature()
+        {
+            unchecked
+            {
+                long h = 7L;
+                foreach (var t in turrets.Values)
+                {
+                    h = (h ^ Ecs.K(t.block)) * 1099511628211L; h = (h ^ t.state) * 1099511628211L; h = (h ^ Ecs.K(t.partBase)) * 1099511628211L;
+                    foreach (var mv in t.movs) h = (h ^ Ecs.K(mv.part)) * 1099511628211L;
+                }
+                return h;
+            }
+        }
         /// <summary>0.22.0: active turrets (for SlipRings.cs: ring on the piece hanging from each plate).</summary>
         internal static IEnumerable<Turret> ActiveTurrets() { foreach (var t in turrets.Values) if (t.state == 2 || t.state == 3 || t.state == 5) yield return t; }   // 0.26.8: whole too (ring)
         public static bool TurretWholeUntilAimed = true;   // [Turret Seat] whole_until_aimed
@@ -95,6 +116,7 @@ namespace CrapMechanics
             {
                 // 0.28.0: a player seated on another machine (ModNet.cs) — the first aim that moves releases the plates, like the mouse here
                 if (System.Math.Abs(t.remoteYaw - t.yaw) + System.Math.Abs(t.remotePitch - t.pitch) < 0.5f) return;
+                if (!JointsCanBreak(em)) return;   // 0.31.26 (item 1): no joint can break in this world [recon/SpaceshipCheckJoints.cs:38] — stays WHOLE
                 t.yaw = t.remoteYaw; t.pitch = t.remotePitch; LimitAim(t);
                 ModLog.Info(t.name + " " + t.block.Index + ": aimed by a remote player — releasing what is on the plates");
                 t.release = true; t.state = 0; t.tState = 0f;
@@ -106,6 +128,7 @@ namespace CrapMechanics
             if (!locked) return;
             var d = InputKeys.MouseDelta();
             if (System.Math.Abs(d.x) + System.Math.Abs(d.y) < 0.5f) return;
+            if (!JointsCanBreak(em)) return;   // 0.31.26 (item 1): no joint can break in this world [recon/SpaceshipCheckJoints.cs:38] — stays WHOLE
             t.yaw += d.x * TurretSens; t.pitch += d.y * TurretSens; LimitAim(t);
             ModLog.Info(t.name + " " + t.block.Index + ": aiming — releasing what is on the plates");
             t.release = true; t.state = 0; t.tState = 0f;
@@ -118,9 +141,10 @@ namespace CrapMechanics
             var r = new Dictionary<string, HashSet<long>>();
             long kb = Ecs.K(t.block);
             var nbr = new Dictionary<long, List<long>>();
+            var live = LiveSet(em, n);   // 0.31.26 (item 7): only links still in _connectedJoints [recon/SpaceshipCheckJoints.cs:113-122]
             for (int k = 0; k < n; k++)
             {
-                var sj = &joints[k]; if (sj->_breakForce < 0f) continue;
+                var sj = &joints[k]; if (!IsLive(live, sj, k)) continue;
                 long ka = Ecs.K(sj->_a), kc = Ecs.K(sj->_b); if (ka == kb || kc == kb) continue;
                 if (!nbr.TryGetValue(ka, out var la)) nbr[ka] = la = new List<long>(); la.Add(kc);
                 if (!nbr.TryGetValue(kc, out var lc)) nbr[kc] = lc = new List<long>(); lc.Add(ka);
@@ -149,19 +173,37 @@ namespace CrapMechanics
             }
             catch (Exception ex) { seatFailed = true; ModLog.Error("turret: seat/player types: " + ex.Message); return false; }
         }
+        /// <summary>0.31.26 (item 39): the seat the local player sits on, straight from the player: SeatBindingsUpdateSystem's _currentSeat is
+        /// only a per-frame copy (in a render group) of the local player's DynamicObjectAttachedTo._attachedTo (+0) [results/06_player_05.md;
+        /// SeatBindingsUpdateSystem asm 00748A73-00748A83], and that entity is the EPC_Actionable_Seat one, whose BelongingSC._sc is the seat
+        /// block [recon_managed/EPC_Actionable_Seat.cs:13; types_layout.txt BelongingSC +0]. Falls back to the singleton if the type is missing.</summary>
+        static TypeIndex tiAttached, tiBelongSeat; static bool attachedOk, attachedFailed;
         static unsafe Entity CurrentSeat(EntityManager em)
         {
             try
             {
+                if (!attachedOk && !attachedFailed)
+                {
+                    try { tiAttached = TypeManager.GetTypeIndex(Il2CppType.Of<DynamicObjectAttachedTo>()); tiBelongSeat = TypeManager.GetTypeIndex(Il2CppType.Of<BelongingSC>()); attachedOk = true; }
+                    catch (Exception ex) { attachedFailed = true; ModLog.Warn("seat: DynamicObjectAttachedTo not available (" + ex.Message + ") — the seat is read from the bindings singleton"); }
+                }
+                if (attachedOk)
+                {
+                    var l = Ecs.QueryList(qMine); if (l.Count == 0) return Entity.Null;   // no local player: the game writes Null too
+                    var p = l[0];
+                    return Ecs.HasC(em, p, tiAttached) ? *(Entity*)Ecs.RO(em, p, tiAttached) : Entity.Null;   // DynamicObjectAttachedTo._attachedTo (+0)
+                }
                 if (qSeatSing.CalculateEntityCountWithoutFiltering() != 1) return Entity.Null;
-                var eSing = qSeatSing.GetSingletonEntity(); var s = Ecs.HasC(em, eSing, tiSeatSing) ? (SeatBindingsUpdateSystem.Singleton*)em.GetComponentDataRawRO(eSing, tiSeatSing) : null;
+                var eSing = qSeatSing.GetSingletonEntity(); var s = Ecs.HasC(em, eSing, tiSeatSing) ? (SeatBindingsUpdateSystem.Singleton*)Ecs.RO(em, eSing, tiSeatSing) : null;
                 return s == null ? Entity.Null : s->_currentSeat;
             }
             catch (Exception) { return Entity.Null; }
         }
-        static bool IsTheBlock(EntityManager em, Entity chair, Entity block)
+        static unsafe bool IsTheBlock(EntityManager em, Entity chair, Entity block)
         {
             if (Ecs.IsNull(chair)) return false;
+            // 0.31.26 (item 39): the seat actionable's BelongingSC._sc is the block (no climbing Parent)
+            if (attachedOk && Ecs.Alive(em, chair) && Ecs.HasC(em, chair, tiBelongSeat)) { var sc = *(Entity*)Ecs.RO(em, chair, tiBelongSeat); return sc.Index == block.Index && sc.Version == block.Version; }
             var e = chair;
             for (int i = 0; i < 3 && !Ecs.IsNull(e); i++) { if (e.Index == block.Index && e.Version == block.Version) return true; e = Ecs.Parent(em, e); }
             return false;
@@ -182,16 +224,39 @@ namespace CrapMechanics
                 var t = kv.Value;
                 try
                 {
-                    if (!Ecs.Alive(em, t.block)) { UndoTurret(em, t, "block is gone"); deadOnes.Add(kv.Key); continue; }
+                    if (!Ecs.Alive(em, t.block)) { if (!authoritative) t.movs.Clear(); UndoTurret(em, t, "block is gone"); deadOnes.Add(kv.Key); continue; }   // 0.31.26 (p2_torre N1): a client's movs are drawing only (no joint to remove)
                     t.tState += dt;
                     t.isSeated = IsTheBlock(em, chair, t.block);
                     if (t.isSeated) seated = t;
-                    if (!Ecs.IsPart(em, Ecs.Parent(em, t.block))) { t.release = false; t.wholeLog = false; if (t.state != 0) { UndoTurret(em, t, "back to the garage"); t.state = 0; } t.yaw = 0f; t.pitch = 0f; t.headingOk = false; t.Qvis = quaternion.identity; t.cNbr = Entity.Null; t.lbActive = false; continue; }
+                    // review acopla_rede-1: the mod's 100 km rule (KeepFar) took the whole vehicle out of the physics world — not the garage.
+                    // Keep state, movs, joints, aim and saved inertia; the group is frozen together and resumes as it was.
+                    if (authoritative && Far.SwitchedOffHere(em, Ecs.Parent(em, t.block))) continue;
+                    if (!Ecs.IsPart(em, Ecs.Parent(em, t.block))) { t.tLaunched = -1f; t.release = false; t.wholeLog = false; if (!authoritative) { t.movs.Clear(); t.topoVer = -1; } if (t.state != 0) { UndoTurret(em, t, "back to the garage"); t.state = 0; } t.yaw = 0f; t.pitch = 0f; t.headingOk = false; t.Qvis = quaternion.identity; t.cNbr = Entity.Null; t.lbActive = false; t.remoteWas = false; continue; }
+                    if (t.tLaunched < 0f) t.tLaunched = UnityEngine.Time.time;
                     // 0.28.0: on a client the server moves the turret — this machine sends the aim of whoever sits here and draws the seat
                     if (!authoritative) { ClientTurret(em, t, dt); continue; }
                     t.localAim = t.isSeated && !loopback;
                     if (loopback) LoopbackAim(em, t);   // [Multiplayer] test_loopback: the local mouse goes through ModNet like a remote player's
                     t.remoteSeated = ModNet.RemoteAim(em, t.block, out t.remoteYaw, out t.remotePitch);
+                    // 0.31.26 (p2_torre N5): a client's aim starts at 0 and only adds that player's mouse (TurretNet.ClientTurret), and nothing sends
+                    // the server's aim to the client — so whoever sat down pulled the turret (or, in whole-ship mode, the ship: error = yaw − heading)
+                    // back to 0 at up to 720°/s. The offset between the turret's aim and theirs is taken when they sit down and kept while they sit.
+                    if (t.remoteSeated)
+                    {
+                        if (!t.remoteWas)
+                        {
+                            t.remoteWas = true; t.offYaw = t.yaw - t.remoteYaw; t.offPitch = t.pitch - t.remotePitch;
+                            if (System.Math.Abs(t.offYaw) + System.Math.Abs(t.offPitch) > 0.5f) ModLog.Info(t.name + " " + t.block.Index + ": a remote player sat down — their aim continues from yaw " + t.yaw.ToString("F0") + " pitch " + t.pitch.ToString("F0") + " (offset " + t.offYaw.ToString("F0") + " / " + t.offPitch.ToString("F0") + " degrees)");
+                        }
+                        float ry = t.remoteYaw + t.offYaw, rp = t.remotePitch + t.offPitch;
+                        // pushing against a limit slides the offset (as the mouse does here), so the client's own limits — counted from its 0 —
+                        // never leave part of the range out of reach nor a dead zone on the way back; LimitAim keeps ruling on the server
+                        if (!t.wholeShip) ry = Wrap180(ry);   // wrapped before the limit, as ActiveTurret does (350 is -10, not past +90)
+                        LimitAim(t, ref ry, ref rp);
+                        t.offYaw = t.wholeShip ? ry - t.remoteYaw : Wrap180(ry - t.remoteYaw); t.offPitch = rp - t.remotePitch;
+                        t.remoteYaw = ry; t.remotePitch = rp;
+                    }
+                    else t.remoteWas = false;
                     if (t.remoteSeated && !t.wholeShip) { t.remoteYaw = Wrap180(t.remoteYaw); }
                     switch (t.state)
                     {
@@ -217,7 +282,7 @@ namespace CrapMechanics
                 else ModLog.Info("turret seat: stood up");
                 SeatedTurret = seated;
             }
-            if (seated != null && InputKeys.Pressed(TurretCursorKey)) ReleaseCursor(!FreeCursor);
+            if (seated != null && !Phone.IsOpen && InputKeys.Pressed(TurretCursorKey)) ReleaseCursor(!FreeCursor);   // remote control: not while the phone screen owns the cursor
             AdjustStep(em);   // 0.12.6: adjust mode (Num/) and invisible seat (version A)
         }
         static string TurretName(Turret t) => t.state == 0 ? "waiting for launch" : t.state == 1 ? "separating" : t.state == 2 ? "active" : t.state == 5 ? "WHOLE until you aim" : "WELDED";
@@ -237,7 +302,7 @@ namespace CrapMechanics
             var joints = Ecs.Joints(em, out int n);
             if (joints == null) { if (t.warnings++ < 3) ModLog.Warn("SpaceshipSingleton._joints not available"); t.tState = -1f; return; }
             var plates = PlateJoints(em, t.block, joints, n, out var nbrs);
-            t.partBase = Ecs.Parent(em, t.block); t.movs.Clear(); t.broken.Clear(); t.nbrPlates = nbrs;
+            t.partBase = Ecs.Parent(em, t.block); t.movs.Clear(); ForgetBreaks(em, t.broken); t.nbrPlates = nbrs;
             if (plates.Count == 0)
             {
                 t.state = 2; t.tState = 0f;
@@ -288,7 +353,8 @@ namespace CrapMechanics
             // 0.26.8 (Andre: "the turret seat breaks almost every time ... when still it stays whole and when I sit down and move it it
             // becomes a joint like the piston"): with nobody aiming, nothing is released — the garage already built everything as a single part. It only releases the
             // first time someone seated moves the aim (TurretWhole).
-            if (TurretWholeUntilAimed && !t.release)
+            // 0.31.26 (item 1): with GameOverrides._destructibleJoints off nothing can be released [recon/SpaceshipCheckJoints.cs:38]: stays WHOLE (5)
+            if ((TurretWholeUntilAimed && !t.release) || !JointsCanBreak(em))
             {
                 t.faceStructure = StructureByFace(em, t, joints, n);
                 t.state = 5; t.tState = 0f;
@@ -296,7 +362,9 @@ namespace CrapMechanics
                 return;
             }
             t.release = false;
-            foreach (var k in plates) { var sj = &joints[k]; if (sj->_breakForce > 0f) t.broken.Add((k, sj->_a, sj->_b, sj->_breakForce)); sj->_breakForce = -1f; sj->_currentStrain = 1e9f; }
+            // 0.31.26 (item 1): released like the decoupler does — pending until BreakInTick writes 1e35 inside the tick (JointSystem.BreakInto);
+            // the old _breakForce = -1 / strain 1e9 did nothing with Indestructible Joints [recon/SpaceshipCheckJoints.cs:104-106; SpaceshipPhysicsFrameInit.cs:32]
+            foreach (var k in plates) BreakInto(t.broken, &joints[k], k);
             t.state = 1; t.tState = 0f;
             ModLog.Info(t.name + " " + t.block.Index + ": releasing what is on the plates (" + plates.Count + " joint(s), " + nbrs.Count + " block(s))");
         }
@@ -324,9 +392,10 @@ namespace CrapMechanics
             if (nbrsPlates.Count == 0) return r;
             long kb = Ecs.K(block);
             var nbr = new Dictionary<long, List<long>>();
+            var live = LiveSet(em, n);   // 0.31.26 (item 7): dead links (broken by the game) are no structure [recon/SpaceshipCheckJoints.cs:113-122]
             for (int k = 0; k < n; k++)
             {
-                var sj = &joints[k]; if (sj->_breakForce < 0f) continue;
+                var sj = &joints[k]; if (!IsLive(live, sj, k)) continue;
                 long ka = Ecs.K(sj->_a), kc = Ecs.K(sj->_b); if (ka == kb || kc == kb) continue;   // without going through the turret
                 if (!nbr.TryGetValue(ka, out var la)) nbr[ka] = la = new List<long>(); la.Add(kc);
                 if (!nbr.TryGetValue(kc, out var lc)) nbr[kc] = lc = new List<long>(); lc.Add(ka);
@@ -337,7 +406,7 @@ namespace CrapMechanics
             var platesK = new HashSet<long>(); foreach (var v in nbrsPlates) platesK.Add(Ecs.K(v));
             for (int k = 0; k < n; k++)
             {
-                var sj = &joints[k]; if (sj->_breakForce < 0f) continue;
+                var sj = &joints[k]; if (!IsMine(live, sj, k)) continue;   // the turret's own joints: alive or released by the mod (not by the game)
                 bool a = Same(sj->_a, block), b = Same(sj->_b, block); if (!a && !b) continue;
                 var other = a ? sj->_b : sj->_a; long ko = Ecs.K(other);
                 if (platesK.Contains(ko)) continue;   // plate joint (already included)
@@ -351,12 +420,15 @@ namespace CrapMechanics
         {
             var r = new List<int>(); nbrs = new List<Entity>(); var seenSet = new HashSet<long>();
             Ecs.Axes(em, block, out _, out var ey, out _); var pb = Ecs.Position(em, block);
+            // 0.31.26 (item 7): a joint the GAME broke (out of _connectedJoints, _breakForce untouched [recon/SpaceshipCheckJoints.cs:113-122]) is
+            // skipped — that tied debris to the pivot. The ones the mod released itself still count, so a re-wait re-attaches the same pieces.
+            var live = LiveSet(em, n);
             for (int k = 0; k < n; k++)
             {
                 var sj = &joints[k];
                 bool a = Same(sj->_a, block), b = Same(sj->_b, block);
                 if (!a && !b) continue;
-                if (sj->_breakForce < 0f) continue;
+                if (!IsMine(live, sj, k)) continue;
                 var other = a ? sj->_b : sj->_a;
                 float3 po; try { if (!Ecs.Alive(em, other)) continue; po = Ecs.Position(em, other); } catch (Exception) { continue; }
                 var d = Ecs.Sub(po, pb); float comp = Ecs.Len(d); if (comp < 1e-4f) continue;
@@ -364,26 +436,6 @@ namespace CrapMechanics
                 r.Add(k); if (seenSet.Add(Ecs.K(other))) nbrs.Add(other);
             }
             return r;
-        }
-
-        static unsafe void RestoreBreakForceTurret(EntityManager em, Turret t)
-        {
-            if (t.broken.Count == 0) return;
-            try
-            {
-                var joints = Ecs.Joints(em, out int n); int ok = 0;
-                if (joints != null)
-                    foreach (var q in t.broken)
-                    {
-                        if (q.idx < 0 || q.idx >= n) continue;
-                        var sj = &joints[q.idx];
-                        if (sj->_a.Index != q.a.Index || sj->_b.Index != q.b.Index || sj->_breakForce != -1f) continue;
-                        sj->_breakForce = q.breakForce; sj->_currentStrain = 0f; ok++;
-                    }
-                if (DetailedLog) ModLog.Info(t.name + " " + t.block.Index + ": _breakForce restored on " + ok + "/" + t.broken.Count + " joint(s)");
-            }
-            catch (Exception ex) { if (t.warnings++ < 5) ModLog.Warn(t.name + " " + t.block.Index + ": restoring _breakForce: " + ex.Message); }
-            t.broken.Clear();
         }
 
         // ---- state 1: waits for whatever is on the plates to become a part (or parts) of its own, attaches each one to the pivot
@@ -394,9 +446,6 @@ namespace CrapMechanics
         {
             if (t.poseRel.Count == 0) return;
             var pBase = Ecs.Parent(em, t.block); if (!Ecs.IsPart(em, pBase)) return;
-            float3 vLin = float3.zero, vAng = float3.zero;
-            var vb = (Ecs.HasC(em, pBase, Ecs.tiVel) ? (PhysicsVelocity*)em.GetComponentDataRawRO(pBase, Ecs.tiVel) : null);
-            if (vb != null) { vLin = vb->Linear; vAng = vb->Angular; }
             Ecs.Pose(em, t.block, out var pT, out var rT);
             var worldT = new RigidTransform(rT, pT);
             foreach (var v in t.nbrPlates)
@@ -410,8 +459,9 @@ namespace CrapMechanics
                     var target = math.mul(math.mul(worldT, rel), math.inverse(new RigidTransform(lt.Rotation, lt.Position)));
                     var pp = (Ecs.HasC(em, part, Ecs.tiLT) ? (LocalTransform*)em.GetComponentDataRawRW(part, Ecs.tiLT) : null);
                     if (pp != null) { pp->Position = target.pos; pp->Rotation = target.rot; }
-                    var pv = (Ecs.HasC(em, part, Ecs.tiVel) ? (PhysicsVelocity*)em.GetComponentDataRawRW(part, Ecs.tiVel) : null);
-                    if (pv != null) { pv->Linear = vLin; pv->Angular = vAng; }
+                    // 0.31.26 (item 9): the ship's velocity as one rigid body, at the pose just written: copying the base's raw Angular put it on the
+                    // wrong axes (it is in the BASE's inertia frame [UP PhysicsComponents.cs:197-205]) and its Linear lacked w x r
+                    CarryAlong(em, part, pBase);
                 }
                 catch (Exception) { }
             }
@@ -419,23 +469,29 @@ namespace CrapMechanics
 
         static void TurretSeparating(EntityManager em, Turret t)
         {
-            try { RequestZeroGrav(); HoldSeparating(em, t); } catch (Exception) { }
+            // review massa_voo-1: zero gravity ONLY right after a launch (as WaitingTop / Separating) — a turret released by aiming in flight
+            // must not touch the world's PhysicsStep
+            try { if (t.tLaunched >= 0f && UnityEngine.Time.time - t.tLaunched < 5f) RequestZeroGrav(); HoldSeparating(em, t); } catch (Exception) { }
             var pBase = Ecs.Parent(em, t.block);
             bool all = true;
             foreach (var v in t.nbrPlates) { if (!Ecs.Alive(em, v)) continue; var pv = Ecs.Parent(em, v); if (!Ecs.IsPart(em, pv) || pv.Index == pBase.Index) { all = false; break; } }
             if (all)
             {
-                RestoreBreakForceTurret(em, t);
+                ForgetBreaks(em, t.broken);   // 0.31.26: _breakForce was never changed — nothing to give back
                 t.partBase = pBase; t.splitFailures = 0;
                 if (CreateMovs(em, t, false)) { t.state = 2; t.tState = 0f; }
                 else { t.state = 0; t.tState = -5f; }
                 return;
             }
-            if (t.tState > 3f)
+            // 0.31.26 (item 8): every released joint left _connectedJoints and something is still in the base's part — the game splits in the same tick
+            // it breaks [recon/SpaceshipCheckJoints.cs:65; Spaceship__part_b.cs:252-283], so that is a failure for good; the 3 s stay as a fallback
+            bool consumed = Ecs.IsPart(em, pBase) && BreaksConsumed(em, t.broken);
+            if (consumed || t.tState > 3f)
             {
-                RestoreBreakForceTurret(em, t);
+                // the released joints whose blocks are still in one part are linked again for real (giving _breakForce back re-linked nothing)
+                int back = RelinkBroken(em, t.broken, t.name + " " + t.block.Index);
                 t.splitFailures++; bool giveUp = t.splitFailures >= 3;
-                ModLog.Warn(t.name + " " + t.block.Index + ": what is on the plates did not separate from the ship within 3 s — it must be attached to the ship through another path; " + (giveUp ? "3 attempts, pausing for 2 min" : "retrying"));
+                ModLog.Warn(t.name + " " + t.block.Index + ": what is on the plates did not separate from the ship " + (consumed ? "(the game broke the joints but it is still in the ship's part)" : "within 3 s") + " — it must be attached to the ship through another path; " + back + " game joint(s) linked again; " + (giveUp ? "3 attempts, pausing for 2 min" : "retrying"));
                 t.state = 3; t.tState = giveUp ? -120f : -2f; if (giveUp) t.splitFailures = 0;
             }
         }
@@ -446,7 +502,7 @@ namespace CrapMechanics
             try
             {
                 if (!gt2Ok) { gt2Ok = true; tiGT2 = TypeManager.GetTypeIndex(Il2CppType.Of<GarageTransform>()); }
-                unsafe { if (em.HasComponent(e, ComponentType.ReadOnly(tiGT2))) { ok = true; return ((Ecs.HasC(em, e, tiGT2) ? (RigidTransform*)em.GetComponentDataRawRO(e, tiGT2) : null))->rot; } }
+                unsafe { if (Ecs.Has(em, e, tiGT2)) { ok = true; return ((Ecs.HasC(em, e, tiGT2) ? (RigidTransform*)Ecs.RO(em, e, tiGT2) : null))->rot; } }
             }
             catch (Exception) { }
             return quaternion.identity;
@@ -457,7 +513,7 @@ namespace CrapMechanics
         {
             try
             {
-                foreach (var m in t.movs) { try { if (Ecs.Alive(em, m.joint)) em.DestroyEntity(m.joint); } catch (Exception) { } RestoreInertia(em, m); }
+                foreach (var m in t.movs) { try { if (Ecs.Alive(em, m.joint)) Ecs.Destroy(em, m.joint); } catch (Exception) { } RestoreInertia(em, m); }
                 t.movs.Clear();
                 Ecs.Pose(em, t.block, out var posB, out var rotB);
                 var qgB = GarageRot(em, t.block, out bool okB);
@@ -479,15 +535,14 @@ namespace CrapMechanics
                     var pair = new PhysicsConstrainedBodyPair(); pair.Entities = new EntityPair { EntityA = pv, EntityB = t.partBase }; pair.EnableCollision = 0;
                     var kinds = new Il2CppStructArray<ComponentType>(3);
                     kinds[0] = ComponentType.ReadWrite(Ecs.tiPar); kinds[1] = ComponentType.ReadWrite(Ecs.tiJoint); kinds[2] = ComponentType.ReadWrite(Ecs.tiPWI);
-                    var e = em.CreateEntity(kinds);
+                    var e = Ecs.Create(em, kinds);
                     *(Ecs.HasC(em, e, Ecs.tiPar) ? (PhysicsConstrainedBodyPair*)em.GetComponentDataRawRW(e, Ecs.tiPar) : null) = pair;
                     *(Ecs.HasC(em, e, Ecs.tiJoint) ? (PhysicsJoint*)em.GetComponentDataRawRW(e, Ecs.tiJoint) : null) = joint;
                     m.joint = e;
-                    try
-                    {
-                        var va = (Ecs.HasC(em, t.partBase, Ecs.tiVel) ? (PhysicsVelocity*)em.GetComponentDataRawRO(t.partBase, Ecs.tiVel) : null); var vb = (Ecs.HasC(em, pv, Ecs.tiVel) ? (PhysicsVelocity*)em.GetComponentDataRawRW(pv, Ecs.tiVel) : null);
-                        if (va != null && vb != null && !recreating) { vb->Linear = va->Linear; vb->Angular = float3.zero; }
-                    }
+                    // 0.31.26 (item 9): born moving with the ship as one rigid body (Linear + w x r, the ship's spin in the piece's inertia frame) —
+                    // the game's split already hands it the original's Angular [recon/Spaceship__part_a.cs:174]; zeroing it stopped the piece and the
+                    // solver gave the difference back as a jolt
+                    try { if (!recreating) CarryAlong(em, pv, t.partBase); }
                     catch (Exception) { }
                     byPart[kp] = m; t.movs.Add(m);
                     ModLog.Info(t.name + " " + t.block.Index + ": " + (recreating ? "recreated" : "attached to the pivot") + " — part " + pv.Index + " (" + Ecs.Mass(em, pv).ToString("F0") + " kg, block " + v.Index + ") on ship " + t.partBase.Index + " (" + Ecs.Mass(em, t.partBase).ToString("F0") + " kg), joint " + e.Index + (okB && okV ? "" : " (no garage: current pose)"));
@@ -507,13 +562,26 @@ namespace CrapMechanics
 
         static void UndoTurret(EntityManager em, Turret t, string reason)
         {
-            foreach (var m in t.movs) { try { if (Ecs.Alive(em, m.joint)) em.DestroyEntity(m.joint); } catch (Exception) { } RestoreInertia(em, m); }
+            foreach (var m in t.movs) { try { if (Ecs.Alive(em, m.joint)) Ecs.Destroy(em, m.joint); } catch (Exception) { } RestoreInertia(em, m); }
             if (t.movs.Count > 0) ModLog.Info(t.name + " " + t.block.Index + ": joints removed (" + reason + ")");
             t.movs.Clear(); t.partBase = Entity.Null;
+            try { ForgetBreaks(em, t.broken); } catch (Exception) { t.broken.Clear(); }   // 0.31.26: nothing of this turret stays pending
         }
+        /// <summary>0.31.26 (p2_torre N3): only gives the inertia back while the value is still the mod's own zero. Every split, ConsistencyCheck and
+        /// rewind writes a fresh PhysicsMass [recon/Spaceship__part_a.cs:2574-2575; TimeRewindSystem__05_rewind_02.cs:1243-1260], sometimes on an
+        /// entity that is now debris [part_a.cs:2345-2347] — writing the old body's inertia over that gave it another body's inertia.</summary>
         static unsafe void RestoreInertia(EntityManager em, TurretMov m)
         {
-            try { if (m.savedInertia && Ecs.IsPart(em, m.part)) { var pm = (Ecs.HasC(em, m.part, Ecs.tiMass) ? (PhysicsMass*)em.GetComponentDataRawRW(m.part, Ecs.tiMass) : null); if (pm != null) pm->InverseInertia = m.originalInertia; } } catch (Exception) { }
+            try
+            {
+                // review acopla_rede-1: Alive + PhysicsMass, not IsPart — a part only out of the physics world (KeepFar) still gets it back
+                if (m.savedInertia && Ecs.Alive(em, m.part) && Ecs.HasC(em, m.part, Ecs.tiMass))
+                {
+                    var pm = (Ecs.HasC(em, m.part, Ecs.tiMass) ? (PhysicsMass*)em.GetComponentDataRawRW(m.part, Ecs.tiMass) : null);
+                    if (pm != null && pm->InverseInertia.x == 0f && pm->InverseInertia.y == 0f && pm->InverseInertia.z == 0f) pm->InverseInertia = m.originalInertia;
+                }
+            }
+            catch (Exception) { }
             m.savedInertia = false;
         }
 
@@ -531,6 +599,12 @@ namespace CrapMechanics
                 if (pv.Index == pBase.Index) { UndoTurret(em, t, "what was on the plate stuck to the ship again"); t.state = 0; t.tState = -1f; return; }
             }
             if (redo) { t.partBase = pBase; if (!CreateMovs(em, t, true)) { UndoTurret(em, t, "recreating failed"); t.state = 0; t.tState = -1f; return; } }
+            // 0.31.26 (p2_torre N4): no piece to turn although there are plate blocks, and one of them is in the ship's part (a rewind to before the
+            // release brings the plates back welded [recon/TimeRewindSystem__05_rewind_02.cs:1243-1260,1725-1731]): the loop above only looks at movs,
+            // so this stayed "active" with the plates still forever. Start over; TurretWaiting decides again (whole / release).
+            if (t.movs.Count == 0 && !t.wholeShip && t.nbrPlates.Count > 0)
+                foreach (var v in t.nbrPlates)
+                    if (Ecs.Alive(em, v) && Ecs.Parent(em, v).Index == pBase.Index) { UndoTurret(em, t, "what is on the plates is in the ship's part again"); t.state = 0; t.tState = -1f; return; }
             // aim: this machine's mouse, or (0.28.0) the aim a player seated on another machine sent
             if (t.remoteSeated && !t.localAim) { t.yaw = t.remoteYaw; t.pitch = t.remotePitch; }
             else if (t.localAim && !FreeCursor)
@@ -567,7 +641,7 @@ namespace CrapMechanics
             float3 wShip = float3.zero;
             try
             {
-                var ltN = (Ecs.HasC(em, t.partBase, Ecs.tiLT) ? (LocalTransform*)em.GetComponentDataRawRO(t.partBase, Ecs.tiLT) : null); var pmN = (Ecs.HasC(em, t.partBase, Ecs.tiMass) ? (PhysicsMass*)em.GetComponentDataRawRO(t.partBase, Ecs.tiMass) : null); var pvN = (Ecs.HasC(em, t.partBase, Ecs.tiVel) ? (PhysicsVelocity*)em.GetComponentDataRawRO(t.partBase, Ecs.tiVel) : null);
+                var ltN = (Ecs.HasC(em, t.partBase, Ecs.tiLT) ? (LocalTransform*)Ecs.RO(em, t.partBase, Ecs.tiLT) : null); var pmN = (Ecs.HasC(em, t.partBase, Ecs.tiMass) ? (PhysicsMass*)Ecs.RO(em, t.partBase, Ecs.tiMass) : null); var pvN = (Ecs.HasC(em, t.partBase, Ecs.tiVel) ? (PhysicsVelocity*)Ecs.RO(em, t.partBase, Ecs.tiVel) : null);
                 if (ltN != null && pmN != null && pvN != null) wShip = Ecs.Rot(Ecs.QMul(ltN->Rotation, pmN->Transform.rot), pvN->Angular);
             }
             catch (Exception) { }
@@ -579,7 +653,9 @@ namespace CrapMechanics
                 // continue, they are local: it's what makes the player see the aim)
                 if (!Multi.MyPart(em, m.part)) { if (m.savedInertia) RestoreInertia(em, m); continue; }
                 var pm = (Ecs.HasC(em, m.part, Ecs.tiMass) ? (PhysicsMass*)em.GetComponentDataRawRW(m.part, Ecs.tiMass) : null);
-                if (pm != null && TurretInertia && !m.link) { if (!m.savedInertia) { m.originalInertia = pm->InverseInertia; m.savedInertia = true; } pm->InverseInertia = float3.zero; }
+                // 0.31.26 (p2_torre N3): a non-zero value here is the game's (a split/ConsistencyCheck/rewind wrote a new PhysicsMass [recon/Spaceship__part_a.cs:2574-2575])
+                // — that is the inertia to give back later, not the one saved before
+                if (pm != null && TurretInertia && !m.link) { if (!m.savedInertia || pm->InverseInertia.x != 0f || pm->InverseInertia.y != 0f || pm->InverseInertia.z != 0f) { m.originalInertia = pm->InverseInertia; m.savedInertia = true; } pm->InverseInertia = float3.zero; }
                 if (m.link && m.savedInertia) RestoreInertia(em, m);
                 Ecs.Pose(em, m.nbr, out _, out var rotV);
                 var targetV = Ecs.QMul(worldTarget, m.Rn0);
@@ -589,7 +665,7 @@ namespace CrapMechanics
                 float3 axis = s < 1e-6f ? Ecs.UY : new float3 { x = qe.value.x / s, y = qe.value.y / s, z = qe.value.z / s };
                 float vel = System.Math.Min(TurretMaxSpeed * (float)(System.Math.PI / 180.0), TurretGain * ang);
                 var omega = Ecs.Add(wShip, Ecs.Mul(axis, vel));
-                var lt = (Ecs.HasC(em, m.part, Ecs.tiLT) ? (LocalTransform*)em.GetComponentDataRawRO(m.part, Ecs.tiLT) : null);
+                var lt = (Ecs.HasC(em, m.part, Ecs.tiLT) ? (LocalTransform*)Ecs.RO(em, m.part, Ecs.tiLT) : null);
                 var pv = (Ecs.HasC(em, m.part, Ecs.tiVel) ? (PhysicsVelocity*)em.GetComponentDataRawRW(m.part, Ecs.tiVel) : null);
                 if (lt != null && pv != null && pm != null)
                 {
@@ -649,8 +725,8 @@ namespace CrapMechanics
             float velTarget = System.Math.Max(-TurretMaxSpeed, System.Math.Min(TurretMaxSpeed, TurretGain * error)) * (float)(System.Math.PI / 180.0);
             try
             {
-                var lt = (Ecs.HasC(em, ship, Ecs.tiLT) ? (LocalTransform*)em.GetComponentDataRawRO(ship, Ecs.tiLT) : null);
-                var pm = (Ecs.HasC(em, ship, Ecs.tiMass) ? (PhysicsMass*)em.GetComponentDataRawRO(ship, Ecs.tiMass) : null);
+                var lt = (Ecs.HasC(em, ship, Ecs.tiLT) ? (LocalTransform*)Ecs.RO(em, ship, Ecs.tiLT) : null);
+                var pm = (Ecs.HasC(em, ship, Ecs.tiMass) ? (PhysicsMass*)Ecs.RO(em, ship, Ecs.tiMass) : null);
                 var pv = (Ecs.HasC(em, ship, Ecs.tiVel) ? (PhysicsVelocity*)em.GetComponentDataRawRW(ship, Ecs.tiVel) : null);
                 if (lt != null && pm != null && pv != null)
                 {
@@ -725,7 +801,7 @@ namespace CrapMechanics
                 foreach (var e in turretsSeen)
                 {
                     if (!Ecs.HasC(em, e, tiSCSeat)) continue;
-                    var up = *(Entity*)em.GetComponentDataRawRO(e, tiSCSeat);   // SCTypeSeat._upperTransform
+                    var up = *(Entity*)Ecs.RO(em, e, tiSCSeat);   // SCTypeSeat._upperTransform
                     if (!Ecs.HasC(em, up, Ecs.tiLT)) continue;
                     var lt = (LocalTransform*)em.GetComponentDataRawRW(up, Ecs.tiLT);
                     if (heightLogged.Add(Ecs.K(e))) ModLog.Info("turret seat " + e.Index + ": seat Upper (entity " + up.Index + ") was at " + Ecs.F3(lt->Position) + " -> " + Ecs.F3(Ecs.Add(TurretUpper, SeatOff)));
@@ -799,7 +875,7 @@ namespace CrapMechanics
                     for (int i = 0; i < t.movables.Length; i++)
                     {
                         var e = t.movables[i];
-                        if (!Ecs.Alive(em, e) || !em.HasComponent(e, ComponentType.ReadOnly(Ecs.tiLT))) { t.saved[i].Scale = -1f; t.tMovables = 99f; continue; }   // 0.12.2: piece vanished (blueprint swapped) — the crash came from here
+                        if (!Ecs.Alive(em, e) || !Ecs.Has(em, e, Ecs.tiLT)) { t.saved[i].Scale = -1f; t.tMovables = 99f; continue; }   // 0.12.2: piece vanished (blueprint swapped) — the crash came from here
                         var lt = (Ecs.HasC(em, e, Ecs.tiLT) ? (LocalTransform*)em.GetComponentDataRawRW(e, Ecs.tiLT) : null); if (lt == null) { t.saved[i].Scale = -1f; continue; }
                         t.saved[i] = *lt;
                         var rel = Ecs.Sub(lt->Position, TurretPivot);
@@ -880,7 +956,7 @@ namespace CrapMechanics
             try
             {
                 var l = Ecs.QueryList(qMine); if (l.Count == 0) return Entity.Null;
-                var b = (Ecs.HasC(em, l[0], tiPCD) ? (byte*)em.GetComponentDataRawRO(l[0], tiPCD) : null); if (b == null) return Entity.Null;
+                var b = (Ecs.HasC(em, l[0], tiPCD) ? (byte*)Ecs.RO(em, l[0], tiPCD) : null); if (b == null) return Entity.Null;
                 return *(Entity*)(b + 0xE8);   // PlayerControllerData._cameraEntity
             }
             catch (Exception) { return Entity.Null; }
@@ -897,11 +973,11 @@ namespace CrapMechanics
             var em = CurrentEm;
             try
             {
-                if (!ViewRotation(em, out var r) || !Camera(em, out var cam) || !em.HasComponent(cam, ComponentType.ReadOnly(Ecs.tiLT))) return;
+                if (!ViewRotation(em, out var r) || !Camera(em, out var cam) || !Ecs.Has(em, cam, Ecs.tiLT)) return;
                 var rp = quaternion.identity; var e = Ecs.Parent(em, cam);
-                for (int i = 0; i < 8 && !Ecs.IsNull(e) && Ecs.Alive(em, e) && em.HasComponent(e, ComponentType.ReadOnly(Ecs.tiLT)); i++)
+                for (int i = 0; i < 8 && !Ecs.IsNull(e) && Ecs.Alive(em, e) && Ecs.Has(em, e, Ecs.tiLT); i++)
                 {
-                    rp = Ecs.QMul(((Ecs.HasC(em, e, Ecs.tiLT) ? (LocalTransform*)em.GetComponentDataRawRO(e, Ecs.tiLT) : null))->Rotation, rp);
+                    rp = Ecs.QMul(((Ecs.HasC(em, e, Ecs.tiLT) ? (LocalTransform*)Ecs.RO(em, e, Ecs.tiLT) : null))->Rotation, rp);
                     e = Ecs.Parent(em, e);
                 }
                 var lt = (Ecs.HasC(em, cam, Ecs.tiLT) ? (LocalTransform*)em.GetComponentDataRawRW(cam, Ecs.tiLT) : null);
@@ -916,7 +992,7 @@ namespace CrapMechanics
             var em = CurrentEm;
             try
             {
-                if (!ViewRotation(em, out var r) || !Camera(em, out var cam) || !em.HasComponent(cam, ComponentType.ReadOnly(Ecs.tiLTW))) return;
+                if (!ViewRotation(em, out var r) || !Camera(em, out var cam) || !Ecs.Has(em, cam, Ecs.tiLTW)) return;
                 var p = (Ecs.HasC(em, cam, Ecs.tiLTW) ? (LocalToWorld*)em.GetComponentDataRawRW(cam, Ecs.tiLTW) : null); if (p == null) return;
                 var m = p->Value;
                 var cx = Ecs.Rot(r, Ecs.UX); var cy = Ecs.Rot(r, Ecs.UY); var cz = Ecs.Rot(r, Ecs.UZ);
@@ -943,8 +1019,9 @@ namespace CrapMechanics
 
         // ================================================================ 0.13.2: the seat's bound keys on the turret seat
         /// <summary>Andre: "when I turn my back with the turret seat I can't use the ship/car actions". SeatBindingsUpdateSystem
-        /// (in CustomRenderPipelineGroup) keeps in each BindingActionable._distance (+88) the SQUARED distance from the camera to the piece, and
-        /// IsInRange = up to 4.5 (~2.1 m). On the turret the view turns around the pivot (view_position_a is 0.46 m behind the center), so with
+        /// (in CustomRenderPipelineGroup) keeps in each BindingActionable._distance (+88) the distance from the camera to the piece, and
+        /// IsInRange = up to 4.5. 0.31.26 (item 25): that distance is LINEAR, in metres (math.distance [recon/UISeatBindingsManager.cs:183;
+        /// SeatBindingsUpdateSystem asm 00748DAA-00748DC3]) — the game's reach is already 4.5 m; up to 0.31.25 the mod took it for d² (~2.12 m). On the turret the view turns around the pivot (view_position_a is 0.46 m behind the center), so with
         /// your back turned the eye moves ~1 m and the car's pieces go out of reach. Here (group postfix) the distance is measured from a FIXED point of the
         /// block: where the view is with the turret looking forward — the reach doesn't change with the aim. FixedEyeActive tells 3P View (which
         /// measures from the head in F5) to leave this to Crap Mechanics.</summary>
@@ -960,14 +1037,33 @@ namespace CrapMechanics
             if (!EmOk) return;
             // 0.24.0: the normal seat needs the game's eye too — but only when someone is really seated (otherwise
             // the behaviour is exactly as before, which only captured it when seated on a turret of ours).
-            if (SeatedTurret == null) { if (SeatBindsReach <= 2.12f) return; var emS = CurrentEm; if (!PrepareSeat(emS) || Ecs.IsNull(CurrentSeat(emS))) return; }
+            if (SeatedTurret == null) { if (SeatBindsReach <= GameReach) return; var emS = CurrentEm; if (!PrepareSeat(emS) || Ecs.IsNull(CurrentSeat(emS))) return; }
             try
             {
                 var em = CurrentEm; if (!Camera(em, out var cam) || !Ecs.HasC(em, cam, Ecs.tiLTW)) return;
-                var p = (LocalToWorld*)em.GetComponentDataRawRO(cam, Ecs.tiLTW); if (p == null) return;
+                var p = (LocalToWorld*)Ecs.RO(em, cam, Ecs.tiLTW); if (p == null) return;
                 GameEye = new float3 { x = p->Value.c3.x, y = p->Value.c3.y, z = p->Value.c3.z }; gameEyeFrame = UnityEngine.Time.frameCount;
             }
             catch (Exception) { }
+        }
+        // 0.31.27: the game's update of 21/11 grew BindingActionable from 96 to 240 bytes (controller bindings in each row): _targetActionable
+        // went from +64 to +208 and _distance from +88 to +232. Up to 0.31.26 those numbers were fixed here, so on the new game the mod wrote
+        // the distance into the middle of the rows. Now the layout comes from the game (il2cpp size + field offsets by name).
+        static int bindStride = -1, bindTarget, bindDist; static bool bindLayoutFailed;
+        static unsafe bool BindLayout()
+        {
+            if (bindStride > 0) return true; if (bindLayoutFailed) return false;
+            try
+            {
+                var t = typeof(SeatBindingsUpdateSystem.BindingActionable);
+                bindTarget = GameFields.Of(t, "_targetActionable", 64); bindDist = GameFields.Of(t, "_distance", 88);
+                uint al = 0; int size = Il2CppInterop.Runtime.IL2CPP.il2cpp_class_value_size(Il2CppInterop.Runtime.Il2CppClassPointerStore<SeatBindingsUpdateSystem.BindingActionable>.NativeClassPtr, ref al);
+                if (bindTarget < 0 || bindDist < 0 || size < bindDist + 4 || size < bindTarget + 8 || size > 4096) { bindLayoutFailed = true; ModLog.Warn("seat bindings: unexpected layout (size " + size + ", target +" + bindTarget + ", distance +" + bindDist + ") — the bindings reach is off"); return false; }
+                bindStride = size;
+                ModLog.Info("seat bindings: layout from the game — " + size + " bytes each, target +" + bindTarget + ", distance +" + bindDist);
+                return true;
+            }
+            catch (Exception ex) { bindLayoutFailed = true; ModLog.Warn("seat bindings: could not read the layout (" + ex.Message + ") — the bindings reach is off"); return false; }
         }
         public static unsafe void TurretBindsDistance()
         {
@@ -990,25 +1086,27 @@ namespace CrapMechanics
                 var list = *(byte**)b; if (list == null) { Reason("no list"); return; }
                 var ptr = *(byte**)list; int n = *(int*)(list + 8);
                 if (ptr == null || n <= 0 || n > 4096) { Reason("this seat has no bound parts (" + n + ")"); return; }
+                if (!BindLayout()) { Reason("seat bindings layout unknown in this version of the game"); return; }
                 int insideF = 0, insideJ = 0, inside = 0; float minF = 1e9f, minJ = 1e9f; var detail = new System.Text.StringBuilder();
                 for (int i = 0; i < n; i++)
                 {
-                    var el = ptr + i * 96; var e = *(Entity*)(el + 64);
+                    var el = ptr + i * bindStride; var e = *(Entity*)(el + bindTarget);
                     if (!Ecs.Alive(em, e) || !Ecs.HasC(em, e, Ecs.tiLTW)) continue;
-                    var ltw = (LocalToWorld*)em.GetComponentDataRawRO(e, Ecs.tiLTW); if (ltw == null) continue;
+                    var ltw = (LocalToWorld*)Ecs.RO(em, e, Ecs.tiLTW); if (ltw == null) continue;
                     var q = ltw->Value.c3;
                     float fx = q.x - FixedEye.x, fy = q.y - FixedEye.y, fz = q.z - FixedEye.z; float dF = fx * fx + fy * fy + fz * fz;
                     float d2 = dF;
-                    if (hasGame) { float jx = q.x - GameEye.x, jy = q.y - GameEye.y, jz = q.z - GameEye.z; float dJ = jx * jx + jy * jy + jz * jz; if (dJ < d2) d2 = dJ; if (dJ <= 4.5f) insideJ++; if (dJ < minJ) minJ = dJ; }
-                    // 0.13.2: the game accepts up to 4.5 squared (~2.1 m); here up to BindsReach (default 4.5 m = the click distance for binding):
-                    // scales the squared distance (keeps the order) so that "inside" = up to BindsReach
-                    float scale = 4.5f / (BindsReach * BindsReach);
-                    *(float*)(el + 88) = d2 * scale;
-                    if (dF <= 4.5f) insideF++; if (dF < minF) minF = dF; if (d2 * scale <= 4.5f) inside++;
+                    if (hasGame) { float jx = q.x - GameEye.x, jy = q.y - GameEye.y, jz = q.z - GameEye.z; float dJ = jx * jx + jy * jy + jz * jz; if (dJ < d2) d2 = dJ; if (dJ <= GameReach * GameReach) insideJ++; if (dJ < minJ) minJ = dJ; }
+                    // 0.13.2: the game accepts up to 4.5; here up to BindsReach. 0.31.26 (item 25): the game's value is metres, not m², so the
+                    // distance written is sqrt(d²) scaled (keeps the order) so that "inside" (<= 4.5) = up to BindsReach
+                    float scale = GameReach / BindsReach;
+                    float dW = (float)System.Math.Sqrt(d2) * scale;
+                    *(float*)(el + bindDist) = dW;
+                    if (dF <= GameReach * GameReach) insideF++; if (dF < minF) minF = dF; if (dW <= GameReach) inside++;
                     if (!loggedBinds) detail.Append(" #").Append(i).Append(' ').Append(System.Math.Sqrt(d2).ToString("F2")).Append('m');
                 }
                 wrote = true;
-                if (!loggedBinds) { loggedBinds = true; ModLog.Info("turret seat: seat key bindings in reach " + inside + "/" + n + " with bindings_reach (from the game's seated view " + (hasGame ? insideJ + ", closest " + System.Math.Sqrt(minJ).ToString("F2") + " m" : "unknown") + "; from the turret's forward view " + insideF + ", closest " + System.Math.Sqrt(minF).ToString("F2") + " m; the game's reach is 2.12 m, this mod's " + BindsReach.ToString("F2") + " m) — nearest distance per bound part:" + detail); }
+                if (!loggedBinds) { loggedBinds = true; ModLog.Info("turret seat: seat key bindings in reach " + inside + "/" + n + " with bindings_reach (from the game's seated view " + (hasGame ? insideJ + ", closest " + System.Math.Sqrt(minJ).ToString("F2") + " m" : "unknown") + "; from the turret's forward view " + insideF + ", closest " + System.Math.Sqrt(minF).ToString("F2") + " m; the game's reach is " + GameReach.ToString("F1") + " m, this mod's " + BindsReach.ToString("F2") + " m) — nearest distance per bound part:" + detail); }
             }
             catch (Exception ex) { if (bindsErrors++ < 3) ModLog.Warn("turret seat: seat key bindings: " + ex.Message); }
             finally { FixedEyeActive = wrote; }
@@ -1016,13 +1114,15 @@ namespace CrapMechanics
 
         // 0.24.0 (Andre: "keybinds don't work on the normal seat"): the same reach fix, now on the GAME's seat. On the turret the
         // distance is measured from the turret's view or the game's (whichever is smaller); here there's only the game's, so it's simpler.
-        // The game accepts up to 4.5 squared (~2.12 m); we rescale the squared distance (keeping the order) so that "inside" applies
-        // up to SeatBindsReach. With 2.12 (or less) it writes nothing and the seat stays exactly as the game does it.
+        // The game accepts up to 4.5 m (0.31.26, item 25: linear metres, it was taken for 4.5 m² = 2.12 m); we rescale the distance (keeping
+        // the order) so that "inside" applies up to SeatBindsReach. With 4.5 (or less) it writes nothing and the seat stays exactly as the game does it.
         public static float SeatBindsReach = 4.5f;   // [Seat] bindings_reach
+        /// <summary>0.31.26 (item 25): the game's IsInRange for seat bindings, in metres [recon/UISeatBindingsManager.cs:183].</summary>
+        public const float GameReach = 4.5f;
         static bool loggedSeatBinds; static int seatBindsErrors;
         static unsafe void SeatBinds(EntityManager em)
         {
-            if (SeatBindsReach <= 2.12f) return;
+            if (SeatBindsReach <= GameReach) return;
             if (gameEyeFrame != UnityEngine.Time.frameCount) return;   // without the game's eye for this frame it can't measure
             try
             {
@@ -1034,25 +1134,27 @@ namespace CrapMechanics
                 var list = *(byte**)b; if (list == null) return;
                 var ptr = *(byte**)list; int n = *(int*)(list + 8);
                 if (ptr == null || n <= 0 || n > 4096) return;
-                float scale = 4.5f / (SeatBindsReach * SeatBindsReach);
+                if (!BindLayout()) return;
+                float scale = GameReach / SeatBindsReach;
                 int inside = 0, insideGame = 0; float minD = 1e9f;
                 for (int i = 0; i < n; i++)
                 {
-                    var el = ptr + i * 96; var e = *(Entity*)(el + 64);
+                    var el = ptr + i * bindStride; var e = *(Entity*)(el + bindTarget);
                     if (!Ecs.Alive(em, e) || !Ecs.HasC(em, e, Ecs.tiLTW)) continue;
-                    var ltw = (LocalToWorld*)em.GetComponentDataRawRO(e, Ecs.tiLTW); if (ltw == null) continue;
+                    var ltw = (LocalToWorld*)Ecs.RO(em, e, Ecs.tiLTW); if (ltw == null) continue;
                     var q = ltw->Value.c3;
                     float dx = q.x - GameEye.x, dy = q.y - GameEye.y, dz = q.z - GameEye.z; float d2 = dx * dx + dy * dy + dz * dz;
-                    if (d2 <= 4.5f) insideGame++;
+                    float d = (float)System.Math.Sqrt(d2);
+                    if (d <= GameReach) insideGame++;
                     if (d2 < minD) minD = d2;
-                    *(float*)(el + 88) = d2 * scale;
-                    if (d2 * scale <= 4.5f) inside++;
+                    *(float*)(el + bindDist) = d * scale;   // metres, as the game writes it
+                    if (d * scale <= GameReach) inside++;
                 }
                 if (!loggedSeatBinds)
                 {
                     loggedSeatBinds = true;
                     ModLog.Info("seat: seat key bindings in reach " + inside + "/" + n + " with bindings_reach " + SeatBindsReach.ToString("F2")
-                        + " m (the game's own reach is 2.12 m and would allow " + insideGame + "; closest bound part " + System.Math.Sqrt(minD).ToString("F2") + " m)");
+                        + " m (the game's own reach is " + GameReach.ToString("F1") + " m and would allow " + insideGame + "; closest bound part " + System.Math.Sqrt(minD).ToString("F2") + " m)");
                 }
             }
             catch (Exception ex) { if (seatBindsErrors++ < 3) ModLog.Warn("seat: seat key bindings: " + ex.Message); }
@@ -1081,18 +1183,23 @@ namespace CrapMechanics
         /// are still there, otherwise back to the start, and the next step works it out again from the blocks the rewind restored.</summary>
         static void RewindTurrets(EntityManager em)
         {
+            // 0.31.26 (p2_torre N1): a client's movs are drawing only (from the server's layout) — CreateMovs below would give it physics joints.
+            // The rewind recreated the parts [recon/TimeRewindSystem__05_rewind_02.cs:1243-1260]: just look the pieces up again.
+            if (!Multi.Authoritative(em)) { foreach (var t in turrets.Values) { t.movs.Clear(); t.topoVer = -1; t.cNbr = Entity.Null; } return; }
             int again = 0, restart = 0;
             foreach (var t in turrets.Values)
             {
                 if (t.state == 2 && t.movs.Count > 0)
                 {
                     t.partBase = Ecs.Parent(em, t.block);
-                    if (CreateMovs(em, t, true)) { again++; continue; }
+                    // 0.31.26 (p2_torre N4): CreateMovs skips plate blocks that are in the base's part and still returns true — a rewind to before the
+                    // release (plates welded again) left it active with nothing to turn. With no piece and plate blocks, start over instead.
+                    if (CreateMovs(em, t, true) && !(t.movs.Count == 0 && t.nbrPlates.Count > 0)) { again++; continue; }
                     UndoTurret(em, t, "time rewind");                     // the pieces are no longer where they were: give it up and start over
                 }
                 else if (t.state == 2 || t.state == 3) UndoTurret(em, t, "time rewind (it had separated)");
                 if (t.state != 0) restart++;
-                RestoreBreakForceTurret(em, t);                      // only state 1 still holds any: puts the game's _breakForce back
+                t.broken.Clear();                                    // 0.31.26: the rewind restored the game's joint lists itself (pending releases were dropped in Rewind)
                 t.movs.Clear(); t.state = 0; t.tState = 0f;
             }
             if (again + restart > 0) ModLog.Info("time rewind: turret seats — " + again + " rebuilt at the rewound pose, " + restart + " back to the start");

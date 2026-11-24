@@ -12,8 +12,11 @@ namespace CrapMechanics
     /// never found the mark. Now: on the Shaft Transmitter (copy of the game's transmitter) the LED is SCTypeWirelessTransmitter._indicatorEntity
     /// (+24); on the LRT it's the child with the mark (specular strength 0.0041 from the prefab, compared already packed) or, if the mark is lost in
     /// packing, the child with colour (0,0,0,0) (the LED is the only renderer with alpha 0). Paints with the game's colours (SCTick_WirelessTransmitter):
-    /// green (0, 1.4, 0) ok, yellow (0.95, 0.5, 0) interference (more than one sender on the channel), red (1.9, 0, 0) nobody at the other
-    /// end. Blinks at 1 Hz. The renderer's packed specular is kept.</summary>
+    /// green (0, 1.4, 0), orange (0.95, 0.5, 0) — the `Yellow` constant —, red (1.9, 0, 0). 0.31.26 (item 21): with the game's MEANING
+    /// [recon/EPC_SCWirelessTransmitter.cs:226-240, 266-277] — sender: red = another sender on the channel, green = somebody listens,
+    /// orange = nobody listens; receiver: green = exactly 1 sender, red = 2 or more, off = none; a port with no direction: off. (It used to
+    /// be yellow = interference, red = nobody at the other end.) 0.31.26 (item 44): blinks like the game, lit while frac(t * 0.75) < 0.5
+    /// (period 1.33 s) and only with a SpaceshipSingleton (always off in the garage); off = all zero. The renderer's packed specular is kept.</summary>
     internal static class Led
     {
         public const int Unlit = 0, Green = 1, Yellow = 2, Red = 3;
@@ -22,7 +25,8 @@ namespace CrapMechanics
         // the paint is applied the BODY also has zero colour and I painted the body. Now the LED is recognised by the indicator's MESH
         // (CRPRendererData._meshReference, +0), learned from the _indicatorEntity of any wireless transmitter (the mod's or the game's).
         static uint ledMesh; static bool meshOk; static float tMesh = 9f; static bool didWarnMesh;
-        static readonly float4[] COLORS = { new float4(0f, 0f, 0f, 1f), new float4(0f, 1.4f, 0f, 1f), new float4(0.95f, 0.5f, 0f, 1f), new float4(1.9f, 0f, 0f, 1f) };
+        // 0.31.26 (item 44): off = float4.zero, as the game writes it (`default` / float4.zero) [recon/EPC_SCWirelessTransmitter.cs:233, 295, 366]
+        static readonly float4[] COLORS = { new float4(0f, 0f, 0f, 0f), new float4(0f, 1.4f, 0f, 1f), new float4(0.95f, 0.5f, 0f, 1f), new float4(1.9f, 0f, 0f, 1f) };
         static readonly HashSet<ulong> loggedSet = new HashSet<ulong>(); static readonly HashSet<long> warnedSet = new HashSet<long>();
 
         static bool Prepare()
@@ -48,7 +52,7 @@ namespace CrapMechanics
         {
             color = default; spec = 0;
             if (!Ecs.HasC(em, e, tiMem)) return false;
-            var p = (CRPRendererMemory_Color*)em.GetComponentDataRawRO(e, tiMem); if (p == null) return false;
+            var p = (CRPRendererMemory_Color*)Ecs.RO(em, e, tiMem); if (p == null) return false;
             (*p).Unpack(out color, out spec); return true;
         }
 
@@ -59,7 +63,7 @@ namespace CrapMechanics
             var foundOne = Entity.Null; string how = "";
             if (tiTransm.Value != 0 && Ecs.HasC(em, block, tiTransm))
             {
-                var p = (byte*)em.GetComponentDataRawRO(block, tiTransm);
+                var p = (byte*)Ecs.RO(em, block, tiTransm);
                 if (p != null) { var ind = *(Entity*)(p + 24); if (Ecs.Alive(em, ind) && Ecs.HasC(em, ind, tiMem)) { foundOne = ind; how = "the transmitter's indicator entity"; } }
             }
             if (Ecs.IsNull(foundOne))
@@ -90,13 +94,13 @@ namespace CrapMechanics
         static unsafe float Extension(EntityManager em, Entity e)
         {
             if (tiBounds.Value == 0 || !Ecs.HasC(em, e, tiBounds)) return float.MaxValue;
-            var p = (float*)em.GetComponentDataRawRO(e, tiBounds); if (p == null) return float.MaxValue;
+            var p = (float*)Ecs.RO(em, e, tiBounds); if (p == null) return float.MaxValue;
             return Math.Max(Math.Abs(p[3]), Math.Max(Math.Abs(p[4]), Math.Abs(p[5])));
         }
         static unsafe uint MeshOf(EntityManager em, Entity e)
         {
             if (tiRend.Value == 0 || !Ecs.HasC(em, e, tiRend)) return 0xffffffff;
-            var p = (uint*)em.GetComponentDataRawRO(e, tiRend); return p == null ? 0xffffffff : *p;
+            var p = (uint*)Ecs.RO(em, e, tiRend); return p == null ? 0xffffffff : *p;
         }
         /// <summary>Learns the indicator's mesh from the _indicatorEntity of any wireless transmitter (1 attempt every 3 s).</summary>
         static unsafe void LearnMesh(EntityManager em)
@@ -108,7 +112,7 @@ namespace CrapMechanics
                 foreach (var t in Ecs.Transmitters(em))
                 {
                     if (!Ecs.HasC(em, t, tiTransm)) continue;
-                    var p = (byte*)em.GetComponentDataRawRO(t, tiTransm); if (p == null) continue;
+                    var p = (byte*)Ecs.RO(em, t, tiTransm); if (p == null) continue;
                     var ind = *(Entity*)(p + 24); if (!Ecs.Alive(em, ind)) continue;
                     uint m = MeshOf(em, ind); if (m == 0xffffffff) continue;
                     ledMesh = m; meshOk = true; ModLog.Info("led: indicator mesh learned from transmitter " + t.Index + " (mesh ref " + m + ")"); return;
@@ -117,9 +121,33 @@ namespace CrapMechanics
             catch (Exception ex) { ModLog.Warn("led: learning the indicator mesh: " + ex.Message); }
         }
 
-        /// <summary>true in the "lit" half of the second.</summary>
-        public static bool Lit => (UnityEngine.Time.time % 1f) < 0.5f;
+        /// <summary>0.31.26 (item 44): the game's blink — `_indicatorOn = frac(ElapsedTime * 0.75) < 0.5 && HasSingleton&lt;SpaceshipSingleton&gt;()`
+        /// [recon/EPC_SCWirelessTransmitter.cs:141-142]: on for the first half of every 1.33 s, never in the garage. (It was 1 Hz, also in the
+        /// garage.) The singleton check is done once per frame.</summary>
+        public static bool Lit
+        {
+            get
+            {
+                int f = UnityEngine.Time.frameCount;
+                if (f != singFrame) { singFrame = f; try { singOn = !Ecs.Ok || Ecs.QSing.CalculateEntityCountWithoutFiltering() > 0; } catch (Exception) { singOn = true; } }
+                double t = UnityEngine.Time.timeAsDouble * 0.75;
+                return singOn && t - Math.Floor(t) < 0.5;
+            }
+        }
+        static int singFrame = -1; static bool singOn = true;
 
+        /// <summary>Remote control (delivery 1): the types are looked up (Paint/PaintSolid do nothing before this succeeds).</summary>
+        public static bool Ready() => Prepare();
+        /// <summary>Remote control (delivery 1): the state's colour with no blink (a short flash after a command). Returns what was written.</summary>
+        public static unsafe int PaintSolid(EntityManager em, Entity led, int state, int written)
+        {
+            if (!ok || !Ecs.Alive(em, led) || !Ecs.HasC(em, led, tiMem)) return written;
+            if (state < 0 || state >= COLORS.Length) state = Unlit;
+            var p = (CRPRendererMemory_Color*)em.GetComponentDataRawRW(led, tiMem); if (p == null) return written;
+            (*p).Unpack(out _, out uint spec);
+            *p = new CRPRendererMemory_Color(COLORS[state], spec);
+            return state;
+        }
         /// <summary>Writes the state's colour (or off in the dark half of the blink). Returns what was written (so as not to rewrite for nothing).</summary>
         public static unsafe int Paint(EntityManager em, Entity led, int state, int written)
         {

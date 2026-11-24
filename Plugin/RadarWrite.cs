@@ -14,13 +14,21 @@ namespace CrapMechanics
     /// screen draws (SCTick_Radar.RadarLocationGPUData: _uv float2, _type uint, _isTarget float; 16 B), as the job does:
     /// uv = normalizesafe((worldToProjection x pos).xy). The matrices come from the radar's singleton (SCTick_Radar.Singleton: _viewMatrix +8,
     /// _projectionMatrix +72). The buffer is rebuilt by the game on every physics tick, so the write happens every frame, after the
-    /// TransformSystemGroup (before rendering). The formula is checked once against the base icon (type 0) the game wrote: the variant
-    /// that matches is the one used (world w=1, world w=0, relative to the planet).</summary>
+    /// TransformSystemGroup (before rendering).
+    /// 0.31.26 (item 20): the position is the game's own formula (FindIconsJob / FindPlanetStationsJob [recon/EPC_SCRadar.cs:315-329, 352-363]):
+    /// rel = pos - planet, p = W2P * (rel / R, 1), uv = p.xy / p.w, pinned to normalizesafe(uv) * 0.9 on the planet's far side, stored as
+    /// uv * 0.5 + 0.5. Planet = the radar's closest planet (Singleton._closestPlanet = UniverseLocationData._id, radius from
+    /// UniverseEntityRadius, centre from its LocalToWorld) [recon/EPC_SCRadar.cs:195-209]. None of the three old variants had the planet,
+    /// the /R or the *0.5+0.5, so the old check never matched and always fell back to #0 (the icon landed nowhere in particular); the check
+    /// and the variants are gone. The game only shows objects within 1.05 R; beyond that the mod keeps the beacon on the rim (0.9), the way
+    /// the game shows the far hemisphere. No planet found: nothing is written (as the game). Duplicates are told by position now (the
+    /// game's own icon of the ghost lands on the same uv), not by type — a beacon set to a game icon no longer hides behind a real one.</summary>
     internal static class RadarWrite
     {
         const int T = 16;
-        static TypeIndex tiGPU, tiSing, tiStation; static EntityQuery qGPU, qSing, qStation; static bool ok, failed;
-        static int variant = -1, frame = -1, writtenSet, logs, attempts; static float tLog = 9f; static string latest = "";
+        static TypeIndex tiGPU, tiSing, tiLoc, tiRadius; static EntityQuery qGPU, qSing, qPlanet; static bool ok, failed, planetOk;
+        static int frame = -1, writtenSet, logs; static float tLog = 9f; static string latest = "";
+        static uint planetId = uint.MaxValue; static Entity planetE; static int noPlanetLogs;
 
         static bool Prepare(EntityManager em)
         {
@@ -33,10 +41,12 @@ namespace CrapMechanics
                 var b = new Il2CppStructArray<ComponentType>(1); b[0] = ComponentType.ReadOnly(tiSing); qSing = em.CreateEntityQuery(b);
                 try
                 {
-                    tiStation = TypeManager.GetTypeIndex(Il2CppType.Of<PlanetStationData>());
-                    var c = new Il2CppStructArray<ComponentType>(2); c[0] = ComponentType.ReadOnly(tiStation); c[1] = ComponentType.ReadOnly(Ecs.tiLTW); qStation = em.CreateEntityQuery(c);
+                    tiLoc = TypeManager.GetTypeIndex(Il2CppType.Of<UniverseLocationData>());
+                    tiRadius = TypeManager.GetTypeIndex(Il2CppType.Of<UniverseEntityRadius>());
+                    var c = new Il2CppStructArray<ComponentType>(3); c[0] = ComponentType.ReadOnly(tiLoc); c[1] = ComponentType.ReadOnly(tiRadius); c[2] = ComponentType.ReadOnly(Ecs.tiLTW);
+                    qPlanet = em.CreateEntityQuery(c); planetOk = true;
                 }
-                catch (Exception ex) { ModLog.Warn("radar/write: PlanetStationData not available (" + ex.Message + ") — the uv formula will not be checked"); }
+                catch (Exception ex) { ModLog.Warn("radar/write: planet types not available (" + ex.Message + ") — the beacon will not be drawn by the mod (the game still draws it near a planet)"); }
                 ok = true; return true;
             }
             catch (Exception ex) { failed = true; ModLog.Warn("radar/write: not available (" + ex.Message + ")"); return false; }
@@ -60,17 +70,39 @@ namespace CrapMechanics
             return true;
         }
 
-        // 0.19.3 (0.19.2 log: "hits #0=0 #1=0 #2=0" — I ALWAYS normalized, and the base icon sits near the center of the screen, not at the
-        // edge): the uv is the projection itself; only what falls outside the circle (length > 1) is brought to the edge. Variants: #0 direct
-        // projection (orthographic), #1 with division by w (perspective), #2 relative to the planet.
-        static unsafe float2 Uv(float4x4 w2p, float3 pos, float3 planet, int v)
+        /// <summary>0.31.26 (item 20): the game's formula [recon/EPC_SCRadar.cs:315-329, 352-363]. `dir` = direction from the ship (floating
+        /// origin) to the planet, as FindClosestPlanetJob stores it (ltw.Position / dist). Beyond 1.05 R (where the game shows nothing) the
+        /// beacon is pinned on the rim like an object on the far hemisphere.</summary>
+        static float2 Uv(float4x4 w2p, float3 pos, float3 planet, float radius, float include)
         {
-            float4 p = v == 2 ? new float4(pos - planet, 1f) : new float4(pos, 1f);
-            var r = math.mul(w2p, p);
-            var uv = new float2(r.x, r.y);
-            if (v == 1 && Math.Abs(r.w) > 1e-6f) uv /= r.w;
-            float c = math.length(uv);
-            return c > 1f ? uv / c : uv;
+            float3 rel = pos - planet;
+            float dist = math.length(planet); float3 dir = dist > 1e-6f ? planet / dist : default;
+            var p = math.mul(w2p, new float4(rel / radius, 1f));
+            float2 uv = Math.Abs(p.w) > 1e-12f ? new float2(p.x, p.y) / p.w : new float2(p.x, p.y);
+            if (math.dot(dir, rel) > 0f || math.lengthsq(rel) >= include * include || Math.Abs(p.w) <= 1e-12f) uv = NormSafe(uv) * 0.9f;
+            return uv * 0.5f + 0.5f;
+        }
+        static float2 NormSafe(float2 v) { float l = math.length(v); return l > 1e-12f ? v / l : default; }
+        /// <summary>The radar's closest planet (centre, radius, inclusion radius) — the entity whose UniverseLocationData._id is
+        /// Singleton._closestPlanet; the black hole (id 999) uses 1.01 R, the planets 1.05 R [recon/EPC_SCRadar.cs:208, 237].</summary>
+        static unsafe bool Planet(EntityManager em, uint id, out float3 centre, out float radius, out float include)
+        {
+            centre = default; radius = 0f; include = 0f;
+            if (!planetOk) return false;
+            if (id != planetId || !Ecs.Alive(em, planetE) || !Ecs.HasC(em, planetE, tiRadius))
+            {
+                planetId = id; planetE = Entity.Null;
+                foreach (var e in Ecs.QueryList(qPlanet))
+                {
+                    var l = (uint*)Ecs.RO(em, e, tiLoc);
+                    if (l != null && *l == id) { planetE = e; break; }
+                }
+            }
+            if (Ecs.IsNull(planetE)) return false;
+            radius = *(float*)Ecs.RO(em, planetE, tiRadius); if (!(radius > 0f)) return false;
+            centre = Ecs.Position(em, planetE);
+            include = radius * (id == 999 ? 1.01f : 1.05f);
+            return true;
         }
 
         // 0.19.3 (Andre: "every simulation it leaves an old icon on the radar"): when SCTick_Radar stops rebuilding the buffer (end of the
@@ -109,80 +141,45 @@ namespace CrapMechanics
             try
             {
                 var sings = Ecs.QueryList(qSing); if (sings.Count == 0) return;
-                var sp = (byte*)em.GetComponentDataRawRO(sings[0], tiSing); if (sp == null) return;
+                var sp = (byte*)Ecs.RO(em, sings[0], tiSing); if (sp == null) return;
                 if (sp[153] == 0) return;   // _anyActiveRadar
                 var view = *(float4x4*)(sp + 8); var proj = *(float4x4*)(sp + 72);
-                var w2p = math.mul(proj, view);
+                var w2p = math.mul(proj, view);   // = FrameData._worldToProjectionMatrix [recon_managed/SCTick_Radar.cs:118-123]
+                uint closest = *(uint*)sp;        // Singleton._closestPlanet (+0)
+                if (!Planet(em, closest, out var planet, out float radius, out float include))
+                {
+                    if (noPlanetLogs++ < 3) ModLog.Info("radar/write: the radar's closest planet (id " + closest + ") was not found — beacon icon not drawn by the mod (as the game draws nothing without a planet)");
+                    return;
+                }
                 var owners = Ecs.QueryList(qGPU); if (owners.Count == 0) return;
                 var h = Header(em, owners[0]); if (h == null) return;
                 int n = *(int*)(h + 8); if (n < 0 || n > 4096) return;
                 var el = Elements(h);
-                // once: which variant of the formula reproduces the base icon (type 0) the game wrote
-                if (variant < 0) variant = Check(em, w2p, view, proj, el, n);
-                int v = variant < 0 ? 0 : variant;
-                float3 planet = default;   // (only variant 2 uses it; without FrameData, planet = origin)
-                // no duplicates: if the game already placed an icon with our type (ghost picked up by the job), skip that one
-                var kindsInBuffer = new HashSet<uint>(); for (int i = 0; i < n; i++) kindsInBuffer.Add(*(uint*)(el + i * T + 8));
-                int add = 0;
-                foreach (var (pos, icon) in icons) if (!kindsInBuffer.Contains(icon)) add++;
+                // no duplicates: an icon of the same type already at (almost) the same place is the game's own icon of the ghost (FindIconsJob
+                // picks it up within 1.05 R) — skip that beacon
+                var uvs = new List<(float2 uv, uint icon)>(icons.Count);
+                foreach (var (pos, icon) in icons)
+                {
+                    var uv = Uv(w2p, pos, planet, radius, include); bool dup = false;
+                    for (int i = 0; i < n && !dup; i++) if (*(uint*)(el + i * T + 8) == icon && math.lengthsq(*(float2*)(el + i * T) - uv) < 0.0004f) dup = true;
+                    if (!dup) uvs.Add((uv, icon));
+                }
+                int add = uvs.Count;
                 if (add == 0) return;
                 if (!Ensure(h, n + add)) { if (logs++ < 3) ModLog.Warn("radar/write: could not grow the radar buffer (" + n + " + " + add + ")"); return; }
                 el = Elements(h); int k = n;
-                foreach (var (pos, icon) in icons)
+                foreach (var (uv, icon) in uvs)
                 {
-                    if (kindsInBuffer.Contains(icon)) continue;
-                    var uv = Uv(w2p, pos, planet, v);
                     var q = el + k * T; *(float2*)q = uv; *(uint*)(q + 8) = icon; *(float*)(q + 12) = 0f; k++;
                 }
                 *(int*)(h + 8) = k; writtenSet++;
                 ownerWritten = owners[0]; nBefore = n; kAfter = k; written = new byte[(k - n) * T];
                 for (int i = 0; i < written.Length; i++) written[i] = el[n * T + i];
                 tLog += UnityEngine.Time.deltaTime;
-                string s = "radar/write: " + (k - n) + " beacon icon(s) added to the radar buffer (" + n + " from the game), formula " + (variant < 0 ? "unchecked" : "#" + variant);
+                string s = "radar/write: " + (k - n) + " beacon icon(s) added to the radar buffer (" + n + " from the game), relative to planet " + closest;
                 if (s != latest && logs++ < 12) { latest = s; ModLog.Info(s); }
             }
             catch (Exception ex) { failed = true; ModLog.Warn("radar/write: " + ex.Message + " — turning it off"); }
-        }
-
-        /// <summary>Compares the 3 variants with the game's type 0 icons (stations): returns the one that matches (or -1 if it can't be checked yet).</summary>
-        static unsafe int Check(EntityManager em, float4x4 w2p, float4x4 view, float4x4 proj, byte* el, int n)
-        {
-            try
-            {
-                if (qStation.Equals(default(EntityQuery)) || tiStation.Value == 0) return 0;
-                var targets = new List<float2>();
-                for (int i = 0; i < n; i++) if (*(uint*)(el + i * T + 8) == 0) targets.Add(*(float2*)(el + i * T));
-                if (targets.Count == 0) return -1;
-                var ests = Ecs.QueryList(qStation); if (ests.Count == 0) return -1;
-                int[] hits = new int[3]; float[] error = new float[3];
-                Entity near = Entity.Null; float dNear = float.MaxValue; var eye = UnityEngine.Camera.main != null ? (float3)UnityEngine.Camera.main.transform.position : default;
-                foreach (var e in ests)
-                {
-                    var pos = Ecs.Position(em, e);
-                    float d = math.length(pos - eye); if (d < dNear) { dNear = d; near = e; }
-                    for (int v = 0; v < 3; v++)
-                    {
-                        var uv = Uv(w2p, pos, default, v);
-                        float bestPick = 9f; foreach (var a in targets) bestPick = Math.Min(bestPick, math.length(a - uv));
-                        if (bestPick < 0.05f) hits[v]++; error[v] += bestPick;
-                    }
-                }
-                int best = 0; for (int v = 1; v < 3; v++) if (hits[v] > hits[best] || (hits[v] == hits[best] && error[v] < error[best])) best = v;
-                var sb = new System.Text.StringBuilder();
-                sb.Append("radar/write: uv formula check against ").Append(targets.Count).Append(" station icon(s) and ").Append(ests.Count).Append(" station(s): hits #0=").Append(hits[0]).Append(" #1=").Append(hits[1]).Append(" #2=").Append(hits[2]).Append(" -> using #").Append(best).Append(hits[best] == 0 ? " (NO match — icons may be misplaced; send the log)" : "");
-                sb.Append("\n  station icons in the buffer:"); foreach (var a in targets) sb.Append(" (").Append(a.x.ToString("F3")).Append(',').Append(a.y.ToString("F3")).Append(')');
-                if (!Ecs.IsNull(near))
-                {
-                    var pos = Ecs.Position(em, near); var r = math.mul(w2p, new float4(pos, 1f));
-                    sb.Append("\n  nearest station ").Append(near.Index).Append(" at ").Append(Ecs.F3(pos)).Append(" (").Append(dNear.ToString("F0")).Append(" m from the camera): raw projection (").Append(r.x.ToString("F3")).Append(',').Append(r.y.ToString("F3")).Append(',').Append(r.z.ToString("F3")).Append(',').Append(r.w.ToString("F3")).Append(')');
-                    for (int v = 0; v < 3; v++) { var uv = Uv(w2p, pos, default, v); sb.Append(" #").Append(v).Append("=(").Append(uv.x.ToString("F3")).Append(',').Append(uv.y.ToString("F3")).Append(')'); }
-                }
-                sb.Append("\n  view row0 ").Append(Ecs.F3(view.c0.xyz)).Append(" c3 ").Append(Ecs.F3(view.c3.xyz)).Append("; proj c0 ").Append(Ecs.F3(proj.c0.xyz)).Append(" c1 ").Append(Ecs.F3(proj.c1.xyz)).Append(" c3 ").Append(Ecs.F3(proj.c3.xyz));
-                ModLog.Info(sb.ToString());
-                if (hits[best] == 0) return ++attempts >= 4 ? 0 : -1;   // try again on the next frames (up to 4x)
-                return best;
-            }
-            catch (Exception ex) { ModLog.Warn("radar/write: formula check: " + ex.Message); return 0; }
         }
     }
 }

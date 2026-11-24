@@ -41,6 +41,22 @@ namespace CrapMechanics
         internal static List<Entity> Entities => list;
         internal static int MaxForceOffset => OffMaxForce;
         internal static TypeIndex Ti => tiThr;
+        // 0.31.26 (item 31): the game's own thrust factor. SCTick_Thruster_Forces pushes with _maxForce × (_frameEfficiency ×
+        // _atmoUnderwaterMultiplier01) [recon/EPC_SCThruster.cs:250 (listing line 835), 260]; that product already holds the efficiency in air,
+        // water or space, the fuel coughing and overheating, and the sign of reverse. SCTypeThruster: _frameEfficiency +24,
+        // _atmoUnderwaterMultiplier01 +28 [types_layout.txt:4372-4373], read by name.
+        static int OffFrameEff => GameFields.Of(typeof(SCTypeThruster), "_frameEfficiency", 24);
+        static int OffAtmoMul => GameFields.Of(typeof(SCTypeThruster), "_atmoUnderwaterMultiplier01", 28);
+        /// <summary>0.31.26 (item 31): _frameEfficiency × _atmoUnderwaterMultiplier01 of a thruster (signed). False when it cannot be read.</summary>
+        internal static unsafe bool Efficiency(EntityManager em, Entity e, out float eff)
+        {
+            eff = 0f;
+            int a = OffFrameEff, b = OffAtmoMul;
+            if (a < 0 || b < 0 || !Ecs.HasC(em, e, tiThr)) return false;
+            var p = (byte*)Ecs.RO(em, e, tiThr); if (p == null) return false;
+            eff = *(float*)(p + a) * *(float*)(p + b);
+            return !float.IsNaN(eff) && !float.IsInfinity(eff);
+        }
         public static void Forget() { list.Clear(); touched.Clear(); ready = false; failed = false; tScan = 9f; JointBoost.Forget(); }
 
         static float MultiplierOf(ulong h)
@@ -105,10 +121,10 @@ namespace CrapMechanics
                 if (!baseline.TryGetValue(h, out var b))
                 {
                     b = new Baseline { mag = (float)Math.Sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]) };
-                    if (hasFan) { var fp = (float*)((byte*)em.GetComponentDataRawRO(e, tiFan) + OffFanBase); b.fan = true; b.fanMag = (float)Math.Sqrt(fp[0] * fp[0] + fp[1] * fp[1] + fp[2] * fp[2]); }
+                    if (hasFan) { var fp = (float*)((byte*)Ecs.RO(em, e, tiFan) + OffFanBase); b.fan = true; b.fanMag = (float)Math.Sqrt(fp[0] * fp[0] + fp[1] * fp[1] + fp[2] * fp[2]); }
                     baseline[h] = b;
                     bool named = nameOf.TryGetValue(h, out var nm);
-                    var ef = (float*)(p + 16);   // 0.31.0: _efficiencyInSpace / _efficiencyInAtmosphere / _efficiencyInWater (+16/+20/+24): how much of the force each medium gives
+                    var ef = (float*)(p + GameFields.Of(typeof(SCTypeThruster), "_efficiencyInSpace", 16));   // 0.31.13: by name (game 1.0.311 moved it to +32; the log read zeros). 0.31.0: _efficiencyInSpace / _efficiencyInAtmosphere / _efficiencyInWater (+16/+20/+24): how much of the force each medium gives
                     ModLog.Info("thrusters: " + (named ? nm : "prefab " + h) + " — game's force " + b.mag + (b.fan ? " (fan base " + b.fanMag + ")" : "") + "; efficiency in space " + ef[0].ToString("0.##") + ", in atmosphere " + ef[1].ToString("0.##") + ", in water " + ef[2].ToString("0.##") + (named || !hashed ? "" : " — NOT a block with a slider: only force_multiplier applies"));
                 }
                 float m = MultiplierOf(h); long ek = Ecs.K(e); if (m > maxM) maxM = m;
@@ -130,7 +146,7 @@ namespace CrapMechanics
             var by = new Dictionary<ulong, (int n, float sum)>();
             foreach (var e in Ecs.QueryList(q))
             {
-                if (!Ecs.HasC(em, e, tiThr)) continue; var f = (float*)((byte*)em.GetComponentDataRawRO(e, tiThr) + OffMaxForce);
+                if (!Ecs.HasC(em, e, tiThr)) continue; var f = (float*)((byte*)Ecs.RO(em, e, tiThr) + OffMaxForce);
                 ulong h = Ecs.Prefab(em, e); by.TryGetValue(h, out var a); by[h] = (a.n + 1, a.sum + (float)Math.Sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]));
             }
             var sb = new System.Text.StringBuilder();

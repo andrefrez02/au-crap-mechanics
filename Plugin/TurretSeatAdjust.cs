@@ -123,7 +123,7 @@ namespace CrapMechanics
             try
             {
                 if (!PrepareLayer(em) || !scSeatOk || !Ecs.HasC(em, block, tiSCSeat)) return;
-                var sc = (Entity*)em.GetComponentDataRawRO(block, tiSCSeat);
+                var sc = (Entity*)Ecs.RO(em, block, tiSCSeat);
                 var list = new List<Entity> { sc[0], sc[1] };
                 list.AddRange(Ecs.Children(em, sc[0]));
                 int n = 0;
@@ -153,7 +153,7 @@ namespace CrapMechanics
                 {
                     if (hiddenActive && t.block == hiddenBlock) continue;
                     if (!Ecs.Alive(em, t.block) || !Ecs.HasC(em, t.block, tiSCSeat)) continue;
-                    var sc = (Entity*)em.GetComponentDataRawRO(t.block, tiSCSeat);
+                    var sc = (Entity*)Ecs.RO(em, t.block, tiSCSeat);
                     var list = new List<Entity> { sc[0], sc[1] }; list.AddRange(Ecs.Children(em, sc[0]));
                     int n = 0;
                     foreach (var e in list)

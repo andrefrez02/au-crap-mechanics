@@ -13,7 +13,7 @@ namespace CrapMechanics
     /// world). Channels of its own: it doesn't talk to the game's Wireless Transmitter.</summary>
     internal static class Radio
     {
-        sealed class R { public Entity block, signal, channelP, text; public bool portsOk, logged, searchedText; public int channel = int.MinValue, warnings, channelScreen = int.MinValue; public byte kindLog = 255; public float tText; public bool painted; public float tPaint, tLed = 9f; public Entity led; public int ledWritten = -1; public byte resolved = 255; public float tResolve = 9f; public string resolvedVia;
+        sealed class R { public Entity block, signal, channelP, text; public bool portsOk, logged, searchedText; public int channel = int.MinValue, warnings, channelScreen = int.MinValue; public byte kindLog = 255; public float tText; public bool painted; public float tPaint, tLed = 9f; public Entity led; public int ledWritten = -1; public byte resolved = 255; public float tResolve = 9f; public string resolvedVia; public byte wroteKind = 255;
             public int channelCand = int.MinValue; public float tCand; public Entity channelSource; public bool heldLog;
             public float latestV = float.NaN, tLastV; public bool frozenLog, noSourceLog; }   // 0.19.8: frozen video source diagnostics   // 0.19.7: channel source (holds the channel if the same source reads 0)   // 0.19.6: candidate channel (only becomes the channel after 0.3 s stable)
         static readonly Dictionary<long, R> radios = new Dictionary<long, R>();
@@ -39,7 +39,7 @@ namespace CrapMechanics
                     r.searchedText = true; r.tText = 0f; r.text = Entity.Null; Entity three = Entity.Null;
                     foreach (var f in Ecs.Children(em, r.block))
                     {
-                        if (!em.HasComponent(f, ComponentType.ReadOnly(tiText))) continue;
+                        if (!Ecs.Has(em, f, tiText)) continue;
                         var p = Ecs.LT(em, f).Position;
                         if (System.Math.Abs(System.Math.Abs(p.x) - TextPos.x) +   /* 0.19.0: the M version has x mirrored */ System.Math.Abs(p.y - TextPos.y) + System.Math.Abs(p.z - TextPos.z) < 0.01f) { r.text = f; break; }
                         if (em.GetBufferLength(f, tiText) == 3) three = f;
@@ -62,19 +62,28 @@ namespace CrapMechanics
         /// SC_Bearing M): the game gives the in/out signal port its direction only from the port at the other end of its cable, and a mod joint's
         /// pass-through port has none. Twice a second: if the game left it without a direction and the cable ends at a joint's pass-through port,
         /// look across the joint (SlipRings.AcrossJoint): an input over there (a monitor) = this one is an OUTPUT (receiving), an output over there
-        /// (a camera) = an INPUT (sending). The slip ring then bridges the data across like any other (Ecs.EffectiveType).</summary>
-        static void Resolve(EntityManager em, R r)
+        /// (a camera) = an INPUT (sending). The slip ring then bridges the data across like any other (Ecs.EffectiveType).
+        /// 0.31.26 (item 6): the direction is also written into the port's _runtimeType (+21), as Signal.Aim does and as the game's Frame With
+        /// Ports does in UpdatePortsDataInOutJob. The game's GetInputs only copies when the port at the other end has the BYTE +21 == DataOutput
+        /// [recon/Spaceship__part_a.cs:709-714]; the mod's dictionary alone never reached a game block (a game monitor across the ring never got
+        /// this LRT's video). The game keeps the byte: that job only rewrites +21 when the end is Null, and stops (break) on an Unset port that
+        /// is not a Frame With Ports [recon/Spaceship__part_b.cs:207-245]. Put back to DataInOut (3) when the mod's reason for it is gone.</summary>
+        static unsafe void Resolve(EntityManager em, R r)
         {
             r.tResolve += UnityEngine.Time.deltaTime; if (r.tResolve < 0.5f) return; r.tResolve = 0f;
             long k = Ecs.K(r.signal); byte now = 255; string via = null;
             byte game = RuntimeKind(em, r.signal);
-            if (game != Ecs.PortInput && game != Ecs.PortOutput)
+            bool ours = r.wroteKind != 255 && game == r.wroteKind;   // the byte holds what this method wrote, not the game's own answer
+            bool endUntyped = false, endNull = false;
+            if ((game != Ecs.PortInput && game != Ecs.PortOutput) || ours)
             {
                 // the CABLE's far end (not the game's runtime end: when this one sends across the joint, the slip ring rewrites that one)
                 Entity end = Entity.Null;
                 if (Ecs.RawPortPub(em, r.signal, out _, out _, out _, out var persist) && !Ecs.IsNull(persist)) end = Ecs.IsCable(em, persist) ? Ecs.WalkCable(em, persist, r.signal, out _) : persist;
+                endNull = Ecs.IsNull(end);
                 if (!Ecs.IsNull(end) && Ecs.Port(em, end, out byte te, out _, out _) && te == JointSystem.PortUntyped)
                 {
+                    endUntyped = true;
                     if (SlipRings.AcrossJoint(em, end, out var far, out via))
                     {
                         byte tf = Ecs.EffectiveType(em, far);
@@ -94,6 +103,25 @@ namespace CrapMechanics
             }
             r.resolved = now;
             if (now != 255) { Ecs.ResolvedTypes[k] = now; r.resolvedVia = via; } else Ecs.ResolvedTypes.Remove(k);
+            // 0.31.26 (item 6): the game's byte. Written only when the game left the port without a direction (or it still holds our value);
+            // given back as DataInOut only when the game itself would not give it one (cable ending in nothing or on a mod's untyped port),
+            // so a direction the game resolved on its own is never undone.
+            try
+            {
+                if (now != 255 && (game != Ecs.PortInput && game != Ecs.PortOutput || ours))
+                {
+                    if (game != now) { var w = Ecs.HasC(em, r.signal, Ecs.tiPort) ? (byte*)em.GetComponentDataRawRW(r.signal, Ecs.tiPort) : null; if (w != null) { w[21] = now; Ecs.ForgetPaths(); } }
+                    if (r.wroteKind != now) ModLog.Info("SC_LongRangeTransmitter " + r.block.Index + ": signal port set to " + (now == Ecs.PortInput ? "DataInput (sending)" : "DataOutput (receiving)") + " in the game's port too, so the game's blocks across the joint read it");
+                    r.wroteKind = now;
+                }
+                else if (now == 255 && ours)
+                {
+                    if (endNull || endUntyped) { var w = Ecs.HasC(em, r.signal, Ecs.tiPort) ? (byte*)em.GetComponentDataRawRW(r.signal, Ecs.tiPort) : null; if (w != null) w[21] = 3; ModLog.Info("SC_LongRangeTransmitter " + r.block.Index + ": no direction across the joint any more — its port is in/out again"); }
+                    r.wroteKind = 255;
+                }
+                else if (!ours) r.wroteKind = 255;
+            }
+            catch (Exception ex) { if (r.warnings++ < 3) ModLog.Warn("SC_LongRangeTransmitter " + r.block.Index + ": writing the port direction: " + ex.Message); }
         }
         public static void Track(Entity e) { radios[Ecs.K(e)] = new R { block = e }; ModLog.Info("SC_LongRangeTransmitter found: block " + e.Index + ":" + e.Version); }
 
@@ -101,17 +129,18 @@ namespace CrapMechanics
         {
             // 0.19.3 (crash dump 01/10, 16:47: AV reading [port+21] — the cached port had been destroyed when the game rebuilt the BP in the
             // garage): only reads if the entity still exists and has the component
-            try { if (!Ecs.HasC(em, p, Ecs.tiPort)) return 255; var b = (byte*)em.GetComponentDataRawRO(p, Ecs.tiPort); return b == null ? (byte)255 : b[21]; } catch (Exception) { return 255; }
+            try { if (!Ecs.HasC(em, p, Ecs.tiPort)) return 255; var b = (byte*)Ecs.RO(em, p, Ecs.tiPort); return b == null ? (byte)255 : b[21]; } catch (Exception) { return 255; }
         }
 
         /// <summary>0.19.0 (Andre: "the long transmitter isn't transmitting the camera's data"): the camera's video signal is a
-        /// large identifier on the data port — Ecs.ReadInput zeroes values above 1e6 (the game's DataValue() does that to show
-        /// numbers). Here the value goes raw (the 4 bytes), as the game's Wireless Transmitter passes it on.</summary>
+        /// large identifier on the data port (1e21 + index * 1e17) — Ecs.ReadInput zeroes values above 1e20, as the game's DataValue() does
+        /// (0.31.26, item 17: it is 1e20, not 1e6 [recon/EPC_SCCable.cs:83-85]). Here the value goes raw (the 4 bytes), as the game's Wireless
+        /// Transmitter passes it on.</summary>
         static unsafe bool ReadRaw(EntityManager em, Entity input, out float v)
         {
             v = 0f; var f = Ecs.Source(em, input, out _);
-            if (Ecs.IsNull(f) || !Ecs.Alive(em, f) || !em.HasComponent(f, ComponentType.ReadOnly(Ecs.tiPort))) return false;
-            var b = (byte*)em.GetComponentDataRawRO(f, Ecs.tiPort); if (b == null) return false;
+            if (Ecs.IsNull(f) || !Ecs.Alive(em, f) || !Ecs.Has(em, f, Ecs.tiPort)) return false;
+            var b = (byte*)Ecs.RO(em, f, Ecs.tiPort); if (b == null) return false;
             v = *(float*)(b + 8);
             // no filter: the identifier may have any bit (copies the 4 bytes as they are)
             if (!rawLog && Math.Abs(v) > 1e6f) { rawLog = true; ModLog.Info("SC_LongRangeTransmitter: passing a large signal (" + v.ToString("G9") + " — camera video?) through the channel"); }
@@ -131,7 +160,7 @@ namespace CrapMechanics
                 {
                     if (!seen.Add(Ecs.K(cur))) { sb.Append(" -> back where it started (loop)"); break; }
                     if (!Ecs.HasC(em, cur, Ecs.tiPort)) { sb.Append(hop == 0 ? "" : " -> ").Append("entity ").Append(cur.Index).Append(" (not a port)"); break; }
-                    var b = (byte*)em.GetComponentDataRawRO(cur, Ecs.tiPort);
+                    var b = (byte*)Ecs.RO(em, cur, Ecs.tiPort);
                     Entity persist = *(Entity*)b, end = *(Entity*)(b + 12); byte setup = b[20], now = b[21];
                     var owner = Ecs.Parent(em, cur);
                     string nm = BlockIndex.NameOfHash(Ecs.Prefab(em, owner)) ?? "block";
@@ -139,7 +168,7 @@ namespace CrapMechanics
                     sb.Append(hop == 0 ? "" : viaFrame ? " => " : " -> ").Append(nm).Append(' ').Append(owner.Index).Append(" port #").Append(pi).Append(" (").Append(cur.Index)
                       .Append(", ").Append(TypeName(setup)).Append(setup != now ? ", the game made it " + TypeName(now) : "").Append(")");
                     if (hop == 0) sb.Append(" [game's end of the line: ").Append(Ecs.IsNull(end) ? "none" : end.Index.ToString()).Append("]");
-                    bool frame = !Ecs.IsNull(owner) && Ecs.Alive(em, owner) && em.HasComponent(owner, ComponentType.ReadOnly(Ecs.tiFramePorts));
+                    bool frame = !Ecs.IsNull(owner) && Ecs.Alive(em, owner) && Ecs.Has(em, owner, Ecs.tiFramePorts);
                     if (hop > 0 && !viaFrame)
                     {
                         if (!frame) break;   // a real block: the end of the cable
@@ -149,7 +178,7 @@ namespace CrapMechanics
                     viaFrame = false;
                     if (Ecs.IsNull(persist)) { sb.Append(" -> NOTHING plugged in"); break; }
                     if (!Ecs.IsCable(em, persist)) { sb.Append(" -> plugged straight into "); cur = persist; continue; }
-                    var cb = (byte*)em.GetComponentDataRawRO(persist, Ecs.tiCable); byte ct = cb == null ? (byte)255 : cb[1];
+                    var cb = (byte*)Ecs.RO(em, persist, Ecs.tiCable); byte ct = cb == null ? (byte)255 : cb[1];
                     var far = Ecs.WalkCable(em, persist, cur, out int cells);
                     sb.Append(" -> ").Append(ct == 0 ? "data" : ct == 1 || ct == 2 ? "POWER" : ct == 3 ? "PLASMA" : "?").Append(" cable, ").Append(cells).Append(" cell(s)");
                     if (Ecs.IsNull(far)) { sb.Append(" -> the cable ENDS IN NOTHING (its other end isn't plugged into a port)"); break; }
@@ -175,7 +204,7 @@ namespace CrapMechanics
                 try
                 {
                     int channel = 0;
-                    bool hasChannel = Ecs.ReadInput(em, r.channelP, out var vc, out var source, out var trail); if (hasChannel) channel = (int)Math.Round(vc);
+                    bool hasChannel = Ecs.ReadInput(em, r.channelP, out var vc, out var source, out var trail); if (hasChannel) channel = (int)Math.Max(int.MinValue + 1.0, Math.Min(int.MaxValue, Math.Round((double)vc)));   // 0.31.26: values up to 1e20 now reach here (item 17) — kept inside int (int.MinValue is "no channel yet")
                     // 0.19.7 (log: the 3 LRTs went to channel 0 together when leaving the seat / on time rewind and the signal vanished): if the SAME source that
                     // gave a channel != 0 starts reading 0, hold the channel (the game zeroes the ports at those moments).
                     // 0.19.8 (Andre: "leaving the atmosphere it loses the signal"; log: channel 0 without "holding" = the SOURCE vanished, it didn't read 0): also holds
@@ -196,6 +225,7 @@ namespace CrapMechanics
                     else r.channelCand = channel;
                     byte tr = RuntimeKind(em, r.signal); bool across = false;
                     if (tr != Ecs.PortInput && tr != Ecs.PortOutput && r.resolved != 255) { tr = r.resolved; across = true; }   // 0.31.11: through a mod joint
+                    else if (r.wroteKind != 255 && tr == r.wroteKind) across = true;   // 0.31.26 (item 6): the byte the mod wrote
                     if (tr != r.kindLog) { r.kindLog = tr; ModLog.Info("SC_LongRangeTransmitter " + r.block.Index + ": signal port is " + (tr == Ecs.PortInput ? "SENDING (wired to an output" : tr == Ecs.PortOutput ? "RECEIVING (wired to an input" : "not wired (type " + tr + ")") + (across ? " " + r.resolvedVia + ")" : tr == Ecs.PortInput || tr == Ecs.PortOutput ? ")" : "") + " on channel " + r.channel
                         + (tr != Ecs.PortInput && tr != Ecs.PortOutput ? " — where its cable goes: " + CablePath(em, r.signal) : "")); }   // 0.31.10
                     float v = 0f; bool hasVideo = tr == Ecs.PortInput && ReadRaw(em, r.signal, out v);
@@ -237,10 +267,11 @@ namespace CrapMechanics
             try { if (!activeOk) { activeOk = true; tiActive = TypeManager.GetTypeIndex(Il2CppType.Of<ActiveWormholeWorld>()); } isActive = Ecs.HasC(em, r.block, tiActive) ? "yes" : "NO"; } catch (Exception) { }
             ModLog.Warn("SC_LongRangeTransmitter " + r.block.Index + ": the video it sends stopped changing 2 s ago (camera not simulated? block ActiveWormholeWorld: " + isActive + ") — the monitor on the other end shows static");
         }
+        static readonly List<long> deadSet = new List<long>(); static readonly Dictionary<int, int> receivers = new Dictionary<int, int>(), senders = new Dictionary<int, int>();
         public static void Step(EntityManager em)
         {
             if (radios.Count == 0) return;
-            var deadSet = new List<long>();
+            deadSet.Clear();   // 0.31.35: kept between frames (it was a new list and two new dictionaries every frame)
             channelValue.Clear(); whoSends.Clear();
             // 1) channels and who sends
             foreach (var kv in radios)
@@ -269,13 +300,13 @@ namespace CrapMechanics
             foreach (var k in deadSet) radios.Remove(k);
             // 2) channel + signal copy (0.19.6: also runs inside the physics tick — see Copy)
             Copy(em, false);
-            // 3) LEDs (0.19.2): per channel, how many there are and how many send
-            var byChannel = new Dictionary<int, int>(); var senders = new Dictionary<int, int>();
+            // 3) LEDs (0.19.2): per channel, how many send and how many receive
+            receivers.Clear(); senders.Clear();
             foreach (var r in radios.Values)
             {
                 if (!r.portsOk) continue;
-                byChannel.TryGetValue(r.channel, out int c); byChannel[r.channel] = c + 1;
                 if (r.kindLog == Ecs.PortInput) { senders.TryGetValue(r.channel, out int e2); senders[r.channel] = e2 + 1; }
+                else if (r.kindLog == Ecs.PortOutput) { receivers.TryGetValue(r.channel, out int c); receivers[r.channel] = c + 1; }
             }
             foreach (var r in radios.Values)
             {
@@ -284,13 +315,14 @@ namespace CrapMechanics
                     r.tLed += UnityEngine.Time.deltaTime;
                     if (!Ecs.Alive(em, r.led) && r.tLed > 2f) { r.tLed = 0f; r.led = Led.Find(em, r.block); r.ledWritten = -1; }
                     if (Ecs.IsNull(r.led)) continue;
+                    // 0.31.26 (item 21): the game's meaning [recon/EPC_SCWirelessTransmitter.cs:226-240, 266-277]. Sender: red = another sender
+                    // on the channel, green = somebody receives, orange (Yellow) = nobody receives. Receiver: green = exactly 1 sender, red = 2+,
+                    // off = none. No direction: off. (It was yellow = 2+ senders, red = nobody / not wired.)
                     int state;
-                    if (!r.portsOk || r.kindLog == 255 || r.kindLog > 1) state = Led.Red;
-                    else
-                    {
-                        byChannel.TryGetValue(r.channel, out int n); senders.TryGetValue(r.channel, out int ne);
-                        state = ne > 1 ? Led.Yellow : (n > 1 && ne == 1) ? Led.Green : Led.Red;
-                    }
+                    senders.TryGetValue(r.channel, out int ns); receivers.TryGetValue(r.channel, out int nr);
+                    if (!r.portsOk || (r.kindLog != Ecs.PortInput && r.kindLog != Ecs.PortOutput)) state = Led.Unlit;
+                    else if (r.kindLog == Ecs.PortInput) state = ns > 1 ? Led.Red : nr > 0 ? Led.Green : Led.Yellow;
+                    else state = ns == 1 ? Led.Green : ns >= 2 ? Led.Red : Led.Unlit;
                     r.ledWritten = Led.Paint(em, r.led, state, r.ledWritten);
                 }
                 catch (Exception) { }

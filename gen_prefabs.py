@@ -95,12 +95,15 @@ def label_face_minus_z(x, y, z_face=-0.25, depth=0.012, max_len=10):
     return label_at((x, y, z_face + depth), (0, 0, -1), (0, 180, 0), max_len)
 
 
-def prefab(name, bounds, mass, areas_, ports, collider=True, body_scale=None, convex=False, only_paintable=False, script=S_EPC, root_extra="", trims=(), pipe_icon=None, label=None, labels=(), levers=None, box_collider=None, sphere_collider=None, extra_paintables=(), paint_extras=(), game_meshes=None, texts=(), default_color=0):
+def prefab(name, bounds, mass, areas_, ports, collider=True, body_scale=None, convex=False, only_paintable=False, script=S_EPC, root_extra="", trims=(), pipe_icon=None, label=None, labels=(), levers=None, box_collider=None, sphere_collider=None, extra_paintables=(), paint_extras=(), game_meshes=None, texts=(), default_color=0, categories=512, bevel=0.025, names=None):
     """areas: [(kind, vertices)]; ports: [(pos, direction, kind)]. 0.9.0: meshes and icon of our own (gen_meshes) when REF has the block.
     label/labels (0.10.2/0.11.1): dicts from label_at — puts the game's actionable label (plate + editable text) on the block.
     levers (0.11.1): {suffix of the extra: (rot_min, rot_max, capsule)} — the extra renderer with that suffix becomes a game
     lever (EPC_Actionable_Lever, vertical axis, back to the middle, + a click capsule relative to it). The plugin reads the value.
-    box_collider (0.11.1): (offset, scale) of the collision box, when it isn't the whole block."""
+    box_collider (0.11.1): (offset, scale) of the collision box, when it isn't the whole block.
+    categories / bevel (0.31.28): inventory tabs (512 = Mechanics) and the bevel radius of the box colliders (0.025 = all blocks before the seals).
+    names (0.32.0): {suffix of an extra: GameObject name} for levers/toggles/LEDs (Remote Computer, Phone Dock); the others keep the old names."""
+    names = names or {}
     ICON_PORTS[name] = list(ports) + ([(pipe_icon, 0, 9)] if pipe_icon else [])
     GLUE_AREAS[name] = [vs for _, vs in areas_]   # 0.22.5: they go into the _boundsCollider hull (the glue face stays on the edge)
     own = REF.get(name)
@@ -134,18 +137,18 @@ def prefab(name, bounds, mass, areas_, ports, collider=True, body_scale=None, co
         if sfx in levers:
             kind, rmin, rmax, caps_ = levers[sfx]
             levs.append((fid(name, sfx, "go"), fid(name, sfx, "tr"), fid(name, sfx, "rend"), fid(name, sfx, "lev"), fid(name, sfx, "caps"), fid(name, sfx, "filt"),
-                          "Actionable Lever" + ("" if len(levs) == 0 else " %d" % len(levs)), pos, rot, mesh, kind, rmin, rmax, caps_))
+                          names.get(sfx) or "Actionable Lever" + ("" if len(levs) == 0 else " %d" % len(levs)), pos, rot, mesh, kind, rmin, rmax, caps_))
             continue
         r_ex = rend(pos, rot, scale, mesh)
         if sfx == "Guide":   # 0.20.0: the piston's guide bar = the game's GLASS material (translucent), the glass layer, color alpha 1 (tintable by the plugin)
             r_ex = r_ex.replace("_material: {fileID: 2100000, guid: %s, type: 2}\n  _layer: 0\n  _color: {r: 0, g: 0, b: 0, a: 0}\n" % MAT,
                                 "_material: {fileID: 2100000, guid: %s, type: 2}\n  _layer: 15\n  _color: {r: 0.3, g: 0.9, b: 0.4, a: 1}\n" % MAT_GLASS, 1)
-        if sfx == "led":
+        if sfx == "led" or (sfx or "").startswith("led_"):   # 0.32.0: + several LEDs on one block (led_main, led_r1..led_r10)
             r_ex = r_ex.replace("  _specular:\n    _strength: 0\n", "  _specular:\n    _strength: %s\n" % LED_MARK, 1)   # 0.19.2: LED mark (the plugin finds it by the specular)
             # 0.19.8: like the indicator of the game's transmitter — alpha 1 (with alpha 0 the renderer is born WITHOUT CRPRendererMemory_Color and the plugin
             # has nowhere to paint) and the indicator's material (CRPUnlit: the LED really glows)
             r_ex = r_ex.replace("  _color: {r: 0, g: 0, b: 0, a: 0}\n", "  _color: {r: 0, g: 0, b: 0, a: 1}\n", 1).replace("_material: {fileID: 2100000, guid: %s, type: 2}" % MAT, "_material: {fileID: 2100000, guid: %s, type: 2}" % MAT_LED, 1)
-        mb_ex = child("trim%d" % i, "Renderer Extra" + ("" if i == 0 else " %d" % i), 0, S_REND, r_ex, pos, rot, scale)
+        mb_ex = child("trim%d" % i, names.get(sfx) or "Renderer Extra" + ("" if i == 0 else " %d" % i), 0, S_REND, r_ex, pos, rot, scale)
         if sfx in paint_extras: extra_paintables = list(extra_paintables) + [mb_ex]   # 0.12.1: paintable extra (turret plates)
     if game_meshes:   # 0.18.0: body/paintable = the game's meshes (markers relinked at runtime) — the model of our own is only in the icon
         one = (1, 1, 1)   # 0.22.2: body None = mesh of our own (LRT: antenna + globe) with the game's paintable base
@@ -153,7 +156,7 @@ def prefab(name, bounds, mass, areas_, ports, collider=True, body_scale=None, co
         paint_ = child("paintable", "Paintable", 0, S_REND, rend((0, 0, 0), (0, 0, 0), one, game_meshes[1]), scale=one)
     elif own:
         one = (1, 1, 1)
-        child("body", "Renderer", 0, S_REND, rend((0, 0, 0), (0, 0, 0), one, own[0]), scale=one)
+        if own[0]: child("body", "Renderer", 0, S_REND, rend((0, 0, 0), (0, 0, 0), one, own[0]), scale=one)   # 0.31.30: None = all paintable (Rubber Seal)
         paint_ = child("paintable", "Paintable", 0, S_REND, rend((0, 0, 0), (0, 0, 0), one, own[1] or own[0]), scale=one)
     else:
         if not only_paintable:
@@ -166,7 +169,7 @@ def prefab(name, bounds, mass, areas_, ports, collider=True, body_scale=None, co
               "  _rotation:\n    x: %s\n    y: %s\n    z: %s\n" % tuple(fmt(a) for a in tx.get("rot", (0, 0, 0))) +
               "  _scale:\n    x: 1\n    y: 1\n    z: 1\n  _text: '%s'\n  _alignment: %d\n  _verticalAlignment: %d\n  _monospace: %d\n  _textScale: %s\n  _maxWidth: %s\n" % (
                   tx.get("text", ""), tx.get("align", 1), tx.get("valin", 1), tx.get("mono", 0), fmt(tx.get("scale", 0.1)), fmt(tx.get("wid", 0))) +
-              "  _material: {fileID: 2100000, guid: %s, type: 2}\n  _layer: 7\n  _color: {r: 0, g: 0, b: 0, a: 0}\n  _specular:\n    _strength: 0\n    _smoothness: 0\n  _hasHeat: 1\n" % MAT_TEXT)
+              "  _material: {fileID: 2100000, guid: %s, type: 2}\n  _layer: 7\n  _color: {r: %s, g: %s, b: %s, a: %s}\n  _specular:\n    _strength: 0\n    _smoothness: 0\n  _hasHeat: 1\n" % ((MAT_TEXT,) + tuple(fmt(a) for a in tx.get("color", (0, 0, 0, 0)))))
     cols = []
     if sphere_collider:   # 0.12.0 (turret seat): sphere collider (DOTSColliderSphere) — turning on any axis it doesn't go into the block below
         cols.append(child("collider", "Collider", 7, S_COL_SPHERE, "  _center:\n    x: %s\n    y: %s\n    z: %s\n  _radius: %s\n" % (tuple(fmt(a) for a in sphere_collider[0]) + (fmt(sphere_collider[1]),))))
@@ -184,7 +187,7 @@ def prefab(name, bounds, mass, areas_, ports, collider=True, body_scale=None, co
         if boxes and not isinstance(boxes[0][0], (tuple, list)): boxes = [boxes]
         for k, (c_off, c_esc) in enumerate(boxes):
             cols.append(child("collider%d" % k, "Collider" + ("" if k == 0 else " %d" % k), 7, S_COL, "  _offset:\n    x: %s\n    y: %s\n    z: %s\n  _rotation:\n    x: 0\n    y: 0\n    z: 0\n" % tuple(fmt(a) for a in c_off) +
-                              "  _scale:\n    x: %s\n    y: %s\n    z: %s\n  _bevelRadius: 0.025\n" % tuple(fmt(a) for a in c_esc)))
+                              "  _scale:\n    x: %s\n    y: %s\n    z: %s\n  _bevelRadius: %s\n" % (tuple(fmt(a) for a in c_esc) + (fmt(bevel),))))
 
     out = ["%YAML 1.1", "%TAG !u! tag:unity3d.com,2011:"]
 
@@ -234,7 +237,7 @@ def prefab(name, bounds, mass, areas_, ports, collider=True, body_scale=None, co
             "  _electricPorts:\n" + "".join("  - _position:\n      x: %s\n      y: %s\n      z: %s\n    _direction: %d\n    _type: %d\n" % (fmt(p[0]), fmt(p[1]), fmt(p[2]), d, REAL_KIND.get(t, t)) for p, d, t in ports) +
             "  _iconTexture2D: {fileID: 2800000, guid: %s, type: 3}\n" % (own[2] if own else ICON) +
             "  _uiPreviewBounds:\n    x: %s\n    y: %s\n    z: %s\n" % tuple(fmt(a) for a in bounds) +
-            "  _categories: 512\n  _customProperties: []\n  _propertiesMaterial: 255\n" + root_extra)
+            "  _categories: %d\n  _customProperties: []\n  _propertiesMaterial: 255\n" % categories + root_extra)
     mb(root_mb, root_go, script, root)
     for f in children:
         tr(f[1], f[0], root_tr, [], f[7], f[8], f[9])
@@ -262,9 +265,22 @@ def prefab(name, bounds, mass, areas_, ports, collider=True, body_scale=None, co
                "  _buttonTransformOnRot:\n    x: %s\n    y: %s\n    z: %s\n  _meshOn: {fileID: 0}\n" % tuple(fmt(x) for x in rmax) +
                "  _buttonTransformOffPos:\n    x: %s\n    y: %s\n    z: %s\n" % pp +
                "  _buttonTransformOffRot:\n    x: %s\n    y: %s\n    z: %s\n  _meshOff: {fileID: 0}\n" % tuple(fmt(x) for x in rmin) +
-               "  _defaultValue: 1\n  _canGoOn: 1\n  _canGoOff: 1\n")
-            c_off, c_rot, c_esc = caps_
+               "  _defaultValue: %s\n  _canGoOn: 1\n  _canGoOff: 1\n" % fmt(caps_[3] if len(caps_) > 3 else 1))   # 0.32.0: 4th item of caps = default value (1 before)
+            c_off, c_rot, c_esc = caps_[:3]
             mb(a_caps, a[0], S_COL, "  _offset:\n    x: %s\n    y: %s\n    z: %s\n  _rotation:\n    x: %s\n    y: %s\n    z: %s\n  _scale:\n    x: %s\n    y: %s\n    z: %s\n  _bevelRadius: 0\n" % (tuple(fmt(x) for x in c_off) + tuple(fmt(x) for x in c_rot) + tuple(fmt(x) for x in c_esc)))
+            mb(a_filt, a[0], S_FILTER, "  _collisionFilterType: 0\n  _materialType: 0\n")
+            continue
+        if kind == "channel":
+            # 0.32.0: channel display like the game's Wireless Transmitter (SC_WirelessTransmitter.prefab, "Actionable Lever"): EPC_Actionable_Lever with
+            # 100 steps, no return to the middle, vertical mouse drag (sensitivity 0.04), _drawUIValue 1. The pose is fixed (VerMin = VerMax = the
+            # pivot, rotation rmin/rmax): dragging changes only the value, the LCD never moves. caps = (offset, scale) of the click box (from the pivot).
+            zero = (0, 0, 0)
+            axes = (("HorMin", zero, zero), ("HorMax", zero, zero), ("VerMin", pos, rmin), ("VerMax", pos, rmax), ("ZMin", zero, zero), ("ZMax", zero, zero))
+            mb(a_lev, a[0], S_LEVER, "  _sensitivity: 0.04\n  _usedValues: 1\n  _roundingIntervals: 100\n  _defaultValue: 0\n" +
+               "".join("  _position%s:\n    x: %s\n    y: %s\n    z: %s\n  _rotation%s:\n    x: %s\n    y: %s\n    z: %s\n" % ((k,) + tuple(fmt(x) for x in p) + (k,) + tuple(fmt(x) for x in r)) for k, p, r in axes) +
+               "  _rotationOrder: 4\n  _returnToMid: 0\n  _usedAxisX: 0\n  _usedAxisY: 1\n  _usedAxisZ: 0\n  _drawUIValue: %d\n" % (caps_[2] if len(caps_) > 2 else 1))   # 0.31.35: 3rd item of caps = _drawUIValue (1 = the game shows the number, 2 = the plugin's text)
+            c_off, c_esc = caps_[:2]
+            mb(a_caps, a[0], S_COL, "  _offset:\n    x: %s\n    y: %s\n    z: %s\n  _rotation:\n    x: 0\n    y: 0\n    z: 0\n  _scale:\n    x: %s\n    y: %s\n    z: %s\n  _bevelRadius: 0\n" % (tuple(fmt(x) for x in c_off) + tuple(fmt(x) for x in c_esc)))
             mb(a_filt, a[0], S_FILTER, "  _collisionFilterType: 0\n  _materialType: 0\n")
             continue
         if kind == "knob":
@@ -392,6 +408,19 @@ def blocks():
     r["SC_GyroBearing"] = prefab("SC_GyroBearing", (0.5, 0.5, 0.5), 40, [(0, fs["-Y"]), (3, fs["+Y"])],
                                  [((x, -0.1875, z), 3, 10) for x, z in ((-0.0625, -0.0625), (0.0625, -0.0625), (0.0625, 0.0625), (-0.0625, 0.0625))] + PASSAGE_4 + EXIT_ANG,
                                  levers=dict({"Knob": ("knob", (0, 0, -150), (0, 0, 150), (0.028, 0, 0.1, (0, 0, 0.007)))}, **{"Switch": SW_BEARING["switch"]}))
+    # 0.31.36 (Andre: "a bearing with the slip ring built in"): Bearing with Slip Ring. The name starts with "SC_Bearing" and does NOT end in
+    # "SlipRing" on purpose (plugin, SlipRings.cs: NOutputs goes by the first, "a standalone ring" by the second). Same base as SC_Bearing
+    # (4 servo inputs underneath, 4 pass-through ports on -Z, knob, switch, lock LED, angle output LAST); the top quarter (y 0.125..0.25) is the
+    # ring plate with its 4 ports on +-X (ring 1-2 on -X, 3-4 on +X, like SC_SlipRing). Port ORDER is what the plugin goes by:
+    # 0-3 inputs, 4-7 pass-through, 8-11 ring, 12 angle output; pass-through i (4+i) pairs with ring port i (8+i).
+    # The plate is two extra renderers ("Ring" body + "RingPaint" paintable) that the plugin turns with the piece on top (RingVisual.cs).
+    # 44 kg = Bearing 40 + Slip Ring 4. Glue only underneath and on top (the ring's sides turn).
+    import models_v2 as _mv
+    RING_PORTS = [((-0.1875, _mv.BEARING_RING_Y, z), 1, 5) for z in (-0.0625, 0.0625)] + [((0.1875, _mv.BEARING_RING_Y, z), 0, 5) for z in (-0.0625, 0.0625)]
+    r["SC_BearingRing"] = prefab("SC_BearingRing", (0.5, 0.5, 0.5), 44, [(0, fs["-Y"]), (3, fs["+Y"])],
+                                 [((x, -0.1875, z), 3, 10) for x, z in ((-0.0625, -0.0625), (0.0625, -0.0625), (0.0625, 0.0625), (-0.0625, 0.0625))] + PASSAGE_4 + RING_PORTS + EXIT_ANG,
+                                 levers=dict({"Knob": ("knob", (0, 0, -150), (0, 0, 150), (0.028, 0, 0.1, (0, 0, 0.007)))}, **{"Switch": SW_BEARING["switch"]}),
+                                 paint_extras=("RingPaint",))
     # motors: size of the Rechargeable Batteries of the same level (Andre, 25/09: the thruster-sized ones were oversized);
     # mass, consumption and force stay those of the Electric Thrusters. Glue on all 6 faces. Face +X, bottom row:
     # input and power at the -Z corner (side by side, like the thruster), output at the +Z corner.
@@ -508,6 +537,62 @@ def blocks():
         low = [(x, -0.25, z) for x, _, z in q]; above = [(x, 0.25, z) for x, _, z in q]
         # 0.12.14 (Andre): only the inner side (-Y, flange) glues — the wheel has a right side to fit
         r[name] = prefab(name, (box, 0.5, box), mass, [(0, low)], [], convex=True, only_paintable=True, body_scale=(1, 1, 1))
+    # 0.31.28 Rubber Seal (Andre, 22/11), redone: the sizes of the game's pipes (normal: 0.25 x 0.25 x 1 / 0.5 / 0.25, length along Z, pivot at
+    # the centre — _bounds and _uiPreviewBounds = SC_PipeFull/Half/Quarter) and of the MicroFrames (mini: 0.125 x 0.125 x 0.5 / 0.25 / 0.125 =
+    # SC_MFA1x4/1x2/1x1); corners = a 0.25 / 0.125 cube. The garage places by _bounds on the 0.125 grid (GarageTransform: min corner of the
+    # rotated box), so a seal lands where a pipe / MicroFrame of the same size would. Glue ONLY on the mounting face (-Y; the corner also on -X).
+    # _colliders[0] = the cell; [1] (and [2] on the corner) = the lip past the opposite face (3 cm / 2 cm on the mini) — the plugin
+    # (RubberSeal.cs) turns the lip's contacts off in flight (it blocks the game's interior casts and pushes nothing); the bounds stay the cell.
+    # Bevel 0.002 (0.025 would round off a 2-3 cm lip). Mass: rubber by volume, 153.6 kg/m3 (= the first seal's 1.2 kg per 0.5 x 0.125 x 0.125).
+    # Inventory: Frame tab (1) + Mechanics (512).
+    for name, s, w in mv.SEALS:
+        bb = (s, s, w if w is not None else s)
+        mass = round(153.6 * bb[0] * bb[1] * bb[2], 4)
+        # 0.31.30: the body in mv.SEAL_SLABS layers (RubberSeal.cs: [Cheats] rubber_seal_solid_percent makes the layers nearest the lip soft; 100 % = only the lip, as before)
+        boxes = [(((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2), (x1 - x0, y1 - y0, z1 - z0)) for (x0, x1), (y0, y1), (z0, z1) in mv.seal_body_boxes(s, w) + mv.seal_lip_boxes(s, w)]
+        fc = dict(faces_(bb)); glue = [(0, fc["-Y"])] + ([(0, fc["-X"])] if w is None else [])
+        r[name] = prefab(name, bb, mass, glue, [], box_collider=boxes, bevel=0.002, categories=513, default_color=3)
+    # 0.32.0 (Andre, 22/11): remote control, delivery 1. Remote Computer = PC tower 0.5 x 1.25 x 0.75 (models_v2.remote_computer); port 0 = power
+    # (front), ports 1..10 = the rows' data ports (back, row N = port N; 0.31.35: in/out kind). Per row: channel display (game lever, 100 steps), 4 game toggles
+    # (destination / type / value, all born OFF = cable / button / 0..1), LED. Front: main channel display + status LED. Digits = the game's 3D
+    # text with a fixed dark colour (not paintable, the plugin writes them). Glue on the 4 plain faces (top, bottom, sides); the collider stops
+    # 1 cm short of the front and back so the click boxes of the controls stay outside it. Electronics + Mechanics tabs.
+    brc = mv.RC_BOUNDS; frc = dict(faces_(brc))
+    lev, nm, txt = {}, {}, []
+    lw, lh = mv.RC_ROW_LCD; dark = (0.02, 0.025, 0.02, 1)
+    for n, y in enumerate(mv.RC_ROW_Y, start=1):
+        lev["ch_r%d" % n] = ("channel", (0, 0, 0), (0, 0, 0), ((0, 0, -0.004), (lw + 0.010, lh + 0.010, 0.012)))
+        nm["ch_r%d" % n] = "Actionable Lever Channel R%d" % n
+        for key, title in (("dst", "Destination"), ("typ", "Type"), ("val", "Value"), ("dir", "Direction")):   # 0.31.35: + DIRECTION (born OFF = output, up = input)
+            lev["%s_r%d" % (key, n)] = ("switch", (-20, 0, 0), (20, 0, 0), ((0, 0, -0.010), (0, 0, 0), (0.036, 0.040, 0.022), 0))   # on = rod up
+            nm["%s_r%d" % (key, n)] = "Actionable Toggle %s R%d" % (title, n)
+        nm["led_r%d" % n] = "Indicator R%d" % n
+        txt.append(dict(name="RendererText3D Channel R%d" % n, pos=(mv.RC_X_DISP, y, mv.RC_ZB - mv.RC_LCD_DEPTH - 0.0004), rot=(270, 0, 0), text=" 0",
+                        align=1, valin=1, mono=1, scale=0.07, color=dark))
+    mw, mh = mv.RC_MAIN_LCD
+    lev["ch_main"] = ("channel", (0, 0, 0), (0, 0, 0), ((0, 0, 0.004), (mw + 0.014, mh + 0.014, 0.012), 2))   # 0.31.35: _drawUIValue 2 (the plugin writes the hint: channel, name, "E: name")
+    nm["ch_main"] = "Actionable Lever Channel Main"; nm["led_main"] = "Indicator Main"
+    txt.insert(0, dict(name="RendererText3D Channel Main", pos=(mv.RC_MAIN_X, mv.RC_MAIN_Y, mv.RC_ZF + mv.RC_LCD_DEPTH + 0.0004), rot=(270, 180, 0), text=" 0",
+                       align=1, valin=1, mono=1, scale=0.11, color=dark))
+    r["SC_RemoteComputer"] = prefab("SC_RemoteComputer", brc, 30, [(0, frc["-Y"]), (0, frc["+Y"]), (0, frc["-X"]), (0, frc["+X"])], mv.RC_PORTS,
+                                    levers=lev, names=nm, texts=txt, box_collider=[((0, 0, 0), (0.5, 1.25, 0.73))], default_color=3, categories=514)
+    # 0.31.36 (Andre: "the mirrored version of the computer is missing"): "SC_RemoteComputer M" (V in the garage) is a prefab of its own, NOT
+    # mirror(): mirror() draws every renderer with a negative X scale (the painted row numbers and "CH" would read backwards), leaves the 3D
+    # texts where they were and does not know the channel displays' lever poses. Here the case is mirrored in the MODEL (models_v2.RC_M_DX:
+    # ports x -> -x, fans / side panel swapped, row plates on the other side of the port column) and each row's controls keep their
+    # left-to-right order (number, display, DESTINATION, TYPE, VALUE, DIRECTION, LED), moved by RC_M_DX; the front panel is unchanged.
+    # Same GameObject names, port indices (0 = power, row N = N), levers, toggles, colliders, glue, mass and tabs as the normal one; the
+    # extras' meshes and the icon are the normal one's (gen_meshes). The plugin tells the two apart by the prefab (RemoteComputer.cs).
+    txt_m = [dict(t_, pos=(t_["pos"][0] + mv.RC_M_DX,) + tuple(t_["pos"][1:])) if t_["name"] != "RendererText3D Channel Main" else t_ for t_ in txt]
+    r["SC_RemoteComputer M"] = prefab("SC_RemoteComputer M", brc, 30, [(0, frc["-Y"]), (0, frc["+Y"]), (0, frc["-X"]), (0, frc["+X"])], mv.RC_PORTS_M,
+                                      levers=lev, names=nm, texts=txt_m, box_collider=[((0, 0, 0), (0.5, 1.25, 0.73))], default_color=3, categories=514)
+    # Phone Dock: 0.25 block, no ports, no power. The phone = a game toggle (born OFF; both poses equal, so a click never moves it); the plugin
+    # opens the phone screen on a short E while the player aims at it. Glue: the base's footprint on the bottom face. Colliders: the base +
+    # a box behind the phone (the phone's click box stays in front of both).
+    x0, x1, y0, y1, z0, z1 = mv.DOCK_BASE
+    r["SC_PhoneDock"] = prefab("SC_PhoneDock", (0.25, 0.25, 0.25), 1.5, [(0, [(x1, -0.125, z0), (x0, -0.125, z0), (x0, -0.125, z1), (x1, -0.125, z1)])], [],
+                               levers={"phone": ("switch", (0, 0, 0), (0, 0, 0), mv.dock_click_box() + (0,))}, names={"phone": "Actionable Toggle Phone"},
+                               box_collider=[((0, -0.115, 0), (0.2, 0.02, 0.2)), ((0, -0.045, 0.06), (0.1, 0.13, 0.04))], default_color=3, categories=514)
     return r
 
 
@@ -987,7 +1072,7 @@ def _mesh(d, guid):
 # The ones that are already symmetric (or depend on game parts) point to themselves: pedal, steering wheel, turret seat, tanks.
 TO_MIRROR = ["SC_Piston", "SC_MiniPiston", "SC_MiniBearing", "SC_Bearing", "SC_MotorSmall", "SC_MotorMedium", "SC_MotorLarge",   # 0.20.0: + single piston, minis
             "SC_MotorFuelSmall", "SC_MotorFuelMedium", "SC_MotorFuelLarge", "SC_Recoupler", "SC_Differential", "SC_ShaftReverser",
-            "SC_SingleCellBattery", "SC_LongRangeTransmitter", "SC_SolarPanelMini", "SC_Beacon"] + [n for n, _, _ in WHEELS]   # 0.19.0; 0.19.2: beacon + wheels; 0.27.0: the wheels were missing from the list (the game still had their 0.19 "... M" prefabs)
+            "SC_SingleCellBattery", "SC_LongRangeTransmitter", "SC_SolarPanelMini", "SC_Beacon"] + [n for n, _, _ in WHEELS] + ["SC_BearingRing"]   # 0.31.36: Bearing with Slip Ring (last, so the order of the others stays)   # 0.19.0; 0.19.2: beacon + wheels; 0.27.0: the wheels were missing from the list (the game still had their 0.19 "... M" prefabs)
 S_COL_CONVX_ = -1838397108
 NO_MIRROR = ["ce137a3da99fda244ac2396b5fcd1c7c", M_BATTERY_IND]   # meshes the M version keeps (Wireless Transmitter screen, like the game's M; 0.19.14: battery charge bar — the game scales x from 0 to 1 from the position, mirrored it ended up outside the block, like the game's M doesn't mirror it)
 
@@ -1088,7 +1173,7 @@ if __name__ == "__main__":
             Q = P * np.array([sx, 1, 1]); hull = ConvexHull(Q); m = Mesh(); ctr = Q.mean(axis=0)
             for a, b, c in hull.simplices: m.tri(Q[a], Q[b], Q[c], (128, 128, 128, 0), center=ctr)
             n = name.replace(" ", "") + ("_BoundsM" if sx < 0 else "_Bounds")
-            open(os.path.join(cont, "Meshes", n + ".asset"), "w", newline="\n").write(gen_meshes.asset(n, m))
+            gen_meshes.write_mesh(os.path.join(cont, "Meshes", n + ".asset"), n, m)   # 0.31.28: unchanged hull = file kept
             open(os.path.join(cont, "Meshes", n + ".asset.meta"), "w", newline="\n").write(gen_meshes.META_MESH % gen_meshes.guid(n))
             target = name + sfx
             if target not in all_: continue
@@ -1104,7 +1189,8 @@ if __name__ == "__main__":
         with open(os.path.join(folder, name + ".prefab"), "w", newline="\n") as f: f.write(txt)
         meta = os.path.join(folder, name + ".prefab.meta")
         if not os.path.exists(meta):
-            g = hashlib.md5(("crapmechanics|prefab|" + name).encode()).hexdigest() if name.endswith(" M") else uuid.uuid4().hex
+            # 0.32.0: the new blocks get a GUID from the name too (deterministic); the older ones already have their .meta
+            g = hashlib.md5(("crapmechanics|prefab|" + name).encode()).hexdigest() if name.endswith(" M") or name in ("SC_RemoteComputer", "SC_PhoneDock", "SC_BearingRing") else uuid.uuid4().hex
             with open(meta, "w", newline="\n") as f:
                 f.write("fileFormatVersion: 2\nguid: %s\nPrefabImporter:\n  externalObjects: {}\n  userData: \n  assetBundleName: \n  assetBundleVariant: \n" % g)
         print(name, len(txt), "bytes")
